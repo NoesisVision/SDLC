@@ -27,7 +27,7 @@ Analyze user input and split in into 3 groups:
 
 1. Process each requirement individually to identify: ambiguities, missing information, corner cases
 2. Prepare clarification questions in batches (3-5 questions per batch)
-3. Present questions to user ONE BY ONE (wait for response before next question)
+3. Present questions to user using AskUserQuestion tool
 4. After completing a batch, prepare next batch if needed
 5. Improve requirement definitions based on responses
 
@@ -54,10 +54,10 @@ You MUST complete all substeps for each requirement separately before moving to 
 
 You MUST locate the P3 model snapshot as follows:
 1. Search for `p3model.json` starting from repository root using glob pattern `**/p3model.json`.
-2. IF multiple files found: Use the one closest to repository root OR ask user which to use.
-3. IF no file found: Ask user whether to:
-   - Proceed without P3 model analysis
-   - Specify alternative file location
+2. IF multiple files found: Use AskUserQuestion tool to let user select which file to use (list all found paths as options).
+3. IF no file found: Use AskUserQuestion tool with options:
+   - "Proceed without P3 model analysis"
+   - "Specify alternative file location"
 4. Validate JSON structure contains expected fields: check for Revision, Elements and Relations.
 
 **3.3. Assign business rules to Domain Behaviors or Domain Objects**
@@ -68,8 +68,9 @@ You MUST locate the P3 model snapshot as follows:
 
 **3.4. Assign Domain Behaviors and Domain Objects to Domain Modules**
 - Follow guidelines in [modularization.md](modularization.md).
-- NEVER create first-level Domain Module (Bounded Context) without user approval.
+- NEVER create first-level Domain Module (Bounded Context) without user approval using AskUserQuestion tool.
 - Place elements in module reflecting nearest domain concept.
+- IF multiple candidate modules exist: Use AskUserQuestion tool to let user choose placement.
 
 **3.5. Add or remove P3 relations (uses and invokes) based on requirements**
 - Document all new/removed dependencies
@@ -92,7 +93,7 @@ IF ANY validation fails: STOP and fix before continuing.
    - Same element modified differently by different requirements
    - Incompatible structural changes
    - Naming collisions
-4. IF conflicts detected: Present to user with specific conflict details and ask for resolution
+4. IF conflicts detected: Present to user with specific conflict details using AskUserQuestion tool (provide resolution options)
 5. Merge resolved changes into unified change set
 
 **Step 4 Validation Gate**
@@ -114,12 +115,15 @@ You MUST provide user a draft design including:
 - Any identified gaps or assumptions
 - Summary of design decisions made
 
-Present the draft and explicitly ask: "Please review this design draft. Reply with 'approved' to proceed with final document creation, or provide feedback for revisions."
+Present the draft and use AskUserQuestion tool to request approval with options:
+- "Approve design" - Proceed with final document creation
+- "Request revisions" - Provide feedback for changes
+- "Add new information" - Provide additional context or requirements
 
 **Branching Logic:**
-- IF user provides new information or corrections: Return to Step 3 and re-analyze all affected requirements
-- IF user explicitly accepts/approves the design: Proceed to Step 6
-- NEVER proceed to Step 6 without explicit user acceptance
+- IF user selects "Request revisions" or "Add new information": Return to Step 3 and re-analyze all affected requirements
+- IF user selects "Approve design": Proceed to Step 6
+- NEVER proceed to Step 6 without explicit user approval via AskUserQuestion
 
 ### Step 6: Create final design document
 
@@ -207,18 +211,23 @@ You MUST use [output-template.md](output-template.md) as the foundation structur
 
 ### p3model.json Not Found
 1. Inform user: "I couldn't locate p3model.json in the repository."
-2. Ask: "Would you like me to: (a) Proceed without P3 analysis, (b) Use different file path"
+2. Use AskUserQuestion tool with options:
+   - "Proceed without P3 analysis"
+   - "Use different file path"
 3. Wait for response before continuing
 
 ### Invalid p3model.json Structure
 1. Inform user: "p3model.json exists but has structural issues: [specific error]"
-2. Ask: "Should I: (a) Ignore and proceed, (b) Abort design", (c) Try again (after user fix)
+2. Use AskUserQuestion tool with options:
+   - "Ignore and proceed"
+   - "Abort design"
+   - "Try again (after user fix)"
 3. You MUST NEVER guess structure
 
 ### User Provides Contradictory Requirements
 1. Detect contradiction: FR-XX says Y, but FR-YY says Z
 2. Present both to user with specific conflict description
-3. Ask: "How should I resolve this? Option A [...] or Option B [...]"
+3. Use AskUserQuestion tool presenting both options with clear descriptions
 4. Update requirements based on response
 
 ### Repository Root Cannot Be Determined
@@ -228,13 +237,16 @@ You MUST use [output-template.md](output-template.md) as the foundation structur
 
 ### User Requests Out-of-Scope Task
 Examples: "implement this", "write the code", "create unit tests"
-Response: "That's outside the design phase scope. I can: (a) Add implementation notes to design, (b) Defer to implementation phase"
+1. Inform user: "That's outside the design phase scope."
+2. Use AskUserQuestion tool with options:
+   - "Add implementation notes to design"
+   - "Defer to implementation phase"
 
 ### Unclear User Input
-You MUST ask user for clarification. NEVER guess or infer unclear requirements.
+You MUST use AskUserQuestion tool to ask user for clarification with relevant options. NEVER guess or infer unclear requirements.
 
 ### Multiple Equally Valid Design Solutions
-You MUST ask user to choose when there are multiple equally valid solutions. NEVER proceed with design without explicit user choice.
+You MUST use AskUserQuestion tool when there are multiple equally valid solutions. Present each option with description. NEVER proceed with design without explicit user choice.
 
 ## Reference File Usage Strategy
 
