@@ -63,7 +63,7 @@ You'll receive 5-7 focused questions about:
 ### 3. Review & Approve
 
 You'll receive a complete specification with:
-- Functional requirements (REQ-001, REQ-002, ...)
+- Functional requirements (FR-001, FR-002, ...)
 - BDD scenarios (Given/When/Then format)
 - Business rules and corner cases
 - Traceability matrix
@@ -175,7 +175,7 @@ Every scenario must have:
 
 Structure:
 ```markdown
-### REQ-001: Add Item to Cart
+### FR-001: Add Item to Cart
 ...
 
 #### BDD Scenarios

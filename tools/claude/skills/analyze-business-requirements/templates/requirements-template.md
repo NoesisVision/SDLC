@@ -48,7 +48,7 @@ Use this template to produce consistent, testable business requirements. Keep th
 
 ## 3. Functional Requirements
 
-### REQ-001: [Action-Oriented Title]
+### FR-001: [Action-Oriented Title]
 **Priority:** Must Have | Should Have | Nice to Have
 **Description:** System SHALL [testable behavior] WHEN [condition/trigger] SO THAT [business value]
 **Rationale:** [Business justification]
@@ -100,7 +100,7 @@ Scenario: [Edge or error condition]
 - **Validation Rules:**
   - [Rule 1]
   - [Rule 2]
-- **Related Requirements:** [REQ-XXX](#req-xxx)
+- **Related Requirements:** [FR-XXX](#req-xxx)
 
 ### 4.2 Data Interactions
 - [Describe how data flows, transformations, storage, retention.]
@@ -112,7 +112,7 @@ Scenario: [Edge or error condition]
 **NFR-001: [Category]**
 - **Requirement:** [Specific, measurable target]
 - **Measurement:** [How compliance is verified]
-- **Related Requirements:** [REQ-XXX](#req-xxx)
+- **Related Requirements:** [FR-XXX](#req-xxx)
 
 **NFR-002: [Category]**
 - **Requirement:** [...]
@@ -154,8 +154,8 @@ Scenario: [Edge or error condition]
 
 | Requirement | Priority | Scenario Count | Coverage Status |
 |-------------|----------|----------------|-----------------|
-| REQ-001 | [Priority] | [# scenarios] | ✅/⚠️ |
-| REQ-002 | [Priority] | [# scenarios] | ✅/⚠️ |
+| FR-001 | [Priority] | [# scenarios] | ✅/⚠️ |
+| FR-002 | [Priority] | [# scenarios] | ✅/⚠️ |
 
 **Coverage Summary:**
 - Total Requirements: [N]
@@ -198,12 +198,12 @@ Scenario: [Edge or error condition]
 | 1.0 | {{iso_date}} | Requirements Analyst | Initial specification |
 ```
 
-Repeat the `### REQ-001` block (including Business Rules and BDD Scenarios) for each additional requirement, incrementing IDs sequentially.
+Repeat the `### FR-001` block (including Business Rules and BDD Scenarios) for each additional requirement, incrementing IDs sequentially.
 
 ## Section Guidance
 
 - **Purpose / Scope / Success Criteria**: Focus on business outcomes and measurable targets. Avoid solution details.
-- **Functional Requirements**: Follow structure from [../references/language-standards.md](../references/language-standards.md) and [../references/bdd-scenario-rules.md](../references/bdd-scenario-rules.md). Repeat the requirement block for REQ-002 onward, incrementing IDs and scenario numbers.
+- **Functional Requirements**: Follow structure from [../references/language-standards.md](../references/language-standards.md) and [../references/bdd-scenario-rules.md](../references/bdd-scenario-rules.md). Repeat the requirement block for FR-002 onward, incrementing IDs and scenario numbers.
 - **Data Requirements**: Capture the shape, validation, retention, and ownership of critical data.
 - **Non-Functional Requirements**: Use specific metrics with verification methods. Keep categories consistent (performance, usability, security, scalability, reliability, etc.).
 - **Assumptions & Dependencies**: Track items that, if false or missing, jeopardize delivery.
@@ -239,7 +239,7 @@ Customer order tracking is currently manual and opaque. Customers frequently con
 ### Functional Requirement Example
 
 ```markdown
-### REQ-001: Display Current Order Status
+### FR-001: Display Current Order Status
 **Priority:** Must Have
 **Description:** System SHALL display current order status (pending, processing, shipped, delivered) WHEN customer views their order SO THAT customers know the current state without contacting support
 **Rationale:** Transparent order status reduces support inquiries and improves customer confidence
@@ -295,14 +295,14 @@ Scenario: Customer tries to view order that doesn't exist
   - Must be one of the defined enumeration values
   - State transitions must follow defined workflow (pending → processing → shipped → delivered)
   - Cannot transition backward in the workflow
-- **Related Requirements:** [REQ-001](#req-001), [REQ-002](#req-002)
+- **Related Requirements:** [FR-001](#req-001), [FR-002](#req-002)
 
 ### Non-Functional Requirement Example
 
 **NFR-001: Page Load Performance**
 - **Requirement:** Order status page SHALL load within 2 seconds for 95% of requests
 - **Measurement:** Real User Monitoring 95th percentile page-load time
-- **Related Requirements:** [REQ-001](#req-001), [REQ-002](#req-002)
+- **Related Requirements:** [FR-001](#req-001), [FR-002](#req-002)
 
 ### Assumptions & Dependencies Example
 
@@ -311,8 +311,8 @@ Scenario: Customer tries to view order that doesn't exist
 2. Customers have valid email addresses for notifications.
 
 **Dependencies**
-1. Fulfillment system exposes a real-time status API (REQ-DEP-001).
-2. Notification service supports transactional emails (REQ-DEP-002).
+1. Fulfillment system exposes a real-time status API (FR-DEP-001).
+2. Notification service supports transactional emails (FR-DEP-002).
 
 ### Glossary Example
 
@@ -348,10 +348,10 @@ A complete specification MUST include:
 
 ### Numbering Conventions
 
-- Requirements: `REQ-001`, `REQ-002`, ...
+- Requirements: `FR-001`, `FR-002`, ...
 - Scenarios: `Scenario 001`, `Scenario 002`, ... (restart numbering per requirement)
 - Business Rules: `BR-001`, `BR-002`, ...
-- Acceptance Criteria: `AC-REQ#.1`, `AC-REQ#.2`, ...
+- Acceptance Criteria: `AC-FR#.1`, `AC-FR#.2`, ...
 - Non-functional requirements: `NFR-001`, `NFR-002`, ...
 
 ### Language Standards

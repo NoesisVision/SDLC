@@ -79,7 +79,7 @@
 Every requirement SHALL follow this pattern:
 
 ```markdown
-### REQ-XXX: [Action-oriented title]
+### FR-XXX: [Action-oriented title]
 **Priority:** Must Have | Should Have | Nice to Have
 **Description:** The system SHALL [specific, testable behavior] WHEN [condition/trigger] SO THAT [business value]
 **Rationale:** [Why needed]
@@ -97,7 +97,7 @@ Every requirement SHALL follow this pattern:
 ### Example
 
 ```markdown
-### REQ-015: Validate Email Format
+### FR-015: Validate Email Format
 **Priority:** Must Have
 **Description:** The system SHALL reject email addresses that do not match RFC 5322 format WHEN a user submits a registration form SO THAT only valid email addresses are stored
 **Rationale:** Invalid emails cause delivery failures and support burden
@@ -153,17 +153,17 @@ Each criterion MUST be:
 
 ### Good Examples
 
-✅ REQ-001: Validate Email Format on Registration
-✅ REQ-002: Calculate Customer Lifetime Value Daily
-✅ REQ-003: Display Order Status in User Dashboard
-✅ REQ-004: Prevent Duplicate Order Submission
+✅ FR-001: Validate Email Format on Registration
+✅ FR-002: Calculate Customer Lifetime Value Daily
+✅ FR-003: Display Order Status in User Dashboard
+✅ FR-004: Prevent Duplicate Order Submission
 
 ### Bad Examples
 
-❌ REQ-001: Email (too vague)
-❌ REQ-002: Customer Value (unclear action)
-❌ REQ-003: Dashboard (what about it?)
-❌ REQ-004: Orders (no specificity)
+❌ FR-001: Email (too vague)
+❌ FR-002: Customer Value (unclear action)
+❌ FR-003: Dashboard (what about it?)
+❌ FR-004: Orders (no specificity)
 
 ## Nested Structure
 
@@ -172,7 +172,7 @@ Each criterion MUST be:
 Scenarios are nested directly under requirements - no separate linking needed:
 
 ```markdown
-### REQ-001: User Authentication
+### FR-001: User Authentication
 **Priority:** Must Have
 **Description:** System SHALL authenticate users...
 **Acceptance Criteria:**
@@ -231,38 +231,38 @@ Non-Examples:
 
 ❌ Bad:
 ```
-REQ-001: System should validate emails
-REQ-002: Passwords SHALL be encrypted
+FR-001: System should validate emails
+FR-002: Passwords SHALL be encrypted
 ```
 
 ✅ Good:
 ```
-REQ-001: System SHALL validate email format per RFC 5322
-REQ-002: System SHALL encrypt passwords using bcrypt (cost factor 12)
+FR-001: System SHALL validate email format per RFC 5322
+FR-002: System SHALL encrypt passwords using bcrypt (cost factor 12)
 ```
 
 ### Mistake 2: Implementation in Requirements
 
 ❌ Bad:
 ```
-REQ-003: System SHALL use PostgreSQL for data storage
+FR-003: System SHALL use PostgreSQL for data storage
 ```
 
 ✅ Good:
 ```
-REQ-003: System SHALL persist user data with ACID guarantees
+FR-003: System SHALL persist user data with ACID guarantees
 ```
 
 ### Mistake 3: Untestable Requirements
 
 ❌ Bad:
 ```
-REQ-004: System SHALL be user-friendly
+FR-004: System SHALL be user-friendly
 ```
 
 ✅ Good:
 ```
-REQ-004: System SHALL allow 90% of users to complete checkout without help
+FR-004: System SHALL allow 90% of users to complete checkout without help
 (measured via usability testing with 50 participants)
 ```
 
@@ -270,12 +270,12 @@ REQ-004: System SHALL allow 90% of users to complete checkout without help
 
 ❌ Bad:
 ```
-REQ-005: System SHALL log all events
+FR-005: System SHALL log all events
 ```
 
 ✅ Good:
 ```
-REQ-005: System SHALL log all authentication attempts
+FR-005: System SHALL log all authentication attempts
 SO THAT security team can detect brute force attacks
 ```
 

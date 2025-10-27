@@ -64,13 +64,46 @@ Scenario: [Edge or error condition]
 
 ## P3 Model Changes
 
-### Model Change 01: [Change Slug]
+### MC-01: [Create|Update|Delete] [Element Type] "[Element Name]"
+
+**Type:** [DomainModule | DomainObject | DomainBehavior]
+**Operation:** [Create | Update | Delete]
+**Parent Module:** [Module path, e.g., "Billing.Invoicing"]
 
 **Description**
-[1-3 stentences description of the change]
+[1-3 sentences: what changes and why]
 
-**Rationale**
-[Business and technical justification of the change]
+**Changes:**
+- **Name:** [New name or "N/A" if not changing]
+- **Tags:** [Add: tag1, tag2 | Remove: tag3 | No change]
+- **Contains:** [Add: Child1, Child2 | Remove: Child3 | N/A]
+- **Uses:** [Add: Dep1, Dep2 | Remove: Dep3 | N/A]
+- **Invokes:** [Add: Behavior1 | Remove: Behavior2 | N/A]
+
+**Affected Requirements:** [REQ-01, REQ-03]
+**Rationale:** [Business/technical justification]
+
+---
+
+**Example:**
+
+### MC-01: Create DomainBehavior "CalculateProration"
+
+**Type:** DomainBehavior
+**Operation:** Create
+**Parent Module:** Billing::Subscriptions
+
+**Description**
+New behavior to calculate prorated refunds when subscriptions are cancelled mid-period.
+
+**Changes:**
+- **Name:** CalculateProration
+- **Tags:** Add: Calculation, QueryHandler
+- **Uses:** Add: Subscription, BillingPeriod, Money
+- **Invokes:** N/A
+
+**Affected Requirements:** REQ-02
+**Rationale:** REQ-02 requires accurate prorated refund calculations; extraction into dedicated behavior ensures reusability and testability.
 
 ## Acceptance Checklist
 

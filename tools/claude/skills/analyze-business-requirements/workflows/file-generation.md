@@ -126,7 +126,7 @@ Use template from [../templates/requirements-template.md](../templates/requireme
 1. **Frontmatter**: Title, version, date, status
 2. **Feature Overview**: Purpose, scope, success criteria
 3. **Actors**: Who interacts, what roles
-4. **Functional Requirements**: REQ-001, REQ-002, etc. (with nested Business Rules and BDD Scenarios)
+4. **Functional Requirements**: FR-001, FR-002, etc. (with nested Business Rules and BDD Scenarios)
 5. **Data Requirements**: Information items, constraints
 6. **Non-Functional Requirements**: Performance, security, etc.
 7. **Assumptions & Dependencies**: What's assumed, what's needed
@@ -148,13 +148,13 @@ Use template from [../templates/requirements-template.md](../templates/requireme
 - Visual hierarchy shows relationships (no cross-references needed)
 
 **Numbering**:
-- Requirements: REQ-001, REQ-002, REQ-003, ... (sequential across document)
+- Requirements: FR-001, FR-002, FR-003, ... (sequential across document)
 - Scenarios: 001, 002, ... (sequential within each requirement)
 - Business Rules: BR-001, BR-002, ... (sequential across document)
 
 **Heading Levels**:
 - Section: `##` (e.g., `## 3. Functional Requirements`)
-- Requirement: `###` (e.g., `### REQ-001: Title`)
+- Requirement: `###` (e.g., `### FR-001: Title`)
 - Subsections: `####` (e.g., `#### Business Rules`, `#### BDD Scenarios`)
 
 ## Step 6: Write File or Stage Inline Output
@@ -191,7 +191,7 @@ Run these checks before reporting success:
 #### Structure Checks
 - [ ] All 11 sections present
 - [ ] Frontmatter has title, version, date
-- [ ] At least 1 requirement (REQ-001 exists)
+- [ ] At least 1 requirement (FR-001 exists)
 - [ ] At least 1 scenario nested under requirements
 - [ ] No heading level gaps (## → ### → ####)
 
@@ -229,13 +229,13 @@ def validate_output(content: str, *, file_path: str | None = None) -> dict:
         checks['payload_size_ok'] = len(content) > 5000
 
     checks.update({
-        'has_requirements': '### REQ-001' in content,
+        'has_requirements': '### FR-001' in content,
         'has_scenarios': '#### BDD Scenarios' in content,
         'has_business_rules': '#### Business Rules' in content,
         'has_traceability': 'Traceability Matrix' in content,
         'no_vague_terms': not any(term in content.lower()
                                   for term in ['should', 'quickly', 'many']),
-        'proper_nesting': content.count('### REQ-') > 0,
+        'proper_nesting': content.count('### FR-') > 0,
     })
 
     return {'passed': all(checks.values()), 'details': checks}

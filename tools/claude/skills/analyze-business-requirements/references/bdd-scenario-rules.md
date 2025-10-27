@@ -5,7 +5,7 @@
 Every BDD scenario MUST be nested under its parent requirement and follow this structure:
 
 ```markdown
-### REQ-001: [Requirement Title]
+### FR-001: [Requirement Title]
 ...
 
 #### BDD Scenarios
@@ -28,7 +28,7 @@ Scenario: [What is being tested]
 Scenarios MUST be placed under the `#### BDD Scenarios` subsection within their parent requirement.
 
 ```markdown
-### REQ-001: Display Order Status
+### FR-001: Display Order Status
 **Priority:** Must Have
 ...
 
@@ -68,7 +68,7 @@ Scenario: Descriptive name
 ### Pattern 1: Happy Path
 
 ```markdown
-### REQ-001: User Registration
+### FR-001: User Registration
 ...
 
 #### BDD Scenarios
@@ -108,7 +108,7 @@ Scenario: User attempts registration with invalid email format
 ### Pattern 3: Boundary Testing
 
 ```markdown
-### REQ-002: Password Validation
+### FR-002: Password Validation
 ...
 
 #### BDD Scenarios
@@ -133,7 +133,7 @@ Scenario Outline: Password validation at boundaries
 ### Pattern 4: State Transitions
 
 ```markdown
-### REQ-010: Order State Management
+### FR-010: Order State Management
 ...
 
 #### BDD Scenarios
@@ -156,7 +156,7 @@ Scenario: Order moves through states correctly
 ### Pattern 5: Concurrent Actions
 
 ```markdown
-### REQ-015: Prevent Duplicate Order Submission
+### FR-015: Prevent Duplicate Order Submission
 ...
 
 #### BDD Scenarios
@@ -264,7 +264,7 @@ Use for testing multiple similar cases:
 ```gherkin
 <a id="scenario-006"></a>
 #### Scenario 006: Email validation edge cases
-**Requirement:** [REQ-020](#req-020)
+**Requirement:** [FR-020](#req-020)
 
 Scenario Outline: Validate email format variations
   Given the user is registering
@@ -315,7 +315,7 @@ Scenario 002: Add second item
 Scenarios are nested under their parent requirement, making the relationship visually obvious:
 
 ```markdown
-### REQ-001: User Registration
+### FR-001: User Registration
 **Priority:** Must Have
 ...
 **Acceptance Criteria:**
@@ -349,7 +349,7 @@ Scenarios are nested under their parent requirement, making the relationship vis
 
 ❌ Bad:
 ```markdown
-### REQ-001: User Login
+### FR-001: User Login
 ...
 
 ## 6. BDD Scenarios
@@ -359,7 +359,7 @@ Scenarios are nested under their parent requirement, making the relationship vis
 
 ✅ Good:
 ```markdown
-### REQ-001: User Login
+### FR-001: User Login
 ...
 
 #### BDD Scenarios
@@ -371,7 +371,7 @@ Scenarios are nested under their parent requirement, making the relationship vis
 
 ❌ Bad:
 ```markdown
-### REQ-001: User logs in
+### FR-001: User logs in
 **Priority:** Must Have
 ...
 
@@ -380,7 +380,7 @@ Scenarios are nested under their parent requirement, making the relationship vis
 
 ✅ Good:
 ```markdown
-### REQ-001: User Login
+### FR-001: User Login
 **Priority:** Must Have
 ...
 
@@ -451,7 +451,7 @@ For each requirement, ensure scenarios cover:
 ## Example: Complete Scenario Set
 
 ```markdown
-### REQ-005: Add Item to Cart
+### FR-005: Add Item to Cart
 **Priority:** Must Have
 **Description:** System SHALL allow users to add items to cart...
 **Acceptance Criteria:**

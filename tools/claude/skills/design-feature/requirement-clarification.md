@@ -14,7 +14,9 @@
 4. **Generate corner cases** (boundaries, timing, special values, state conflicts)
 5. **Formulate questions** (specific, actionable)
 6. **Group by category** (ambiguities, missing info, corner cases)
-7. **Present to user** (5-7 questions at a time)
+7. **Prepare questions in batches** (3-5 questions per batch)
+8. **Present to user ONE BY ONE** (wait for response before next question)
+9. **After completing a batch**, prepare next batch if needed
 
 ## Tips
 
@@ -24,7 +26,9 @@
 4. **Be iterative**: Better to ask follow-ups than get it wrong
 5. **Be helpful**: Offer up to 3 options, but value custom user input more
 6. **Be specific**: Concrete examples > abstract concepts
-7. **Batch questions**: Present 2-5 at a time, not 10+
+7. **Batch questions**: Prepare 3-5 questions per batch internally
+8. **Present questions ONE BY ONE**: Wait for user response before presenting next question
+9. **Never present more than one question at a time**: This ensures focused, quality answers
 
 ## Quality Checklist
 
