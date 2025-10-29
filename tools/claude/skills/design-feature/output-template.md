@@ -17,7 +17,7 @@ Use this for all design docs.
 
 ## Functional Requirements
 
-### REQ-01: [Action-Oriented Title]
+### FR-01: [Action-Oriented Title]
 
 **Description:** System SHALL [testable behavior] WHEN [condition or trigger] SO THAT [business value]
 **Rationale:** [Business justification]
@@ -56,7 +56,7 @@ Scenario: [Edge or error condition]
 ### NFR-01: [Category]
 - **Requirement:** [Specific, measurable target]
 - **Measurement:** [How compliance is verified]
-- **Related Requirements:** [REQ-XX](#req-xx)
+- **Related Requirements:** [FR-XX](#req-xx)
 
 ### NFR-02: [Category]
 - **Requirement:** [...]
@@ -80,7 +80,7 @@ Scenario: [Edge or error condition]
 - **Uses:** [Add: Dep1, Dep2 | Remove: Dep3 | N/A]
 - **Invokes:** [Add: Behavior1 | Remove: Behavior2 | N/A]
 
-**Affected Requirements:** [REQ-01, REQ-03]
+**Affected Requirements:** [FR-01, FR-03]
 **Rationale:** [Business/technical justification]
 
 ---
@@ -102,8 +102,8 @@ New behavior to calculate prorated refunds when subscriptions are cancelled mid-
 - **Uses:** Add: Subscription, BillingPeriod, Money
 - **Invokes:** N/A
 
-**Affected Requirements:** REQ-02
-**Rationale:** REQ-02 requires accurate prorated refund calculations; extraction into dedicated behavior ensures reusability and testability.
+**Affected Requirements:** FR-02
+**Rationale:** FR-02 requires accurate prorated refund calculations; extraction into dedicated behavior ensures reusability and testability.
 
 ## Acceptance Checklist
 
@@ -120,4 +120,3 @@ New behavior to calculate prorated refunds when subscriptions are cancelled mid-
 - [ ] Every requirement has BDD scenarios
 - [ ] Scenario numbering resets per requirement
 ```
-
