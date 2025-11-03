@@ -60,6 +60,8 @@ You MUST locate the P3 model snapshot as follows:
    - "Specify alternative file location"
 4. Validate JSON structure contains expected fields: check for Revision, Elements and Relations.
 
+Use [p3-model.md](p3-model.md) to understand P3 Model structure and modeling guidelines.
+
 **3.3. Assign business rules to Domain Behaviors or Domain Objects**
 - For each business rule, determine appropriate P3 element.
 - Create new elements if needed.
