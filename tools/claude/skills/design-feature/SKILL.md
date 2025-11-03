@@ -5,23 +5,45 @@ description: Turn rough feature ideas into a clarified design specification (usi
 
 # Design Feature
 
+## Core Principle
+
+**User's design decisions have priority.** This skill treats user's design sketch as the primary design source. AI assists by:
+1. Validating sketch against requirements (finding inconsistencies, gaps, conflicts)
+2. Filling ABSENT areas (where user didn't specify)
+3. Questioning architectural issues (circular dependencies, coupling violations)
+
+**Never silently override user's design.** Always use AskUserQuestion tool before deviating from EXPLICIT or IMPLIED user decisions.
+
 ## Quick Start
 When asked to design or redesign a feature:
 1. Split user input into: business requirements, rationale, design sketch
 2. Clarify requirements in batches (prepare batches, present one by one)
-3. Design requirements individually
-4. Unify P3 model changes
-5. Provide design draft for user review
-6. Create final design document only after explicit user acceptance
+3. Validate design sketch against clarified requirements
+4. Design requirements individually (prioritize user's design decisions)
+5. Unify P3 model changes
+6. Provide design draft for user review
+7. Create final design document only after explicit user acceptance
 
 ## Design Workflow
 
 ### Step 1: Split user input into: business requirements, rationale, design sketch
 
 Analyze user input and split in into 3 groups:
-1. requirements: WHAT have to be done
-2. rationale: WHY it have to be done
-3. design sketch: proposed user solution (it can be almost ready to implement or only a first draft)
+1. **requirements:** WHAT have to be done (functional capabilities, business rules, constraints)
+2. **rationale:** WHY it have to be done (business value, problem statement, context)
+3. **design sketch:** proposed user solution including:
+   - Architectural decisions (modules, layers, components)
+   - Technology choices (frameworks, libraries, patterns)
+   - Data structures and relationships
+   - P3 element suggestions (Domain Objects, Behaviors, Modules)
+   - Integration points and dependencies
+   - UI/UX considerations
+   - Any other design decisions expressed by user
+
+**IMPORTANT**: Mark each design decision with confidence level:
+- EXPLICIT: User clearly stated this decision
+- IMPLIED: Strongly suggested by user's description
+- ABSENT: No user input on this aspect
 
 ### Step 2: Clarify requirements in batches
 
@@ -42,7 +64,40 @@ Before proceeding to Step 3, you MUST verify:
 
 IF ANY validation fails: STOP and resolve before continuing.
 
-### Step 3: Design requirements individually
+### Step 2.5: Validate design sketch against clarified requirements
+
+**ONLY perform this step if user provided design sketch (not ABSENT).**
+
+1. **Check consistency**: Does design sketch address all clarified requirements?
+   - List requirements covered by design sketch
+   - List requirements NOT covered by design sketch
+
+2. **Identify conflicts**: Does design sketch contradict any requirements?
+   - Example: Requirement says "synchronous", sketch proposes "event-driven"
+   - Example: Requirement says "single module", sketch spreads across multiple
+
+3. **Find gaps**: Does design sketch have missing corner cases?
+   - Validate against requirement edge cases
+   - Check error handling coverage
+   - Verify data validation logic
+
+4. **Resolution**:
+   - IF conflicts OR significant gaps found: Use AskUserQuestion tool with options:
+     - "Adjust requirements to match design sketch"
+     - "Modify design sketch to match requirements"
+     - "Hybrid approach" (explain specific combination)
+   - IF minor gaps only: Note them for Step 3 (fill gaps while preserving user's decisions)
+   - IF fully consistent: Proceed to Step 3
+
+**Step 2.5 Validation Gate**
+Before proceeding to Step 3, you MUST verify:
+- [ ] All conflicts between sketch and requirements resolved
+- [ ] User has confirmed approach for handling gaps
+- [ ] Design sketch is marked with confidence levels (EXPLICIT/IMPLIED/ABSENT)
+
+IF ANY validation fails: STOP and resolve before continuing.
+
+### Step 3: Design requirements individually (prioritizing user's design sketch)
 
 You MUST complete all substeps for each requirement separately before moving to the next requirement.
 
@@ -60,23 +115,66 @@ You MUST locate the P3 model snapshot as follows:
    - "Specify alternative file location"
 4. Validate JSON structure contains expected fields: check for Revision, Elements and Relations.
 
+**Compare user's design sketch with P3 model:**
+- IF user suggested specific P3 elements (Domain Objects/Behaviors): Verify they align with existing model structure
+- IF user's suggestion conflicts with P3 model: Use AskUserQuestion tool presenting conflict with options
+- IF user didn't specify P3 elements: Propose elements based on P3 model analysis
+
 Use [p3-model.md](p3-model.md) to understand P3 Model structure and modeling guidelines.
 
 **3.3. Assign business rules to Domain Behaviors or Domain Objects**
-- For each business rule, determine appropriate P3 element.
-- Create new elements if needed.
-- Maintain traceability: each P3 change → originating requirement(s).
-- Reference [ddd.md](ddd.md) for DDD pattern guidance.
+
+**PRIORITY ORDER:**
+1. Use P3 elements from user's design sketch if specified (EXPLICIT/IMPLIED)
+2. Only deviate if assignment violates DDD principles or creates architectural issues
+3. If deviating: Use AskUserQuestion tool explaining why and offering alternatives
+
+Process:
+- For each business rule, determine appropriate P3 element
+- IF user specified element in design sketch: Use it unless architecturally problematic
+- IF user didn't specify: Propose element based on DDD patterns
+- Create new elements if needed
+- Maintain traceability: each P3 change → originating requirement(s)
+- Reference [ddd.md](ddd.md) for DDD pattern guidance
+
+**When to question user's choice:**
+- Business logic assigned to Domain Object instead of Domain Behavior
+- Behavior lacks clear domain concept (procedural thinking)
+- Assignment creates circular dependencies
 
 **3.4. Assign Domain Behaviors and Domain Objects to Domain Modules**
-- Follow guidelines in [modularization.md](modularization.md).
-- NEVER create first-level Domain Module (Bounded Context) without user approval using AskUserQuestion tool.
-- Place elements in module reflecting nearest domain concept.
-- IF multiple candidate modules exist: Use AskUserQuestion tool to let user choose placement.
 
-**3.5. Add or remove P3 relations (uses and invokes) based on requirements**
+**PRIORITY ORDER:**
+1. Use module placement from user's design sketch (if specified)
+2. Only suggest alternative if user's placement violates modularization principles
+3. If suggesting alternative: Use AskUserQuestion tool with clear rationale
+
+Process:
+- Follow guidelines in [modularization.md](modularization.md)
+- NEVER create first-level Domain Module (Bounded Context) without user approval using AskUserQuestion tool
+- IF user specified module in design sketch: Use it unless it violates cohesion/coupling principles
+- IF user didn't specify: Place elements in module reflecting nearest domain concept
+- IF multiple candidate modules exist: Use AskUserQuestion tool to let user choose placement
+
+**When to question user's module choice:**
+- Creates high coupling between unrelated bounded contexts
+- Breaks module cohesion (mixed responsibilities)
+- Introduces circular dependencies at module level
+
+**3.5. Add or remove P3 relations (uses and invokes) based on requirements and design sketch**
+
+**PRIORITY ORDER:**
+1. Preserve dependencies specified in user's design sketch
+2. Only suggest changes if dependencies create architectural issues
+3. If suggesting changes: Use AskUserQuestion tool explaining architectural concern
+
+Process:
+- IF user specified integration points/dependencies in design sketch: Use them as baseline
+- IF user's dependencies create circular references: Present issue with AskUserQuestion tool
+- IF user didn't specify dependencies: Infer from requirements and P3 model structure
 - Document all new/removed dependencies
 - Check for circular dependencies
+- Validate all "uses"/"invokes" targets exist
 
 **Step 3 Validation Gate**
 Before proceeding to Step 4, you MUST verify:
@@ -84,6 +182,8 @@ Before proceeding to Step 4, you MUST verify:
 - [ ] Every P3 change references source requirement(s) (FR-XX format)
 - [ ] All new Domain Objects/Behaviors have parent Domain Module assigned
 - [ ] No orphaned references (all "uses"/"invokes" targets exist)
+- [ ] User's EXPLICIT design decisions from sketch are preserved (or conflicts resolved via AskUserQuestion)
+- [ ] Any deviations from IMPLIED design decisions have documented rationale
 
 IF ANY validation fails: STOP and fix before continuing.
 
@@ -113,9 +213,18 @@ You MUST provide user a draft design including:
 - All functional requirements with FR-XX numbering
 - All identified business rules with BR-XX numbering
 - All P3 model changes with MC-XX numbering
+- **Design decisions summary**:
+  - User's design decisions that were preserved (from design sketch)
+  - User's design decisions that were modified (with rationale)
+  - New design decisions made where user didn't specify (ABSENT areas)
 - Any pending questions requiring clarification
 - Any identified gaps or assumptions
-- Summary of design decisions made
+- Deviations from user's design sketch (if any) with architectural justification
+
+**Present draft clearly showing:**
+- ✓ Preserved user decisions (highlight these positively)
+- ⚠ Modified user decisions (explain why modification was necessary)
+- + New decisions in areas not covered by user's sketch
 
 Present the draft and use AskUserQuestion tool to request approval with options:
 - "Approve design" - Proceed with final document creation
@@ -123,7 +232,10 @@ Present the draft and use AskUserQuestion tool to request approval with options:
 - "Add new information" - Provide additional context or requirements
 
 **Branching Logic:**
-- IF user selects "Request revisions" or "Add new information": Return to Step 3 and re-analyze all affected requirements
+- IF user selects "Request revisions" or "Add new information": Return to appropriate step based on revision type
+  - Requirements change: Return to Step 2
+  - Design decision change: Return to Step 3
+  - Conflict resolution: Return to Step 2.5
 - IF user selects "Approve design": Proceed to Step 6
 - NEVER proceed to Step 6 without explicit user approval via AskUserQuestion
 
@@ -250,6 +362,14 @@ You MUST use AskUserQuestion tool to ask user for clarification with relevant op
 ### Multiple Equally Valid Design Solutions
 You MUST use AskUserQuestion tool when there are multiple equally valid solutions. Present each option with description. NEVER proceed with design without explicit user choice.
 
+### User's Design Sketch Conflicts with Requirements
+1. Identify specific conflict: "Requirement FR-XX says Y, but design sketch proposes Z"
+2. Use AskUserQuestion tool with options:
+   - "Prioritize requirement (adjust sketch)"
+   - "Prioritize design sketch (adjust requirement)"
+   - "Hybrid approach" (specify how to combine both)
+3. Update affected artifacts based on response
+
 ## Reference File Usage Strategy
 
 **Always load at start:**
@@ -272,29 +392,35 @@ This reduces token usage.
 You MUST track workflow state and only perform actions valid for current state:
 
 **State: INITIAL** → Parse user input
-- Actions: Split into requirements, rationale, design sketch
-- Next: CLARIFYING or DESIGNING (if input is crystal clear and passes all Quality Checklist items)
-- Validation: Step 1 items completed
+- Actions: Split into requirements, rationale, design sketch; mark design decisions (EXPLICIT/IMPLIED/ABSENT)
+- Next: CLARIFYING or VALIDATING_SKETCH (if input is crystal clear) or DESIGNING (if input crystal clear AND no design sketch)
+- Validation: Step 1 items completed, design decisions categorized
 
 **State: CLARIFYING** → Ask questions, gather requirements
 - Actions: Prepare question batches (3-5 questions), present ONE BY ONE, validate responses
-- Next: CLARIFYING (if gaps remain) or DESIGNING (if Step 2 Validation Gate passes)
+- Next: CLARIFYING (if gaps remain) or VALIDATING_SKETCH (if Step 2 Validation Gate passes AND design sketch exists) or DESIGNING (if no design sketch)
 - Exit condition: Quality Checklist (requirement-clarification.md:32-42) passes
 
-**State: DESIGNING** → Apply P3 model analysis per requirement
-- Actions: Categorize business rules, assign to P3 elements, identify changes
+**State: VALIDATING_SKETCH** → Validate design sketch against requirements
+- Actions: Check consistency, identify conflicts, find gaps, resolve via AskUserQuestion if needed
+- Next: DESIGNING (when Step 2.5 Validation Gate passes)
+- Validation: Step 2.5 Validation Gate passes
+- Exit condition: All conflicts resolved, gaps addressed, confidence levels confirmed
+
+**State: DESIGNING** → Apply P3 model analysis per requirement (prioritizing user's sketch)
+- Actions: Categorize business rules, assign to P3 elements (preserve user's EXPLICIT decisions), identify changes
 - Next: UNIFYING
-- Validation: Step 3 Validation Gate passes
+- Validation: Step 3 Validation Gate passes (including preservation of user decisions)
 
 **State: UNIFYING** → Merge and deduplicate P3 changes
 - Actions: Check conflicts, resolve duplicates
 - Next: DRAFTING or CLARIFYING (if conflicts need user input)
 - Validation: Step 4 Validation Gate passes
 
-**State: DRAFTING** → Present design for review
-- Actions: Generate design.md from template, present to user
-- Next: CLARIFYING (if user provides new info), FINALIZING (if user accepts), DRAFTING (if revisions needed)
-- Validation: All required sections present, no placeholders
+**State: DRAFTING** → Present design for review (highlighting preserved user decisions)
+- Actions: Generate design.md from template, show preserved/modified/new decisions, present to user
+- Next: Return to appropriate state based on revision type (CLARIFYING for req changes, VALIDATING_SKETCH for design conflicts, DESIGNING for design refinements), or FINALIZING (if user accepts)
+- Validation: All required sections present, no placeholders, user decisions documented
 
 **State: FINALIZING** → Write final design document
 - Actions: Write to {repo_root}/specs/{date}_{slug}/design.md
@@ -304,4 +430,4 @@ You MUST track workflow state and only perform actions valid for current state:
 **State: COMPLETE** → Design process finished
 - No further actions
 
-You SHOULD announce state transitions: "→ Entering CLARIFYING state"
+You SHOULD announce state transitions: "→ Entering VALIDATING_SKETCH state"
