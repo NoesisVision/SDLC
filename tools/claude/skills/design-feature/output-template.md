@@ -104,19 +104,4 @@ New behavior to calculate prorated refunds when subscriptions are cancelled mid-
 
 **Affected Requirements:** FR-02
 **Rationale:** FR-02 requires accurate prorated refund calculations; extraction into dedicated behavior ensures reusability and testability.
-
-## Acceptance Checklist
-
-**Requirements Quality**
-- [ ] All requirements are testable and use SHALL/MUST
-- [ ] No ambiguous language ("should", "may", "quickly", etc.)
-- [ ] Happy path, error, and corner cases covered
-
-**Completeness**
-- [ ] Functional requirements documented
-- [ ] Non-functional requirements documented
-
-**BDD Coverage**
-- [ ] Every requirement has BDD scenarios
-- [ ] Scenario numbering resets per requirement
 ```

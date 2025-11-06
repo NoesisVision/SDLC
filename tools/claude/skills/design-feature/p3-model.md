@@ -34,7 +34,6 @@ P3 Model is a **general-purpose modeling framework** organizing system abstracti
 **Guidelines:**
 - Use business terminology (e.g., "OrderManagement", "CustomerBilling")
 - Avoid technical divisions (e.g., "Repositories", "Services", "API")
-- Never create first-level DomainModule without user approval
 
 ### DomainObject
 **Purpose:** Building block representing entity/concept. Can be:

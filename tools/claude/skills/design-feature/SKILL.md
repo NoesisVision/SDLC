@@ -7,12 +7,12 @@ description: Turn rough feature ideas into a clarified design specification (usi
 
 ## Core Principle
 
-**User's design decisions have priority.** This skill treats user's design sketch as the primary design source. AI assists by:
-1. Validating sketch against requirements (finding inconsistencies, gaps, conflicts)
-2. Filling ABSENT areas (where user didn't specify)
-3. Questioning architectural issues (circular dependencies, coupling violations)
+User's design decisions have priority. Categorize every design aspect by confidence:
+- **EXPLICIT:** User clearly stated → Use exactly as specified
+- **IMPLIED:** Strongly suggested → Preserve unless architectural issue
+- **ABSENT:** No user input → Fill with AI suggestions
 
-**Never silently override user's design.** Always use AskUserQuestion tool before deviating from EXPLICIT or IMPLIED user decisions.
+AI assists by validating sketch, filling ABSENT areas, questioning architectural issues. Never deviate from EXPLICIT or IMPLIED decisions without user approval via AskUserQuestion tool.
 
 ## Quick Start
 When asked to design or redesign a feature:
@@ -23,6 +23,20 @@ When asked to design or redesign a feature:
 5. Unify P3 model changes
 6. Provide design draft for user review
 7. Create final design document only after explicit user acceptance
+
+## Validation Gate Protocol
+
+All validation gates in this workflow follow this protocol:
+- **Check ALL criteria** listed in the gate before proceeding to next step
+- **IF ANY criterion fails:**
+  - STOP immediately, do not proceed
+  - Identify which specific criteria failed
+  - Determine root cause of failure
+  - Resolve failure completely (not partially)
+  - Re-check ALL criteria before continuing
+- **Document resolution** in design draft for user visibility
+
+This protocol applies to all validation gates (Steps 2, 2.5, 3, 4, 6).
 
 ## Design Workflow
 
@@ -40,10 +54,7 @@ Analyze user input and split in into 3 groups:
    - UI/UX considerations
    - Any other design decisions expressed by user
 
-**IMPORTANT**: Mark each design decision with confidence level:
-- EXPLICIT: User clearly stated this decision
-- IMPLIED: Strongly suggested by user's description
-- ABSENT: No user input on this aspect
+**IMPORTANT**: Mark each design decision with confidence level (see Core Principle for EXPLICIT/IMPLIED/ABSENT definitions).
 
 ### Step 2: Clarify requirements in batches
 
@@ -55,14 +66,8 @@ Analyze user input and split in into 3 groups:
 
 For clarification techniques see [requirement-clarification.md](requirement-clarification.md).
 
-**Step 2 Validation Gate**
-Before proceeding to Step 3, you MUST verify:
-- [ ] All items in Quality Checklist (requirement-clarification.md:32-42) are checked
-- [ ] User has explicitly confirmed requirements are clear
-- [ ] No "TBD", "unclear", "needs clarification" or assumption markers remain
-- [ ] Every requirement has clear actor, action, and business value
-
-IF ANY validation fails: STOP and resolve before continuing.
+**Step 2 Validation Gate (see Validation Gate Protocol):**
+Verify Quality Checklist (requirement-clarification.md:53-66) passes before proceeding to Step 3.
 
 ### Step 2.5: Validate design sketch against clarified requirements
 
@@ -89,13 +94,8 @@ IF ANY validation fails: STOP and resolve before continuing.
    - IF minor gaps only: Note them for Step 3 (fill gaps while preserving user's decisions)
    - IF fully consistent: Proceed to Step 3
 
-**Step 2.5 Validation Gate**
-Before proceeding to Step 3, you MUST verify:
-- [ ] All conflicts between sketch and requirements resolved
-- [ ] User has confirmed approach for handling gaps
-- [ ] Design sketch is marked with confidence levels (EXPLICIT/IMPLIED/ABSENT)
-
-IF ANY validation fails: STOP and resolve before continuing.
+**Step 2.5 Validation Gate (see Validation Gate Protocol):**
+Verify before proceeding: conflicts resolved; user confirmed gap handling; confidence levels assigned (EXPLICIT/IMPLIED/ABSENT).
 
 ### Step 3: Design requirements individually (prioritizing user's design sketch)
 
@@ -151,7 +151,6 @@ Process:
 
 Process:
 - Follow guidelines in [modularization.md](modularization.md)
-- NEVER create first-level Domain Module (Bounded Context) without user approval using AskUserQuestion tool
 - IF user specified module in design sketch: Use it unless it violates cohesion/coupling principles
 - IF user didn't specify: Place elements in module reflecting nearest domain concept
 - IF multiple candidate modules exist: Use AskUserQuestion tool to let user choose placement
@@ -176,16 +175,8 @@ Process:
 - Check for circular dependencies
 - Validate all "uses"/"invokes" targets exist
 
-**Step 3 Validation Gate**
-Before proceeding to Step 4, you MUST verify:
-- [ ] Every business rule is categorized using business-rules.md patterns
-- [ ] Every P3 change references source requirement(s) (FR-XX format)
-- [ ] All new Domain Objects/Behaviors have parent Domain Module assigned
-- [ ] No orphaned references (all "uses"/"invokes" targets exist)
-- [ ] User's EXPLICIT design decisions from sketch are preserved (or conflicts resolved via AskUserQuestion)
-- [ ] Any deviations from IMPLIED design decisions have documented rationale
-
-IF ANY validation fails: STOP and fix before continuing.
+**Step 3 Validation Gate (see Validation Gate Protocol):**
+Verify before proceeding: business rules categorized (business-rules.md patterns); P3 changes reference requirements (FR-XX); all elements have parent module; no orphaned references; EXPLICIT decisions preserved; IMPLIED deviations documented.
 
 ### Step 4: Unify P3 model changes
 
@@ -198,14 +189,8 @@ IF ANY validation fails: STOP and fix before continuing.
 4. IF conflicts detected: Present to user with specific conflict details using AskUserQuestion tool (provide resolution options)
 5. Merge resolved changes into unified change set
 
-**Step 4 Validation Gate**
-Before proceeding to Step 5, you MUST verify:
-- [ ] No duplicate P3 elements with different names
-- [ ] All conflicts resolved (either automatically or by user decision)
-- [ ] P3 changes are internally consistent (no orphaned references)
-- [ ] Change set is traceable (each change → originating requirement(s))
-
-IF ANY validation fails: STOP and fix before continuing.
+**Step 4 Validation Gate (see Validation Gate Protocol):**
+Verify before proceeding: no duplicate elements; conflicts resolved; changes internally consistent; change set traceable to requirements.
 
 ### Step 5: Provide design draft for user review
 
@@ -243,6 +228,10 @@ Present the draft and use AskUserQuestion tool to request approval with options:
 
 You MUST create the final design document ONLY after user has explicitly accepted the draft.
 
+**Step 6 Validation Gate (see Validation Gate Protocol):**
+Verify before generating: requirements testable (SHALL/MUST); happy/error/corner cases covered; functional requirements documented; NFRs documented (if applicable); BDD scenarios present; scenario numbering resets per requirement.
+
+**Document generation:**
 1. Generate complete design document using [output-template.md](output-template.md)
 2. Follow Output Placement rules (see section below)
 3. Confirm document creation with user including file path
@@ -271,9 +260,8 @@ You MUST use [output-template.md](output-template.md) as the foundation structur
 
 **Required Sections (NEVER omit):**
 - Purpose
-- Functional Requirements (with RF-XX format)
+- Functional Requirements (with FR-XX format)
 - P3 Model Changes (with MC-XX format)
-- Acceptance Checklist
 
 **Conditional Sections:**
 - Actors: Include only if feature involves user roles or system actors
@@ -359,6 +347,12 @@ Examples: "implement this", "write the code", "create unit tests"
 ### Unclear User Input
 You MUST use AskUserQuestion tool to ask user for clarification with relevant options. NEVER guess or infer unclear requirements.
 
+**Before Using AskUserQuestion Tool:**
+1. Verify ambiguity cannot be inferred from existing context (requirements, design sketch, P3 model)
+2. Ensure question is specific with clear options (not open-ended)
+3. Provide 2-4 mutually exclusive answer options (tool adds "Other" automatically)
+4. Confirm timing is appropriate (don't ask mid-step; ask at decision points)
+
 ### Multiple Equally Valid Design Solutions
 You MUST use AskUserQuestion tool when there are multiple equally valid solutions. Present each option with description. NEVER proceed with design without explicit user choice.
 
@@ -387,47 +381,56 @@ You MUST use AskUserQuestion tool when there are multiple equally valid solution
 
 This reduces token usage.
 
+## Prompt Caching Strategy
+
+To optimize performance and reduce costs, implement prompt caching using Anthropic's cache breakpoints.
+
+**Cache Block 1 - Stable Content (cache for full session):**
+Files that rarely change and should be cached across all conversations:
+- SKILL.md (full workflow, state machine, best practices)
+- requirement-clarification.md (clarification techniques)
+- business-rules.md (pattern catalog)
+- p3-model.md (semantic guide)
+- ddd.md (tactical patterns)
+- modularization.md (principles)
+- output-template.md (design document template)
+
+**Cache Block 2 - Session-Specific Content (cache per design session):**
+Content that stays stable within a single feature design:
+- User's initial feature request and context
+- P3 model snapshot (p3model.json content)
+- Repository structure overview
+- Existing codebase context (if analyzed)
+
+**Non-Cached Content (changes each turn):**
+Content that varies with each conversation turn:
+- Current workflow state
+- User responses to AskUserQuestion
+- Accumulated design decisions
+- Intermediate work products (categorized BR, P3 changes)
+- Draft design documents
+
+**Implementation:**
+When invoking this skill, configure cache breakpoints to separate stable from dynamic content. See Anthropic's prompt caching documentation for specific API parameters.
+
 ## Workflow State Machine
 
-You MUST track workflow state and only perform actions valid for current state:
+You MUST track workflow state and only perform actions valid for current state. You SHOULD announce state transitions: "→ Entering [STATE_NAME] state"
 
-**State: INITIAL** → Parse user input
-- Actions: Split into requirements, rationale, design sketch; mark design decisions (EXPLICIT/IMPLIED/ABSENT)
-- Next: CLARIFYING or VALIDATING_SKETCH (if input is crystal clear) or DESIGNING (if input crystal clear AND no design sketch)
-- Validation: Step 1 items completed, design decisions categorized
+| State | Actions | Next State(s) | Exit Condition | Validation |
+|-------|---------|---------------|----------------|------------|
+| **INITIAL** | Split input into requirements/rationale/design sketch; mark design decisions (EXPLICIT/IMPLIED/ABSENT) | CLARIFYING or VALIDATING_SKETCH (if clear + sketch exists) or DESIGNING (if clear + no sketch) | Input categorized, design confidence levels assigned | Step 1 items completed |
+| **CLARIFYING** | Prepare question batches (3-5 questions), present ONE BY ONE, validate responses | CLARIFYING (if gaps remain) or VALIDATING_SKETCH (if sketch exists) or DESIGNING (if no sketch) | Quality Checklist (requirement-clarification.md:53-66) passes AND user confirmed requirements clear | All Step 2 Validation Gate items pass |
+| **VALIDATING_SKETCH** | Check consistency, identify conflicts, find gaps, resolve via AskUserQuestion | DESIGNING | All conflicts resolved, gaps addressed, confidence levels confirmed | Step 2.5 Validation Gate passes |
+| **DESIGNING** | Categorize BR, assign to P3 elements (preserve user's EXPLICIT decisions), identify changes (process each requirement separately) | UNIFYING | All business rules categorized, P3 changes reference source requirements, user's EXPLICIT decisions preserved | Step 3 Validation Gate passes |
+| **UNIFYING** | Union P3 changes, remove duplicates, detect conflicts, resolve via AskUserQuestion if needed | DRAFTING or CLARIFYING (if conflicts need user input) | No duplicate elements, all conflicts resolved, changes traceable | Step 4 Validation Gate passes |
+| **DRAFTING** | Generate design.md from template, show preserved/modified/new decisions, present to user with AskUserQuestion | CLARIFYING (req changes) or VALIDATING_SKETCH (design conflicts) or DESIGNING (design refinements) or FINALIZING (user accepts) | User approves design via AskUserQuestion | All required sections present, no placeholders, user decisions documented |
+| **FINALIZING** | Write to {repo_root}/specs/{date}_{slug}/design.md | COMPLETE | File written successfully | File exists, path confirmed with user |
+| **COMPLETE** | No further actions | - | Design process finished | - |
 
-**State: CLARIFYING** → Ask questions, gather requirements
-- Actions: Prepare question batches (3-5 questions), present ONE BY ONE, validate responses
-- Next: CLARIFYING (if gaps remain) or VALIDATING_SKETCH (if Step 2 Validation Gate passes AND design sketch exists) or DESIGNING (if no design sketch)
-- Exit condition: Quality Checklist (requirement-clarification.md:32-42) passes
-
-**State: VALIDATING_SKETCH** → Validate design sketch against requirements
-- Actions: Check consistency, identify conflicts, find gaps, resolve via AskUserQuestion if needed
-- Next: DESIGNING (when Step 2.5 Validation Gate passes)
-- Validation: Step 2.5 Validation Gate passes
-- Exit condition: All conflicts resolved, gaps addressed, confidence levels confirmed
-
-**State: DESIGNING** → Apply P3 model analysis per requirement (prioritizing user's sketch)
-- Actions: Categorize business rules, assign to P3 elements (preserve user's EXPLICIT decisions), identify changes
-- Next: UNIFYING
-- Validation: Step 3 Validation Gate passes (including preservation of user decisions)
-
-**State: UNIFYING** → Merge and deduplicate P3 changes
-- Actions: Check conflicts, resolve duplicates
-- Next: DRAFTING or CLARIFYING (if conflicts need user input)
-- Validation: Step 4 Validation Gate passes
-
-**State: DRAFTING** → Present design for review (highlighting preserved user decisions)
-- Actions: Generate design.md from template, show preserved/modified/new decisions, present to user
-- Next: Return to appropriate state based on revision type (CLARIFYING for req changes, VALIDATING_SKETCH for design conflicts, DESIGNING for design refinements), or FINALIZING (if user accepts)
-- Validation: All required sections present, no placeholders, user decisions documented
-
-**State: FINALIZING** → Write final design document
-- Actions: Write to {repo_root}/specs/{date}_{slug}/design.md
-- Next: COMPLETE
-- Validation: File written successfully, path confirmed with user
-
-**State: COMPLETE** → Design process finished
-- No further actions
-
-You SHOULD announce state transitions: "→ Entering VALIDATING_SKETCH state"
+**State Transition Rules:**
+- Only ONE state active at any time
+- Cannot skip states (must follow Next State(s) column)
+- Must satisfy Exit Condition before transitioning
+- DRAFTING can loop back to earlier states based on revision type
+- User approval via AskUserQuestion is REQUIRED before FINALIZING
