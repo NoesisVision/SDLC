@@ -229,12 +229,14 @@ Present the draft and use AskUserQuestion tool to request approval with options:
 You MUST create the final design document ONLY after user has explicitly accepted the draft.
 
 **Step 6 Validation Gate (see Validation Gate Protocol):**
-Verify before generating: requirements testable (SHALL/MUST); happy/error/corner cases covered; functional requirements documented; NFRs documented (if applicable); BDD scenarios present; scenario numbering resets per requirement.
+Verify before generating: requirements testable (SHALL/MUST); happy/error/corner cases covered; functional requirements documented; NFRs documented (if applicable); BDD scenarios present in model-changes.json; business rules present in model-changes.json.
 
 **Document generation:**
-1. Generate complete design document using [output-template.md](output-template.md)
+1. Generate TWO files using [output-template.md](output-template.md):
+   - design.md: Business Goal, Rationale, Requirements (Functional and Non-Functional)
+   - model-changes.json: P3 model changes with business rules and BDD scenarios
 2. Follow Output Placement rules (see section below)
-3. Confirm document creation with user including file path
+3. Confirm document creation with user including both file paths
 
 ## Scope
 
@@ -258,19 +260,24 @@ Verify before generating: requirements testable (SHALL/MUST); happy/error/corner
 
 You MUST use [output-template.md](output-template.md) as the foundation structure.
 
-**Required Sections (NEVER omit):**
-- Purpose
+**Required Sections in design.md (NEVER omit):**
+- Business Goal
+- Rationale
 - Functional Requirements (with FR-XX format)
-- P3 Model Changes (with MC-XX format)
+
+**Required in model-changes.json:**
+- All P3 model changes as valid JSON
+- Business rules and BDD scenarios for DomainBehavior changes
 
 **Conditional Sections:**
 - Actors: Include only if feature involves user roles or system actors
 - Non-Functional Requirements: Include only if NFRs are specified or obvious
 
 **Flexibility:**
-- You MAY add custom sections if they clarify the design
-- You MUST maintain consistent numbering and cross-references (FR-XX, BR-XX, MC-XX, NFR-XX)
-- NEVER include placeholder content like "[TODO]" or "TBD" in final document
+- You MAY add custom sections to design.md if they clarify requirements
+- You MUST maintain consistent numbering in design.md (FR-XX, NFR-XX)
+- Business rules (BR-XX) are embedded in model-changes.json, not in design.md
+- NEVER include placeholder content like "[TODO]" or "TBD" in final documents
 
 **Requirement Numbering Rules:**
 - Use sequential numbering: FR-01, FR-02, etc.
@@ -287,9 +294,10 @@ You MUST use [output-template.md](output-template.md) as the foundation structur
 3. If still fails: Inform user and return design content in response (do not write file)
 
 **File Placement:**
-- Place design content in single markdown file at: `{repository_root}/specs/{YYYY-MM-DD}_{feature-slug}/design.md`
+- Place design content in TWO files at: `{repository_root}/specs/{YYYY-MM-DD}_{feature-slug}/`
+  - design.md: Business Goal, Rationale, and Requirements
+  - model-changes.json: P3 model changes with business rules and BDD scenarios
 - Create directory if it doesn't exist
-- Confirm file path with user after creation
 
 ## Best Practices (ENFORCEMENT REQUIRED)
 
@@ -375,6 +383,7 @@ You MUST use AskUserQuestion tool when there are multiple equally valid solution
 - p3-model.md - Load during Step 3.2 (P3 analysis)
 - ddd.md - Load when DDD terminology is unclear
 - modularization.md - Load during Step 3.4 (module assignment)
+- bdd-examples.md - Load when writing BDD scenarios to model-changes.json (Step 6)
 
 **Never load:**
 - SKILL.md (you're executing it)
@@ -424,8 +433,8 @@ You MUST track workflow state and only perform actions valid for current state. 
 | **VALIDATING_SKETCH** | Check consistency, identify conflicts, find gaps, resolve via AskUserQuestion | DESIGNING | All conflicts resolved, gaps addressed, confidence levels confirmed | Step 2.5 Validation Gate passes |
 | **DESIGNING** | Categorize BR, assign to P3 elements (preserve user's EXPLICIT decisions), identify changes (process each requirement separately) | UNIFYING | All business rules categorized, P3 changes reference source requirements, user's EXPLICIT decisions preserved | Step 3 Validation Gate passes |
 | **UNIFYING** | Union P3 changes, remove duplicates, detect conflicts, resolve via AskUserQuestion if needed | DRAFTING or CLARIFYING (if conflicts need user input) | No duplicate elements, all conflicts resolved, changes traceable | Step 4 Validation Gate passes |
-| **DRAFTING** | Generate design.md from template, show preserved/modified/new decisions, present to user with AskUserQuestion | CLARIFYING (req changes) or VALIDATING_SKETCH (design conflicts) or DESIGNING (design refinements) or FINALIZING (user accepts) | User approves design via AskUserQuestion | All required sections present, no placeholders, user decisions documented |
-| **FINALIZING** | Write to {repo_root}/specs/{date}_{slug}/design.md | COMPLETE | File written successfully | File exists, path confirmed with user |
+| **DRAFTING** | Generate design draft from template, show preserved/modified/new decisions, present to user with AskUserQuestion | CLARIFYING (req changes) or VALIDATING_SKETCH (design conflicts) or DESIGNING (design refinements) or FINALIZING (user accepts) | User approves design via AskUserQuestion | All required sections present, no placeholders, user decisions documented |
+| **FINALIZING** | Write TWO files: {repo_root}/specs/{date}_{slug}/design.md and model-changes.json | COMPLETE | Both files written successfully | Files exist, paths confirmed with user |
 | **COMPLETE** | No further actions | - | Design process finished | - |
 
 **State Transition Rules:**
