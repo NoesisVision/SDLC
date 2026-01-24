@@ -1,0 +1,35 @@
+{
+  "name": "@noesis/sdlc-tools",
+  "version": "1.0.0",
+  "description": "TypeScript tooling for SDLC resources and validation",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "dev": "tsx",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint tools --ext .ts",
+    "format": "prettier --write \"tools/**/*.ts\"",
+    "format:check": "prettier --check \"tools/**/*.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.2.4",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "ajv": "^8.12.0",
+    "ajv-formats": "^3.0.1",
+    "zod": "^3.22.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
