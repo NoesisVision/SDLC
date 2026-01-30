@@ -6,15 +6,13 @@ import { Writable } from 'stream';
  * Manages the Claude Code CLI subprocess
  */
 export class ProcessManager extends EventEmitter {
-  private executable: string;
-  private timeout: number;
+  private readonly executable: string;
   private process?: ChildProcess;
   private stdinStream?: Writable;
 
-  constructor(executable: string, timeout: number = 120000) {
+  constructor(executable: string) {
     super();
     this.executable = executable;
-    this.timeout = timeout;
   }
 
   /**
@@ -72,8 +70,8 @@ export class ProcessManager extends EventEmitter {
       }
 
       this.process.once('exit', () => {
-        this.process = undefined;
-        this.stdinStream = undefined;
+        delete this.process;
+        delete this.stdinStream;
         resolve();
       });
 
