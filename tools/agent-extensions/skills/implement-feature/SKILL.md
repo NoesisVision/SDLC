@@ -45,7 +45,7 @@ If missing sections: Ask user to proceed or fix design first.
 ### 2. Analyze Codebase
 
 **Structure:** Find .sln, identify bounded contexts, locate target module for P3 changes
-**Patterns:** Use [implementation-patterns.md](implementation-patterns.md) as reference
+**Patterns:** Use [implementation-patterns.md](references/implementation-patterns.md) as reference
 **Dependencies:** Map upstream/downstream for each P3 change, check for circular refs
 
 ### 3. Plan Batches
@@ -60,7 +60,7 @@ Never implement code before its dependencies exist.
 
 ### 4. Implement + Test Each Batch
 
-Complete each batch fully before next. Follow [implementation-patterns.md](implementation-patterns.md).
+Complete each batch fully before next. Follow [implementation-patterns.md](references/implementation-patterns.md).
 
 **Per P3 element:**
 - **Value Objects**: Immutable record/struct, validation in constructor, operators if needed
@@ -128,7 +128,7 @@ If design unclear: AskUserQuestion (never guess)
 - **NO code comments** (no XML docs, no inline comments)
 - No warnings
 
-See [implementation-patterns.md](implementation-patterns.md)
+See [implementation-patterns.md](references/implementation-patterns.md)
 
 ## Critical Enforcements
 

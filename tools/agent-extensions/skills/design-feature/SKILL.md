@@ -64,7 +64,7 @@ Analyze user input and split in into 3 groups:
 4. After completing a batch, prepare next batch if needed
 5. Improve requirement definitions based on responses
 
-For clarification techniques see [requirement-clarification.md](requirement-clarification.md).
+For clarification techniques see [requirement-clarification.md](references/requirement-clarification.md).
 
 **Step 2 Validation Gate (see Validation Gate Protocol):**
 Verify Quality Checklist (requirement-clarification.md:53-66) passes before proceeding to Step 3.
@@ -102,7 +102,7 @@ Verify before proceeding: conflicts resolved; user confirmed gap handling; confi
 You MUST complete all substeps for each requirement separately before moving to the next requirement.
 
 **3.1. Categorize all new business rules from requirements**
-- Use patterns from [business-rules.md](business-rules.md)
+- Use patterns from [business-rules.md](references/business-rules.md)
 - Document category and rationale for each rule
 
 **3.2. Analyze actual solution based on P3 model snapshot**
@@ -120,7 +120,7 @@ You MUST locate the P3 model snapshot as follows:
 - IF user's suggestion conflicts with P3 model: Use AskUserQuestion tool presenting conflict with options
 - IF user didn't specify P3 elements: Propose elements based on P3 model analysis
 
-Use [p3-model.md](p3-model.md) to understand P3 Model structure and modeling guidelines.
+Use [p3-model.md](references/p3-model.md) to understand P3 Model structure and modeling guidelines.
 
 **3.3. Assign business rules to Domain Behaviors or Domain Objects**
 
@@ -135,7 +135,7 @@ Process:
 - IF user didn't specify: Propose element based on DDD patterns
 - Create new elements if needed
 - Maintain traceability: each P3 change → originating requirement(s)
-- Reference [ddd.md](ddd.md) for DDD pattern guidance
+- Reference [ddd.md](references/ddd.md) for DDD pattern guidance
 
 **When to question user's choice:**
 - Business logic assigned to Domain Object instead of Domain Behavior
@@ -150,7 +150,7 @@ Process:
 3. If suggesting alternative: Use AskUserQuestion tool with clear rationale
 
 Process:
-- Follow guidelines in [modularization.md](modularization.md)
+- Follow guidelines in [modularization.md](references/modularization.md)
 - IF user specified module in design sketch: Use it unless it violates cohesion/coupling principles
 - IF user didn't specify: Place elements in module reflecting nearest domain concept
 - IF multiple candidate modules exist: Use AskUserQuestion tool to let user choose placement
@@ -232,7 +232,7 @@ You MUST create the final design document ONLY after user has explicitly accepte
 Verify before generating: requirements testable (SHALL/MUST); happy/error/corner cases covered; functional requirements documented; NFRs documented (if applicable); BDD scenarios present in model-changes.json; business rules present in model-changes.json.
 
 **Document generation:**
-1. Generate TWO files using [output-template.md](output-template.md):
+1. Generate TWO files using [output-template.md](references/output-template.md):
    - design.md: Business Goal, Rationale, Requirements (Functional and Non-Functional)
    - model-changes.json: P3 model changes with business rules and BDD scenarios
 2. Follow Output Placement rules (see section below)
@@ -258,7 +258,7 @@ Verify before generating: requirements testable (SHALL/MUST); happy/error/corner
 
 ## Output Format
 
-You MUST use [output-template.md](output-template.md) as the foundation structure.
+You MUST use [output-template.md](references/output-template.md) as the foundation structure.
 
 **Required Sections in design.md (NEVER omit):**
 - Business Goal
@@ -319,7 +319,7 @@ You MUST use [output-template.md](output-template.md) as the foundation structur
 
 ## Error Handling
 
-For detailed error handling procedures, see [error-handling.md](error-handling.md).
+For detailed error handling procedures, see [error-handling.md](references/error-handling.md).
 
 ## Reference File Usage Strategy
 
