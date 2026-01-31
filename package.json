@@ -10,9 +10,11 @@
     "clean": "rm -rf dist",
     "dev": "tsx",
     "type-check": "tsc --noEmit",
-    "lint": "eslint tools --ext .ts",
-    "format": "prettier --write \"tools/**/*.ts\"",
-    "format:check": "prettier --check \"tools/**/*.ts\""
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "test": "pytest",
+    "test:verbose": "pytest -v"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

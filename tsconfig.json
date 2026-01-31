@@ -8,7 +8,7 @@
 
     // Emit
     "outDir": "./dist",
-    "rootDir": "./tools",
+    "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
@@ -34,13 +34,13 @@
     // Paths
     "baseUrl": ".",
     "paths": {
-      "@utils/*": ["./tools/utils/*"]
+      "@utils/*": ["./src/utils/*"]
     }
   },
 
   "include": [
-    "tools/P3/**/*.ts",
-    "tools/utils/**/*.ts"
+    "src/P3/**/*.ts",
+    "src/utils/**/*.ts"
   ],
 
   "exclude": [
