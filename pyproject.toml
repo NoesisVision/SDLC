@@ -7,7 +7,7 @@ name = "noesis-sdlc"
 version = "1.0.0"
 description = "SDLC tools and MCP servers for Noesis"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 license = {text = "Proprietary"}
 authors = [
     {name = "Noesis Team"}
@@ -15,6 +15,7 @@ authors = [
 
 dependencies = [
     "mcp>=1.0.0",
+    "falkordblite>=0.4.0",
 ]
 
 [project.optional-dependencies]
@@ -85,6 +86,10 @@ strict_equality = true
 
 [[tool.mypy.overrides]]
 module = "mcp.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "redislite.*"
 ignore_missing_imports = true
 
 [tool.ruff]
