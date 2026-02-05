@@ -1,0 +1,12 @@
+# Implementation guidelines
+
+## General
+1. Use functional paradigm for data transformation.
+2. Use procedural paradigm for use cases coordination logic.
+3. Structure code base on capabilities not technical patterns (like entities, repositories, services).
+4. Mimic `src` structure in `tests`.
+
+## Python
+1. Use `@dataclass` for entities in internal logic.
+2. Use `Pydantic` for DTOs used in API.
+3. Use `pytest` for tests.
