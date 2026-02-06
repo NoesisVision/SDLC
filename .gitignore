@@ -42,3 +42,8 @@ yarn-error.log*
 
 # FalkorDB runtime data
 .noesis/
+
+# Promptfoo evaluation results
+.promptfoo/
+promptfoo-results.json
+promptfoo-results.html
