@@ -332,7 +332,8 @@ def test_server_lists_tools() -> None:
     """
     Test that the server correctly lists available tools.
 
-    This test verifies that the ping tool is available in the tools list.
+    This test verifies that both ping and analyze_conversation_file tools
+    are available in the tools list.
     """
     repo_root = Path(__file__).parent.parent.parent.parent
     server_path = repo_root / "src" / "mcp" / "noesis-local" / "server.py"
@@ -404,14 +405,114 @@ def test_server_lists_tools() -> None:
         assert "result" in tools_response
         assert "tools" in tools_response["result"]
 
-        # Check that ping tool is in the list
+        # Check that required tools are in the list
         tools = tools_response["result"]["tools"]
-        ping_tool = next((t for t in tools if t["name"] == "ping"), None)
+        tool_names = [t["name"] for t in tools]
 
+        # Verify ping tool
+        ping_tool = next((t for t in tools if t["name"] == "ping"), None)
         assert ping_tool is not None, "ping tool not found in tools list"
         assert ping_tool["description"] is not None
 
-        print("✓ Server correctly lists the ping tool")
+        # Verify analyze_conversation_file tool
+        analyze_tool = next((t for t in tools if t["name"] == "analyze_conversation_file"), None)
+        assert analyze_tool is not None, "analyze_conversation_file tool not found in tools list"
+        assert analyze_tool["description"] is not None
+        assert "inputSchema" in analyze_tool
+
+        # Verify the analyze_conversation_file has correct schema structure
+        input_schema = analyze_tool["inputSchema"]
+        assert "properties" in input_schema
+        assert "file_path" in input_schema["properties"]
+
+        print("✓ Server correctly lists ping and analyze_conversation_file tools")
+
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+
+def test_analyze_conversation_file_error_handling() -> None:
+    """
+    Test that analyze_conversation_file handles file errors correctly.
+
+    This test verifies error handling for:
+    1. Non-existent file
+    2. Empty file (if we can create one)
+    """
+    repo_root = Path(__file__).parent.parent.parent.parent
+    server_path = repo_root / "src" / "mcp" / "noesis-local" / "server.py"
+
+    if not server_path.exists():
+        server_path = repo_root / "tools" / "mcp" / "noesis-local" / "server.py"
+
+    assert server_path.exists(), f"Server script not found at {server_path}"
+
+    process = subprocess.Popen(
+        [sys.executable, str(server_path)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+    try:
+        # Send initialize request
+        initialize_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "1.0.0"},
+            },
+        }
+
+        process.stdin.write(json.dumps(initialize_request) + "\n")
+        process.stdin.flush()
+
+        response_line = process.stdout.readline()
+        initialize_response = json.loads(response_line)
+        assert "result" in initialize_response
+
+        # Send initialized notification
+        initialized_notification = {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        }
+
+        process.stdin.write(json.dumps(initialized_notification) + "\n")
+        process.stdin.flush()
+
+        # Test 1: Non-existent file
+        analyze_request = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "analyze_conversation_file",
+                "arguments": {"file_path": "/tmp/nonexistent_conversation_file_12345.txt"},
+            },
+        }
+
+        process.stdin.write(json.dumps(analyze_request) + "\n")
+        process.stdin.flush()
+
+        analyze_response_line = process.stdout.readline()
+        analyze_response = json.loads(analyze_response_line)
+
+        print(f"File not found response: {json.dumps(analyze_response, indent=2)}")
+
+        # Should return an error result
+        assert analyze_response["jsonrpc"] == "2.0"
+        assert analyze_response["id"] == 2
+        assert "result" in analyze_response
+        assert analyze_response["result"]["isError"] == True
+        assert "File not found" in analyze_response["result"]["content"][0]["text"]
+
+        print("✓ Server correctly handles file not found error")
 
     finally:
         process.terminate()
@@ -436,6 +537,10 @@ if __name__ == "__main__":
 
         print("Test 4: Server responds to ping")
         test_server_responds_to_ping()
+        print()
+
+        print("Test 5: Analyze conversation file error handling")
+        test_analyze_conversation_file_error_handling()
         print("\n✓ All tests passed!")
     except AssertionError as e:
         print(f"\n✗ Test failed: {e}")
