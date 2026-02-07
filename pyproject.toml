@@ -16,6 +16,10 @@ authors = [
 dependencies = [
     "mcp>=1.0.0",
     "falkordblite>=0.4.0",
+    "spacy>=3.7.0",
+    "sentence-transformers>=2.3.0",
+    "scikit-learn>=1.4.0",
+    "numpy>=1.24.0",
 ]
 
 [project.optional-dependencies]
@@ -90,6 +94,18 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "redislite.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "spacy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sentence_transformers.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sklearn.*"
 ignore_missing_imports = true
 
 [tool.ruff]
