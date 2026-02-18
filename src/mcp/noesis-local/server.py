@@ -224,7 +224,7 @@ async def analyze_conversation_file(
         raise RuntimeError(f"Failed to read file {file_path}: {e}")
 
     # Create the analysis prompt
-    prompt = CONVERSATION_ANALYSIS_PROMPT.format(conversation=conversation_text)
+    prompt = CONVERSATION_ANALYSIS_PROMPT.replace("{conversation}", conversation_text)
 
     # Call LLM via MCP Sampling (using high reasoning model)
     max_retries = 3
