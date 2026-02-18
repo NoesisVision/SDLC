@@ -34,15 +34,8 @@ class GraphContext:
     graph_name: str = "noesis"
 
 
-@asynccontextmanager
-async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
-    """Manage FalkorDB lifecycle for the MCP server.
-
-    Initializes the database on startup and ensures proper cleanup on shutdown.
-    The database file is created in the working directory inherited from the
-    parent process (Claude/Gemini CLI).
-    """
-
+def _initialize_graph_db() -> GraphContext:
+    """Initialize FalkorDB and return a GraphContext."""
     working_directory = Path(os.getcwd())
     noesis_dir = working_directory / ".noesis"
     db_file = noesis_dir / "graph.db"
@@ -53,22 +46,33 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
         logger.exception("Failed to create .noesis directory at %s", noesis_dir)
         raise
 
-    db = None
-    graph = None
     try:
         db = FalkorDB(str(db_file))
         graph = db.select_graph(NOESIS_GRAPH)
         logger.info("FalkorDB initialized at %s", db_file)
-
-        # Yield the context to make it available to tools
-        yield GraphContext(db=db, graph=graph, db_path=db_file, graph_name=NOESIS_GRAPH)
-
+        return GraphContext(db=db, graph=graph, db_path=db_file, graph_name=NOESIS_GRAPH)
     except Exception:
         logger.exception("Failed to initialize FalkorDB at %s", db_file)
         raise
+
+
+@asynccontextmanager
+async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
+    """Manage FalkorDB lifecycle for the MCP server.
+
+    Initializes the database on startup and ensures proper cleanup on shutdown.
+    The database file is created in the working directory inherited from the
+    parent process (Claude/Gemini CLI).
+    """
+
+    ctx = _initialize_graph_db()
+
+    try:
+        yield ctx
     finally:
-        if db is not None:
+        if ctx.db is not None:
             logger.info("FalkorDB shutting down")
+
 
 mcp = FastMCP("noesis-local", lifespan=app_lifespan)
 

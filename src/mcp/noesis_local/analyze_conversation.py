@@ -92,7 +92,7 @@ async def analyze_conversation_file(
 ) -> AnalyzeConversationFileResponse:
     """Analyze a conversation transcript from a file using LLM.
 
-    Performs in-depth conversation analysis including:
+    Performs in-depth conversation analysis including
     - Overall summary of the conversation
     - Domain-specific terms with definitions (if identifiable)
     - Topics discussed with summaries
