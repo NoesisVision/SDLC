@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68.0.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "noesis-sdlc"
@@ -35,6 +35,9 @@ dev = [
 # Note: This repository contains standalone scripts (MCP servers, TypeScript tools)
 # rather than installable Python packages. Dependencies are managed here, but
 # there's no package to install. MCP servers are run directly from src/mcp/*/server.py
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_extensions", "src/mcp", "src/p3", "src/utils"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

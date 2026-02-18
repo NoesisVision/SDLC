@@ -91,7 +91,7 @@ if command -v python3 &> /dev/null; then
         echo ""
         echo "To enable full schema validation, install one of:"
         echo "  - npm install -g ajv-cli ajv-formats"
-        echo "  - pip install jsonschema"
+        echo "  - uv add jsonschema"
         exit 0
     else
         echo "✗ Invalid JSON syntax"
@@ -103,7 +103,7 @@ elif command -v node &> /dev/null; then
         echo ""
         echo "To enable full schema validation, install one of:"
         echo "  - npm install -g ajv-cli ajv-formats"
-        echo "  - pip install jsonschema"
+        echo "  - uv add jsonschema"
         exit 0
     else
         echo "✗ Invalid JSON syntax"
