@@ -64,10 +64,10 @@ Analyze user input and split in into 3 groups:
 4. After completing a batch, prepare next batch if needed
 5. Improve requirement definitions based on responses
 
-For clarification techniques see [requirement-clarification.md](references/requirement-clarification.md).
+For clarification techniques see [requirement_clarification.md](references/requirement_clarification.md).
 
 **Step 2 Validation Gate (see Validation Gate Protocol):**
-Verify Quality Checklist (requirement-clarification.md:53-66) passes before proceeding to Step 3.
+Verify Quality Checklist (requirement_clarification.md:53-66) passes before proceeding to Step 3.
 
 ### Step 2.5: Validate design sketch against clarified requirements
 
@@ -102,7 +102,7 @@ Verify before proceeding: conflicts resolved; user confirmed gap handling; confi
 You MUST complete all substeps for each requirement separately before moving to the next requirement.
 
 **3.1. Categorize all new business rules from requirements**
-- Use patterns from [business-rules.md](references/business-rules.md)
+- Use patterns from [business_rules.md](references/business_rules.md)
 - Document category and rationale for each rule
 
 **3.2. Analyze actual solution based on P3 model snapshot**
@@ -120,7 +120,7 @@ You MUST locate the P3 model snapshot as follows:
 - IF user's suggestion conflicts with P3 model: Use AskUserQuestion tool presenting conflict with options
 - IF user didn't specify P3 elements: Propose elements based on P3 model analysis
 
-Use [p3-model.md](references/p3-model.md) to understand P3 Model structure and modeling guidelines.
+Use [p3_model.md](references/p3_model.md) to understand P3 Model structure and modeling guidelines.
 
 **3.3. Assign business rules to Domain Behaviors or Domain Objects**
 
@@ -176,7 +176,7 @@ Process:
 - Validate all "uses"/"invokes" targets exist
 
 **Step 3 Validation Gate (see Validation Gate Protocol):**
-Verify before proceeding: business rules categorized (business-rules.md patterns); P3 changes reference requirements (FR-XX); all elements have parent module; no orphaned references; EXPLICIT decisions preserved; IMPLIED deviations documented.
+Verify before proceeding: business rules categorized (business_rules.md patterns); P3 changes reference requirements (FR-XX); all elements have parent module; no orphaned references; EXPLICIT decisions preserved; IMPLIED deviations documented.
 
 ### Step 4: Unify P3 model changes
 
@@ -232,7 +232,7 @@ You MUST create the final design document ONLY after user has explicitly accepte
 Verify before generating: requirements testable (SHALL/MUST); happy/error/corner cases covered; functional requirements documented; NFRs documented (if applicable); BDD scenarios present in model-changes.json; business rules present in model-changes.json.
 
 **Document generation:**
-1. Generate TWO files using [output-template.md](references/output-template.md):
+1. Generate TWO files using [output_template.md](references/output_template.md):
    - design.md: Business Goal, Rationale, Requirements (Functional and Non-Functional)
    - model-changes.json: P3 model changes with business rules and BDD scenarios
 2. Follow Output Placement rules (see section below)
@@ -258,7 +258,7 @@ Verify before generating: requirements testable (SHALL/MUST); happy/error/corner
 
 ## Output Format
 
-You MUST use [output-template.md](references/output-template.md) as the foundation structure.
+You MUST use [output_template.md](references/output_template.md) as the foundation structure.
 
 **Required Sections in design.md (NEVER omit):**
 - Business Goal
@@ -319,21 +319,21 @@ You MUST use [output-template.md](references/output-template.md) as the foundati
 
 ## Error Handling
 
-For detailed error handling procedures, see [error-handling.md](references/error-handling.md).
+For detailed error handling procedures, see [error_handling.md](references/error_handling.md).
 
 ## Reference File Usage Strategy
 
 **Always load at start:**
-- output-template.md (needed for final output)
-- requirement-clarification.md (needed for Step 2)
+- output_template.md (needed for final output)
+- requirement_clarification.md (needed for Step 2)
 
 **Load on demand:**
-- business-rules.md - Load during Step 3.1 (business rule categorization)
-- p3-model.md - Load during Step 3.2 (P3 analysis)
+- business_rules.md - Load during Step 3.1 (business rule categorization)
+- p3_model.md - Load during Step 3.2 (P3 analysis)
 - ddd.md - Load when DDD terminology is unclear
 - modularization.md - Load during Step 3.4 (module assignment)
-- bdd-examples.md - Load when writing BDD scenarios to model-changes.json (Step 6)
-- error-handling.md - Load when specific errors occur
+- bdd_examples.md - Load when writing BDD scenarios to model-changes.json (Step 6)
+- error_handling.md - Load when specific errors occur
 
 **Never load:**
 - SKILL.md (you're executing it)
@@ -347,12 +347,12 @@ To optimize performance and reduce costs, implement prompt caching using Anthrop
 **Cache Block 1 - Stable Content (cache for full session):**
 Files that rarely change and should be cached across all conversations:
 - SKILL.md (full workflow, state machine, best practices)
-- requirement-clarification.md (clarification techniques)
-- business-rules.md (pattern catalog)
-- p3-model.md (semantic guide)
+- requirement_clarification.md (clarification techniques)
+- business_rules.md (pattern catalog)
+- p3_model.md (semantic guide)
 - ddd.md (tactical patterns)
 - modularization.md (principles)
-- output-template.md (design document template)
+- output_template.md (design document template)
 
 **Cache Block 2 - Session-Specific Content (cache per design session):**
 Content that stays stable within a single feature design:
@@ -379,7 +379,7 @@ You MUST track workflow state and only perform actions valid for current state. 
 | State | Actions | Next State(s) | Exit Condition | Validation |
 |-------|---------|---------------|----------------|------------|
 | **INITIAL** | Split input into requirements/rationale/design sketch; mark design decisions (EXPLICIT/IMPLIED/ABSENT) | CLARIFYING or VALIDATING_SKETCH (if clear + sketch exists) or DESIGNING (if clear + no sketch) | Input categorized, design confidence levels assigned | Step 1 items completed |
-| **CLARIFYING** | Prepare question batches (3-5 questions), present ONE BY ONE, validate responses | CLARIFYING (if gaps remain) or VALIDATING_SKETCH (if sketch exists) or DESIGNING (if no sketch) | Quality Checklist (requirement-clarification.md:53-66) passes AND user confirmed requirements clear | All Step 2 Validation Gate items pass |
+| **CLARIFYING** | Prepare question batches (3-5 questions), present ONE BY ONE, validate responses | CLARIFYING (if gaps remain) or VALIDATING_SKETCH (if sketch exists) or DESIGNING (if no sketch) | Quality Checklist (requirement_clarification.md:53-66) passes AND user confirmed requirements clear | All Step 2 Validation Gate items pass |
 | **VALIDATING_SKETCH** | Check consistency, identify conflicts, find gaps, resolve via AskUserQuestion | DESIGNING | All conflicts resolved, gaps addressed, confidence levels confirmed | Step 2.5 Validation Gate passes |
 | **DESIGNING** | Categorize BR, assign to P3 elements (preserve user's EXPLICIT decisions), identify changes (process each requirement separately) | UNIFYING | All business rules categorized, P3 changes reference source requirements, user's EXPLICIT decisions preserved | Step 3 Validation Gate passes |
 | **UNIFYING** | Union P3 changes, remove duplicates, detect conflicts, resolve via AskUserQuestion if needed | DRAFTING or CLARIFYING (if conflicts need user input) | No duplicate elements, all conflicts resolved, changes traceable | Step 4 Validation Gate passes |

@@ -35,14 +35,14 @@ The server uses stdio transport and can be run directly:
 
 ```bash
 # From repository root
-python3 src/mcp/noesis-local/server.py
+python3 src/mcp/noesis_local/server.py
 ```
 
 Or make it executable and run:
 
 ```bash
-chmod +x src/mcp/noesis-local/server.py
-./src/mcp/noesis-local/server.py
+chmod +x src/mcp/noesis_local/server.py
+./src/mcp/noesis_local/server.py
 ```
 
 ### Using with Claude Desktop or other MCP clients
@@ -54,7 +54,7 @@ Add to your MCP client configuration (e.g., Claude Desktop config):
   "mcpServers": {
     "noesis-local": {
       "command": "python3",
-      "args": ["/absolute/path/to/src/mcp/noesis-local/server.py"]
+      "args": ["/absolute/path/to/src/mcp/noesis_local/server.py"]
     }
   }
 }
@@ -85,11 +85,11 @@ Run the test suite from the repository root:
 # Run all tests
 pytest
 
-# Run only noesis-local tests
-pytest tests/mcp/noesis-local/
+# Run only noesis_local tests
+pytest tests/mcp/noesis_local/
 
 # Run with verbose output
-pytest -v tests/mcp/noesis-local/
+pytest -v tests/mcp/noesis_local/
 ```
 
 The test suite includes:
@@ -104,12 +104,12 @@ The test suite includes:
 SDLC/
 ├── src/
 │   └── mcp/
-│       └── noesis-local/
+│       └── noesis_local/
 │           ├── server.py           # Main MCP server implementation
 │           └── README.md           # This file
 ├── tests/
 │   └── mcp/
-│       └── noesis-local/
+│       └── noesis_local/
 │           └── test_server.py      # Test suite
 ├── pyproject.toml                  # Python dependencies and config
 └── README.md

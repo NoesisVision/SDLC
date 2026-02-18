@@ -6,12 +6,12 @@ This directory contains TypeScript utilities and scripts for SDLC tooling.
 
 ```
 tools/
-├── P3/                       # P3 Model related tools
-│   ├── schema.types.ts       # P3 Model TypeScript type definitions
-│   └── validate-model-changes.ts  # P3 model changes validator script
+├── p3/                       # P3 Model related tools
+│   ├── schema_types.ts       # P3 Model TypeScript type definitions
+│   └── validate_model_changes.ts  # P3 model changes validator script
 ├── utils/                    # Shared utility functions
-│   ├── validation.utils.ts   # JSON schema validation with AJV
-│   └── file.utils.ts         # File system helpers
+│   ├── validation_utils.ts   # JSON schema validation with AJV
+│   └── file_utils.ts         # File system helpers
 ├── claude/                   # Claude AI skills and commands
 │   ├── skills/              # Reusable AI skills
 │   └── commands/            # CLI commands
@@ -40,7 +40,7 @@ Run TypeScript scripts directly during development:
 
 ```bash
 # Run a script with tsx
-npm run dev tools/P3/validate-model-changes.ts <args>
+npm run dev tools/p3/validate_model_changes.ts <args>
 
 # Or use the convenience script
 npm run validate:model path/to/model-changes.json
@@ -55,7 +55,7 @@ Compile TypeScript to JavaScript:
 npm run build
 
 # Run compiled JavaScript
-node dist/P3/validate-model-changes.js <args>
+node dist/p3/validate_model_changes.js <args>
 
 # Clean build artifacts
 npm run clean
@@ -81,7 +81,7 @@ npm run format:check
 
 ### 1. Choose the Right Directory
 
-- `P3/` - P3 Model related tools and validators
+- `p3/` - P3 Model related tools and validators
 - `utils/` - Shared utility functions
 - Create new directories as needed for other categories
 
@@ -91,11 +91,11 @@ Use configured path aliases to avoid relative path issues:
 
 ```typescript
 // ✓ Good - using path aliases
-import { validateJsonAgainstSchema } from '@utils/validation.utils.js';
-import { fileExists } from '@utils/file.utils.js';
+import { validateJsonAgainstSchema } from '@utils/validation_utils.js';
+import { fileExists } from '@utils/file_utils.js';
 
 // ✗ Avoid - brittle relative paths
-import { validateJsonAgainstSchema } from '../utils/validation.utils.js';
+import { validateJsonAgainstSchema } from '../utils/validation_utils.js';
 ```
 
 **Available path aliases:**
@@ -136,11 +136,11 @@ For scripts meant to be run directly:
  *
  * Usage:
  *   npm run script-name <args>
- *   tsx tools/category/script-name.ts <args>
+ *   tsx tools/category/script_name.ts <args>
  */
 
 import { resolve } from 'path';
-import { someUtil } from '@utils/some.utils.js';
+import { someUtil } from '@utils/some_utils.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -169,7 +169,7 @@ For frequently used scripts, add a convenience npm script in `package.json`:
 ```json
 {
   "scripts": {
-    "script-name": "tsx tools/category/script-name.ts"
+    "script-name": "tsx tools/category/script_name.ts"
   }
 }
 ```
@@ -181,7 +181,7 @@ For frequently used scripts, add a convenience npm script in `package.json`:
 Create focused utility modules in the `utils/` directory:
 
 ```typescript
-// utils/my.utils.ts
+// utils/my_utils.ts
 
 /**
  * Does something useful
@@ -198,15 +198,15 @@ export function doSomething(input: string): string {
 - Export only what's needed
 - Add JSDoc comments for public functions
 - Include usage examples in comments
-- Add unit tests (place next to source: `my.utils.test.ts`)
+- Add unit tests (place next to source: `my_utils.test.ts`)
 
 ## Examples
 
 ### Example: Validate P3 Model Changes
 
-The [validate-model-changes.ts](P3/validate-model-changes.ts) script demonstrates:
-- Using shared utilities (`@utils/validation.utils.js`, `@utils/file.utils.js`)
-- Using shared types ([schema.types.ts](P3/schema.types.ts))
+The [validate_model_changes.ts](p3/validate_model_changes.ts) script demonstrates:
+- Using shared utilities (`@utils/validation_utils.js`, `@utils/file_utils.js`)
+- Using shared types ([schema_types.ts](p3/schema_types.ts))
 - Proper error handling and exit codes
 - Clear user feedback with ✓/✗ symbols
 - ESM module structure
@@ -216,11 +216,11 @@ The [validate-model-changes.ts](P3/validate-model-changes.ts) script demonstrate
 npm run validate:model path/to/model-changes.json
 
 # Run with tsx directly
-npm run dev tools/P3/validate-model-changes.ts path/to/model-changes.json
+npm run dev tools/p3/validate_model_changes.ts path/to/model-changes.json
 
 # Run compiled version
 npm run build
-node dist/P3/validate-model-changes.js path/to/model-changes.json
+node dist/p3/validate_model_changes.js path/to/model-changes.json
 ```
 
 ## Troubleshooting

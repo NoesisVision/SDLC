@@ -3,18 +3,18 @@
  * Validates P3 model changes JSON files against the schema
  *
  * This is a TypeScript implementation of the bash script:
- * tools/claude/skills/design-feature/validate-model-changes.sh
+ * tools/claude/skills/design_feature/validate_model_changes.sh
  *
  * Usage:
  *   npm run validate:model <path-to-model-changes.json>
- *   tsx tools/P3/validate-model-changes.ts <path-to-model-changes.json>
- *   node dist/P3/validate-model-changes.js <path-to-model-changes.json>
+ *   tsx tools/p3/validate_model_changes.ts <path-to-model-changes.json>
+ *   node dist/p3/validate_model_changes.js <path-to-model-changes.json>
  */
 
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { validateJsonAgainstSchema } from '@utils/validation.utils.js';
-import { fileExists } from '@utils/file.utils.js';
+import { validateJsonAgainstSchema } from '@utils/validation_utils.js';
+import { fileExists } from '@utils/file_utils.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -23,21 +23,21 @@ const __dirname = dirname(__filename);
 // Path to the schema file (relative to this script)
 const SCHEMA_PATH = resolve(
   __dirname,
-  '../claude/skills/design-feature/model-changes-schema.json'
+  '../claude/skills/design_feature/model_changes_schema.json'
 );
 
 /**
  * Prints usage information
  */
 function printUsage(): void {
-  console.error('Usage: validate-model-changes <path-to-model-changes.json>');
+  console.error('Usage: validate_model_changes <path-to-model-changes.json>');
   console.error('');
   console.error('Validates a P3 model changes JSON file against the schema.');
   console.error('');
   console.error('Examples:');
   console.error('  npm run validate:model specs/feature-1/model-changes.json');
-  console.error('  tsx tools/P3/validate-model-changes.ts data.json');
-  console.error('  node dist/P3/validate-model-changes.js data.json');
+  console.error('  tsx tools/p3/validate_model_changes.ts data.json');
+  console.error('  node dist/p3/validate_model_changes.js data.json');
 }
 
 /**

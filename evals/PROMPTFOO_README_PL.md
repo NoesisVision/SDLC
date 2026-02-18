@@ -17,12 +17,12 @@ Wszystkie agenty są wywoływane w trybie **nieinteraktywnym** i mogą ukończy�
 - **`PROMPTFOO_README_PL.md`** - Ten plik (dokumentacja po polsku)
 
 ### Skrypty exec (Node.js wrappers):
-- **`claude-exec.js`** - Wrapper dla Claude Code (używa `claude --print`)
-- **`gemini-exec.js`** - Wrapper dla Gemini CLI (używa `gemini --yolo`)
-- **`codex-exec.js`** - Wrapper dla Codex (używa `codex exec`)
+- **`claude_exec.js`** - Wrapper dla Claude Code (używa `claude --print`)
+- **`gemini_exec.js`** - Wrapper dla Gemini CLI (używa `gemini --yolo`)
+- **`codex_exec.js`** - Wrapper dla Codex (używa `codex exec`)
 
 ### Inne:
-- **`run-evaluation.sh`** - Skrypt do łatwego uruchamiania ewaluacji
+- **`run_evaluation.sh`** - Skrypt do łatwego uruchamiania ewaluacji
 - **`.gitignore`** - Zaktualizowany o wyniki promptfoo
 
 ## 🚀 Szybki Start
@@ -59,7 +59,7 @@ source ~/.zshrc
 
 Najprościej:
 ```bash
-./run-evaluation.sh
+./run_evaluation.sh
 ```
 
 Lub bezpośrednio:
@@ -75,7 +75,7 @@ promptfoo view
 
 Lub:
 ```bash
-./run-evaluation.sh --view-only
+./run_evaluation.sh --view-only
 ```
 
 ## 📋 Pytania Testowe
@@ -229,7 +229,7 @@ grep -r "Szymon Janikowski" .
 **Przyczyna**: Skrypty nie są executable
 **Rozwiązanie:**
 ```bash
-chmod +x claude-exec.js gemini-exec.js codex-exec.js run-evaluation.sh
+chmod +x claude_exec.js gemini_exec.js codex_exec.js run_evaluation.sh
 ```
 
 ## 📝 Customizacja
@@ -292,7 +292,7 @@ tests:
 
 ## 📚 Dalsze Kroki
 
-1. **Pierwsza ewaluacja**: `./run-evaluation.sh`
+1. **Pierwsza ewaluacja**: `./run_evaluation.sh`
 2. **Analiza wyników**: Otwórz w przeglądarce przez `promptfoo view`
 3. **Dostosuj pytania**: Jeśli potrzeba, edytuj oczekiwane odpowiedzi
 4. **Regularne testy**: Uruchamiaj co tydzień/miesiąc aby śledzić postęp agentów
@@ -412,13 +412,13 @@ export ANTHROPIC_API_KEY="sk-..."
 
 # Uruchom ewaluację
 promptfoo eval                    # Bezpośrednio
-./run-evaluation.sh               # Przez skrypt helper
+./run_evaluation.sh               # Przez skrypt helper
 promptfoo eval --table            # Z tabelą wyników
 promptfoo eval --no-progress-bar  # Bez paska, więcej logów
 
 # Zobacz wyniki
 promptfoo view                    # Otwórz w przeglądarce
-./run-evaluation.sh --view-only   # Przez skrypt helper
+./run_evaluation.sh --view-only   # Przez skrypt helper
 
 # Debug i testowanie
 promptfoo eval --filter-first-n 2              # Tylko 2 pierwsze testy
@@ -427,9 +427,9 @@ promptfoo eval --no-cache                      # Bez cache
 promptfoo eval --resume                        # Kontynuuj przerwane
 
 # Testy manualne wrapper scripts
-./claude-exec.js "test prompt"
-./gemini-exec.js "test prompt"
-./codex-exec.js "test prompt"
+./claude_exec.js "test prompt"
+./gemini_exec.js "test prompt"
+./codex_exec.js "test prompt"
 
 # Export wyników
 promptfoo eval -o results.json -o results.csv -o results.html

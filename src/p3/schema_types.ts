@@ -1,6 +1,6 @@
 /**
  * TypeScript types generated from P3 Model Changes Schema
- * Source: tools/claude/skills/design-feature/model-changes-schema.json
+ * Source: tools/claude/skills/design_feature/model_changes_schema.json
  */
 
 /**

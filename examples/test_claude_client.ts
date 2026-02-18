@@ -5,7 +5,7 @@
  * Claude Code CLI programmatically.
  *
  * Usage:
- *   ts-node examples/test-claude-client.ts
+ *   ts-node examples/test_claude_client.ts
  */
 
 import { ClaudeClient } from '../tools/claude/client';

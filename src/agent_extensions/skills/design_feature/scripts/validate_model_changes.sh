@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Validates model-changes.json against model-changes-schema.json
+# Validates model-changes.json against model_changes_schema.json
 # Uses the best available validator with graceful fallback
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCHEMA_FILE="${SCRIPT_DIR}/model-changes-schema.json"
+SCHEMA_FILE="${SCRIPT_DIR}/model_changes_schema.json"
 DATA_FILE="$1"
 
 if [ -z "$DATA_FILE" ]; then

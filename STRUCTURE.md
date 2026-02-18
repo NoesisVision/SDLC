@@ -14,7 +14,7 @@ This is a polyglot monorepo containing:
 ```
 SDLC/
 ├── src/                        # All source code
-│   ├── agent-extensions/       # Claude agent skills and commands
+│   ├── agent_extensions/       # Claude agent skills and commands
 │   │   ├── commands/           # CLI command definitions
 │   │   └── skills/             # Reusable AI skills
 │   │
@@ -24,23 +24,23 @@ SDLC/
 │   │       └── types/          # Type definitions
 │   │
 │   ├── mcp/                    # Model Context Protocol servers (Python)
-│   │   └── noesis-local/       # Example MCP server
+│   │   └── noesis_local/       # Example MCP server
 │   │       ├── server.py       # Main server implementation
 │   │       └── README.md
 │   │
-│   ├── P3/                     # P3 model validation tools
-│   │   ├── schema.types.ts
-│   │   └── validate-model-changes.ts
+│   ├── p3/                     # P3 model validation tools
+│   │   ├── schema_types.ts
+│   │   └── validate_model_changes.ts
 │   │
 │   └── utils/                  # Shared TypeScript utilities
-│       ├── validation.utils.ts
-│       ├── file.utils.ts
-│       ├── jsonl-parser.utils.ts
-│       └── path-encoding.utils.ts
+│       ├── validation_utils.ts
+│       ├── file_utils.ts
+│       ├── jsonl_parser_utils.ts
+│       └── path_encoding_utils.ts
 │
 ├── tests/                      # All tests (mirrors src/ structure)
 │   └── mcp/
-│       └── noesis-local/
+│       └── noesis_local/
 │           └── test_server.py
 │
 ├── dist/                       # TypeScript build output
@@ -74,7 +74,7 @@ SDLC/
 **Path Aliases:**
 ```typescript
 // Use path alias for shared utilities
-import { validateJsonAgainstSchema } from '@utils/validation.utils.js';
+import { validateJsonAgainstSchema } from '@utils/validation_utils.js';
 
 // Configured in tsconfig.json:
 "paths": {
@@ -143,16 +143,16 @@ All Python tools are configured in `pyproject.toml`:
 
 1. Create file in `src/utils/`:
    ```bash
-   touch src/utils/new-feature.utils.ts
+   touch src/utils/new_feature_utils.ts
    ```
 
 2. Export from the file and use path alias in other files:
    ```typescript
-   // src/utils/new-feature.utils.ts
+   // src/utils/new_feature_utils.ts
    export function myFunction() { /* ... */ }
 
-   // src/P3/some-file.ts
-   import { myFunction } from '@utils/new-feature.utils.js';
+   // src/p3/some_file.ts
+   import { myFunction } from '@utils/new_feature_utils.js';
    ```
 
 3. Run type-check and lint:
@@ -165,16 +165,16 @@ All Python tools are configured in `pyproject.toml`:
 
 1. Create server directory:
    ```bash
-   mkdir -p src/mcp/my-new-server
-   touch src/mcp/my-new-server/server.py
-   touch src/mcp/my-new-server/README.md
+   mkdir -p src/mcp/my_new_server
+   touch src/mcp/my_new_server/server.py
+   touch src/mcp/my_new_server/README.md
    ```
 
 2. Create test directory:
    ```bash
-   mkdir -p tests/mcp/my-new-server
-   touch tests/mcp/my-new-server/__init__.py
-   touch tests/mcp/my-new-server/test_server.py
+   mkdir -p tests/mcp/my_new_server
+   touch tests/mcp/my_new_server/__init__.py
+   touch tests/mcp/my_new_server/test_server.py
    ```
 
 3. Add dependencies to `pyproject.toml` if needed:
@@ -188,30 +188,30 @@ All Python tools are configured in `pyproject.toml`:
 
 4. Write tests and run:
    ```bash
-   pytest tests/mcp/my-new-server/
+   pytest tests/mcp/my_new_server/
    ```
 
 ### Adding a New Python Module (Non-MCP)
 
 1. Create module in `src/`:
    ```bash
-   mkdir -p src/my-module
-   touch src/my-module/__init__.py
-   touch src/my-module/main.py
+   mkdir -p src/my_module
+   touch src/my_module/__init__.py
+   touch src/my_module/main.py
    ```
 
 2. Create corresponding tests:
    ```bash
-   mkdir -p tests/my-module
-   touch tests/my-module/__init__.py
-   touch tests/my-module/test_main.py
+   mkdir -p tests/my_module
+   touch tests/my_module/__init__.py
+   touch tests/my_module/test_main.py
    ```
 
 3. Update `pyproject.toml` if needed:
    ```toml
    [tool.setuptools.packages.find]
    where = ["src"]
-   include = ["mcp*", "my-module*"]
+   include = ["mcp*", "my_module*"]
    ```
 
 ## Best Practices
@@ -223,7 +223,7 @@ All Python tools are configured in `pyproject.toml`:
 3. **No generated files in git:** `dist/`, `node_modules/`, `__pycache__/`, `.pytest_cache/`
 4. **Consistent naming:**
    - Python: `snake_case.py`
-   - TypeScript: `kebab-case.ts` or `PascalCase.ts` (for classes)
+   - TypeScript: `snake_case.ts`
 
 ### TypeScript
 
@@ -256,5 +256,5 @@ All references to `tools/` should now use `src/`.
 For questions about:
 - **TypeScript setup:** Check `tsconfig.json` and `package.json`
 - **Python setup:** Check `pyproject.toml`
-- **MCP servers:** See `src/mcp/noesis-local/README.md` for an example
+- **MCP servers:** See `src/mcp/noesis_local/README.md` for an example
 - **Repository structure:** This file (STRUCTURE.md)

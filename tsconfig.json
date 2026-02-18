@@ -39,7 +39,7 @@
   },
 
   "include": [
-    "src/P3/**/*.ts",
+    "src/p3/**/*.ts",
     "src/utils/**/*.ts"
   ],
 

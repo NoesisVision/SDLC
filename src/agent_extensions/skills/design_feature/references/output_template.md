@@ -39,10 +39,10 @@
 
 ### Validation
 
-The generated `model-changes.json` MUST be validated against the schema in `model-changes-schema.json`.
+The generated `model-changes.json` MUST be validated against the schema in `model_changes_schema.json`.
 Use the provided validation script:
 ```bash
-./validate-model-changes.sh model-changes.json
+./validate_model_changes.sh model-changes.json
 ```
 
 The script automatically uses the best available validator:

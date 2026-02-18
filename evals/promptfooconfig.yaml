@@ -5,13 +5,13 @@ description: "Evaluation of coding agents on technical project management querie
 
 # Define the providers (coding agents to compare)
 providers:
-  - id: exec:./claude-exec.js
+  - id: exec:./claude_exec.js
     label: "Claude Code"
 
-  - id: exec:./gemini-exec.js
+  - id: exec:./gemini_exec.js
     label: "Gemini CLI"
 
-  - id: exec:./codex-exec.js
+  - id: exec:./codex_exec.js
     label: "Codex"
 
 # Define default test cases (variables passed to prompts)

@@ -2,7 +2,7 @@
 
 ## Logi w czasie rzeczywistym
 
-Skrypty wrapper (`claude-exec.js`, `gemini-exec.js`, `codex-exec.js`) teraz logują do stderr:
+Skrypty wrapper (`claude_exec.js`, `gemini_exec.js`, `codex_exec.js`) teraz logują do stderr:
 
 ```
 [Claude] Starting evaluation...
@@ -39,7 +39,7 @@ Każdy wrapper script wypisuje:
 ```
 Provider call failed during eval
 {
-  "providerId": "exec:./claude-exec.js",
+  "providerId": "exec:./claude_exec.js",
   "error": { ... }
 }
 ```
@@ -132,16 +132,16 @@ Agent costs zależą od długości odpowiedzi i modeli.
 ps aux | grep -E "(claude|gemini|codex)"
 
 # Zabij wisujące procesy
-pkill -f claude-exec.js
-pkill -f gemini-exec.js
-pkill -f codex-exec.js
+pkill -f claude_exec.js
+pkill -f gemini_exec.js
+pkill -f codex_exec.js
 ```
 
 ### Brak logów od agentów
 Sprawdź czy skrypty są executable:
 ```bash
 ls -la *-exec.js
-chmod +x claude-exec.js gemini-exec.js codex-exec.js
+chmod +x claude_exec.js gemini_exec.js codex_exec.js
 ```
 
 ### Provider error: ENOENT

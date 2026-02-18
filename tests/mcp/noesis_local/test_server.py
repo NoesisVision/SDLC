@@ -33,7 +33,7 @@ def test_database_initialization() -> None:
 
         # Get the path to the server script
         repo_root = Path(__file__).parent.parent.parent.parent
-        server_path = repo_root / "src" / "mcp" / "noesis-local" / "server.py"
+        server_path = repo_root / "src" / "mcp" / "noesis_local" / "server.py"
         assert server_path.exists(), f"Server script not found at {server_path}"
 
         # Start the server process in the temp directory
@@ -122,7 +122,7 @@ def test_database_persists_across_restarts() -> None:
         settings_file = noesis_dir / "graph.db.settings"
 
         repo_root = Path(__file__).parent.parent.parent.parent
-        server_path = repo_root / "src" / "mcp" / "noesis-local" / "server.py"
+        server_path = repo_root / "src" / "mcp" / "noesis_local" / "server.py"
         assert server_path.exists(), f"Server script not found at {server_path}"
 
         # First server start
@@ -244,11 +244,11 @@ def test_server_responds_to_ping() -> None:
     """
     # Get the path to the server script (should be in src/mcp/noesis-local/)
     repo_root = Path(__file__).parent.parent.parent.parent
-    server_path = repo_root / "src" / "mcp" / "noesis-local" / "server.py"
+    server_path = repo_root / "src" / "mcp" / "noesis_local" / "server.py"
 
     if not server_path.exists():
         # Fallback for transition period when tools/ still exists
-        server_path = repo_root / "tools" / "mcp" / "noesis-local" / "server.py"
+        server_path = repo_root / "tools" / "mcp" / "noesis_local" / "server.py"
 
     assert server_path.exists(), f"Server script not found at {server_path}"
 
@@ -336,11 +336,11 @@ def test_server_lists_tools() -> None:
     are available in the tools list.
     """
     repo_root = Path(__file__).parent.parent.parent.parent
-    server_path = repo_root / "src" / "mcp" / "noesis-local" / "server.py"
+    server_path = repo_root / "src" / "mcp" / "noesis_local" / "server.py"
 
     if not server_path.exists():
         # Fallback for transition period when tools/ still exists
-        server_path = repo_root / "tools" / "mcp" / "noesis-local" / "server.py"
+        server_path = repo_root / "tools" / "mcp" / "noesis_local" / "server.py"
 
     assert server_path.exists(), f"Server script not found at {server_path}"
 
@@ -441,10 +441,10 @@ def test_analyze_conversation_file_error_handling() -> None:
     2. Empty file (if we can create one)
     """
     repo_root = Path(__file__).parent.parent.parent.parent
-    server_path = repo_root / "src" / "mcp" / "noesis-local" / "server.py"
+    server_path = repo_root / "src" / "mcp" / "noesis_local" / "server.py"
 
     if not server_path.exists():
-        server_path = repo_root / "tools" / "mcp" / "noesis-local" / "server.py"
+        server_path = repo_root / "tools" / "mcp" / "noesis_local" / "server.py"
 
     assert server_path.exists(), f"Server script not found at {server_path}"
 

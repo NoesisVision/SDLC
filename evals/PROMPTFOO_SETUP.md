@@ -52,9 +52,9 @@ source ~/.zshrc
 
 ### Wrapper Scripts
 Non-interactive execution wrappers for each agent:
-- `claude-wrapper.sh` - Claude Code wrapper
-- `gemini-wrapper.sh` - Gemini CLI wrapper
-- `codex-wrapper.sh` - Codex wrapper
+- `claude_wrapper.sh` - Claude Code wrapper
+- `gemini_wrapper.sh` - Gemini CLI wrapper
+- `codex_wrapper.sh` - Codex wrapper
 
 These scripts ensure agents:
 - Run in non-interactive mode

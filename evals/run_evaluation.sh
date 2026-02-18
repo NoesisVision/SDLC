@@ -1,6 +1,6 @@
 #!/bin/bash
 # Quick start script for running promptfoo evaluation
-# Usage: ./run-evaluation.sh [--view-only]
+# Usage: ./run_evaluation.sh [--view-only]
 
 set -euo pipefail
 
@@ -53,7 +53,7 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
 fi
 
 # Make wrapper scripts executable
-chmod +x claude-wrapper.sh gemini-wrapper.sh codex-wrapper.sh 2>/dev/null || true
+chmod +x claude_wrapper.sh gemini_wrapper.sh codex_wrapper.sh 2>/dev/null || true
 
 # Run evaluation or view results
 if [ "${1:-}" == "--view-only" ]; then
@@ -75,7 +75,7 @@ else
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             promptfoo view
         else
-            echo -e "${YELLOW}View results later with: ./run-evaluation.sh --view-only${NC}"
+            echo -e "${YELLOW}View results later with: ./run_evaluation.sh --view-only${NC}"
         fi
     else
         echo -e "\n${RED}✗ Evaluation failed${NC}"
