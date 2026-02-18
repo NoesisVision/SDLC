@@ -7,8 +7,14 @@
 4. Mimic `src` structure in `tests`.
 5. Use **snake_case** for directory and file name.
 
+## TypeScript
+1. Use ESM modules — all imports must use `.js` extensions (even for `.ts` files).
+2. Use path alias `@utils/*` for imports from `src/utils/`.
+3. Strict TypeScript — no `any` types without justification.
+
 ## Python
-1. Use `@dataclass` for entities in internal logic.
-2. Use `Pydantic` for DTOs used in API.
-3. Use `pytest` for tests.
-4. Use docstrings with Google style for inline documentation.
+1. Use type hints for all public functions.
+2. Use `@dataclass` for entities in internal logic.
+3. Use `Pydantic` for DTOs used in API.
+4. Use `pytest` for tests.
+5. Use docstrings with Google style for inline documentation.
