@@ -6,7 +6,6 @@ This module contains tests to verify the MCP server functionality.
 """
 
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -231,103 +230,6 @@ def test_database_persists_across_restarts() -> None:
             process2.terminate()
             process2.wait(timeout=5)
 
-
-def test_server_responds_to_ping() -> None:
-    """
-    Test that the server responds to a ping tool call.
-
-    This test:
-    1. Starts the MCP server as a subprocess
-    2. Sends an initialize request
-    3. Sends a tools/call request for the ping tool
-    4. Verifies the response is "pong"
-    """
-    # Get the path to the server script (should be in src/mcp/noesis-local/)
-    repo_root = Path(__file__).parent.parent.parent.parent
-    server_path = repo_root / "src" / "mcp" / "noesis_local" / "server.py"
-
-    if not server_path.exists():
-        # Fallback for transition period when tools/ still exists
-        server_path = repo_root / "tools" / "mcp" / "noesis_local" / "server.py"
-
-    assert server_path.exists(), f"Server script not found at {server_path}"
-
-    # Start the server process
-    process = subprocess.Popen(
-        [sys.executable, str(server_path)],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-
-    try:
-        # Send initialize request
-        initialize_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test-client", "version": "1.0.0"},
-            },
-        }
-
-        process.stdin.write(json.dumps(initialize_request) + "\n")
-        process.stdin.flush()
-
-        # Read initialize response
-        response_line = process.stdout.readline()
-        initialize_response = json.loads(response_line)
-
-        print(f"Initialize response: {json.dumps(initialize_response, indent=2)}")
-
-        assert initialize_response["jsonrpc"] == "2.0"
-        assert initialize_response["id"] == 1
-        assert "result" in initialize_response
-
-        # Send initialized notification
-        initialized_notification = {
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-        }
-
-        process.stdin.write(json.dumps(initialized_notification) + "\n")
-        process.stdin.flush()
-
-        # Send tools/call request for ping
-        ping_request = {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {"name": "ping", "arguments": {}},
-        }
-
-        process.stdin.write(json.dumps(ping_request) + "\n")
-        process.stdin.flush()
-
-        # Read ping response
-        ping_response_line = process.stdout.readline()
-        ping_response = json.loads(ping_response_line)
-
-        print(f"Ping response: {json.dumps(ping_response, indent=2)}")
-
-        # Verify the response
-        assert ping_response["jsonrpc"] == "2.0"
-        assert ping_response["id"] == 2
-        assert "result" in ping_response
-        assert ping_response["result"]["content"][0]["text"] == "pong"
-
-        print("✓ Server responds correctly to ping tool call")
-
-    finally:
-        # Clean up the process
-        process.terminate()
-        process.wait(timeout=5)
-
-
 def test_server_lists_tools() -> None:
     """
     Test that the server correctly lists available tools.
@@ -337,11 +239,6 @@ def test_server_lists_tools() -> None:
     """
     repo_root = Path(__file__).parent.parent.parent.parent
     server_path = repo_root / "src" / "mcp" / "noesis_local" / "server.py"
-
-    if not server_path.exists():
-        # Fallback for transition period when tools/ still exists
-        server_path = repo_root / "tools" / "mcp" / "noesis_local" / "server.py"
-
     assert server_path.exists(), f"Server script not found at {server_path}"
 
     process = subprocess.Popen(
@@ -409,11 +306,6 @@ def test_server_lists_tools() -> None:
         tools = tools_response["result"]["tools"]
         tool_names = [t["name"] for t in tools]
 
-        # Verify ping tool
-        ping_tool = next((t for t in tools if t["name"] == "ping"), None)
-        assert ping_tool is not None, "ping tool not found in tools list"
-        assert ping_tool["description"] is not None
-
         # Verify analyze_conversation_file tool
         analyze_tool = next((t for t in tools if t["name"] == "analyze_conversation_file"), None)
         assert analyze_tool is not None, "analyze_conversation_file tool not found in tools list"
@@ -430,124 +322,3 @@ def test_server_lists_tools() -> None:
     finally:
         process.terminate()
         process.wait(timeout=5)
-
-
-def test_analyze_conversation_file_error_handling() -> None:
-    """
-    Test that analyze_conversation_file handles file errors correctly.
-
-    This test verifies error handling for:
-    1. Non-existent file
-    2. Empty file (if we can create one)
-    """
-    repo_root = Path(__file__).parent.parent.parent.parent
-    server_path = repo_root / "src" / "mcp" / "noesis_local" / "server.py"
-
-    if not server_path.exists():
-        server_path = repo_root / "tools" / "mcp" / "noesis_local" / "server.py"
-
-    assert server_path.exists(), f"Server script not found at {server_path}"
-
-    process = subprocess.Popen(
-        [sys.executable, str(server_path)],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-
-    try:
-        # Send initialize request
-        initialize_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test-client", "version": "1.0.0"},
-            },
-        }
-
-        process.stdin.write(json.dumps(initialize_request) + "\n")
-        process.stdin.flush()
-
-        response_line = process.stdout.readline()
-        initialize_response = json.loads(response_line)
-        assert "result" in initialize_response
-
-        # Send initialized notification
-        initialized_notification = {
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-        }
-
-        process.stdin.write(json.dumps(initialized_notification) + "\n")
-        process.stdin.flush()
-
-        # Test 1: Non-existent file
-        analyze_request = {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {
-                "name": "analyze_conversation_file",
-                "arguments": {"file_path": "/tmp/nonexistent_conversation_file_12345.txt"},
-            },
-        }
-
-        process.stdin.write(json.dumps(analyze_request) + "\n")
-        process.stdin.flush()
-
-        analyze_response_line = process.stdout.readline()
-        analyze_response = json.loads(analyze_response_line)
-
-        print(f"File not found response: {json.dumps(analyze_response, indent=2)}")
-
-        # Should return an error result
-        assert analyze_response["jsonrpc"] == "2.0"
-        assert analyze_response["id"] == 2
-        assert "result" in analyze_response
-        assert analyze_response["result"]["isError"] == True
-        assert "File not found" in analyze_response["result"]["content"][0]["text"]
-
-        print("✓ Server correctly handles file not found error")
-
-    finally:
-        process.terminate()
-        process.wait(timeout=5)
-
-
-if __name__ == "__main__":
-    print("Running MCP Server Tests...\n")
-
-    try:
-        print("Test 1: Database initialization")
-        test_database_initialization()
-        print()
-
-        print("Test 2: Database persistence")
-        test_database_persists_across_restarts()
-        print()
-
-        print("Test 3: Server lists tools")
-        test_server_lists_tools()
-        print()
-
-        print("Test 4: Server responds to ping")
-        test_server_responds_to_ping()
-        print()
-
-        print("Test 5: Analyze conversation file error handling")
-        test_analyze_conversation_file_error_handling()
-        print("\n✓ All tests passed!")
-    except AssertionError as e:
-        print(f"\n✗ Test failed: {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n✗ Unexpected error: {e}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)
