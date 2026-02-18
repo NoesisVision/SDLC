@@ -34,20 +34,22 @@ dev = [
 
 # Note: This repository contains standalone scripts (MCP servers, TypeScript tools)
 # rather than installable Python packages. Dependencies are managed here, but
-# there's no package to install. MCP servers are run directly from src/mcp/*/server.py
+# there's no package to install. MCP servers are run directly from src/mcp_servers/*/server.py
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_extensions", "src/mcp", "src/p3", "src/utils"]
+packages = ["src/agent_extensions", "src/mcp_servers", "src/p3", "src/utils"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_mode = "auto"
 addopts = [
     "-v",
     "--strict-markers",
     "--strict-config",
+    "--import-mode=importlib",
 ]
 
 [tool.black]

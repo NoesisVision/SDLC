@@ -19,4 +19,5 @@
 3. Use `Pydantic` for DTOs used in API.
 4. Use `pytest` for tests.
 5. Use docstrings with Google style for inline documentation.
-6. Do NOT use comments in method bodies. Use descriptive function and variable names. 
+6. Do NOT use comments in method bodies. Use descriptive function and variable names.
+7. Use ONLY `uv` to run scripts.

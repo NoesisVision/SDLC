@@ -21,7 +21,7 @@ uv sync --extra dev
 ### Running the Server
 
 ```bash
-uv run src/mcp/noesis_local/server.py
+uv run src/mcp_servers/noesis_local/server.py
 ```
 
 ### Using with MCP clients
@@ -33,7 +33,7 @@ Add to your MCP client configuration (e.g., Claude Code / Gemini CLI config):
   "mcpServers": {
     "noesis": {
       "command": "uv",
-      "args": ["run", "/absolute/path/to/src/mcp/noesis_local/server.py"]
+      "args": ["run", "/absolute/path/to/src/mcp_servers/noesis_local/server.py"]
     }
   }
 }

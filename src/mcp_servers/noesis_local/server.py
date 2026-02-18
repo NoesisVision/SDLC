@@ -17,7 +17,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from redislite.falkordb_client import FalkorDB
 
-from analyze_conversation import analyze_conversation_file
+from .analyze_conversation import analyze_conversation_file
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,10 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
             logger.info("FalkorDB shutting down")
 
 
-mcp = FastMCP("noesis-local", lifespan=app_lifespan)
+noesis_server = FastMCP("noesis-local", lifespan=app_lifespan)
 
-mcp.tool()(analyze_conversation_file)
+noesis_server.tool()(analyze_conversation_file)
 
 if __name__ == "__main__":
     # Run the server using stdio transport
-    mcp.run(transport="stdio")
+    noesis_server.run(transport="stdio")
