@@ -47,3 +47,5 @@ yarn-error.log*
 .promptfoo/
 promptfoo-results.json
 promptfoo-results.html
+
+.serena/
