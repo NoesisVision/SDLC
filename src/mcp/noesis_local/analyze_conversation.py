@@ -1,11 +1,14 @@
 """Conversation file analysis tool for the Noesis Local MCP server."""
 
 import json
+import logging
 from pathlib import Path
 
 from mcp.server.fastmcp import Context
 from mcp.types import SamplingMessage, TextContent
 from pydantic import BaseModel, Field, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class DomainTerm(BaseModel):
@@ -117,10 +120,12 @@ async def analyze_conversation_file(
 
     try:
         conversation_text = resolved_path.read_text(encoding="utf-8")
-    except PermissionError as e:
-        raise PermissionError(f"Permission denied reading file {resolved_path}: {e}")
-    except UnicodeDecodeError as e:
-        raise ValueError(f"File encoding error (expected UTF-8): {e}")
+    except PermissionError:
+        logger.exception("Permission denied reading file %s", resolved_path)
+        raise
+    except UnicodeDecodeError:
+        logger.exception("File encoding error (expected UTF-8) for %s", resolved_path)
+        raise
 
     if not conversation_text.strip():
         raise ValueError(f"File is empty: {resolved_path}")
@@ -156,11 +161,11 @@ async def analyze_conversation_file(
             parsed_data = json.loads(response_text)
             return AnalyzeConversationFileResponse(**parsed_data)
 
-        except (json.JSONDecodeError, ValidationError) as e:
+        except (json.JSONDecodeError, ValidationError):
             if attempt == max_retries - 1:
-                raise RuntimeError(
-                    f"Failed to analyze conversation after {max_retries} attempts: {e}"
-                )
+                logger.exception("Failed to parse LLM response after %d attempts", max_retries)
+                raise
+            logger.warning("LLM response parsing failed (attempt %d), retrying", attempt + 1)
             prompt += "\n\nIMPORTANT: Return ONLY valid JSON, no markdown, no explanations."
 
     raise RuntimeError("Analysis failed unexpectedly")

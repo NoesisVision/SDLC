@@ -6,8 +6,8 @@ A Model Context Protocol server for local Noesis operations.
 This server provides tools for interacting with the local Noesis environment.
 """
 
+import logging
 import os
-import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -18,6 +18,8 @@ from mcp.server.fastmcp import FastMCP
 from redislite.falkordb_client import FalkorDB
 
 from analyze_conversation import analyze_conversation_file
+
+logger = logging.getLogger(__name__)
 
 NOESIS_GRAPH = "noesis"
 
@@ -34,61 +36,43 @@ class GraphContext:
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
-    """
-    Manage FalkorDB lifecycle for the MCP server.
+    """Manage FalkorDB lifecycle for the MCP server.
 
     Initializes the database on startup and ensures proper cleanup on shutdown.
     The database file is created in the working directory inherited from the
     parent process (Claude/Gemini CLI).
     """
-    # Determine database location
-    cwd = Path(os.getcwd())
-    noesis_dir = cwd / ".noesis"
+
+    working_directory = Path(os.getcwd())
+    noesis_dir = working_directory / ".noesis"
     db_file = noesis_dir / "graph.db"
 
-    # Ensure .noesis directory exists
     try:
         noesis_dir.mkdir(exist_ok=True)
-    except PermissionError as e:
-        print(f"Error: Cannot create .noesis directory: {e}", file=sys.stderr)
-        raise RuntimeError(f"Permission denied for creating .noesis directory: {e}")
-    except Exception as e:
-        print(f"Error: Failed to create .noesis directory: {e}", file=sys.stderr)
-        raise RuntimeError(f"Failed to create .noesis directory: {e}")
+    except Exception:
+        logger.exception("Failed to create .noesis directory at %s", noesis_dir)
+        raise
 
-    # Initialize FalkorDB
     db = None
     graph = None
     try:
         db = FalkorDB(str(db_file))
         graph = db.select_graph(NOESIS_GRAPH)
-        print(f"FalkorDB initialized at {db_file}", file=sys.stderr)
+        logger.info("FalkorDB initialized at %s", db_file)
 
         # Yield the context to make it available to tools
         yield GraphContext(db=db, graph=graph, db_path=db_file, graph_name=NOESIS_GRAPH)
 
-    except FileNotFoundError as e:
-        print(f"Error: Cannot access database path: {e}", file=sys.stderr)
-        raise RuntimeError(f"Cannot access database path: {db_file}")
-    except PermissionError as e:
-        print(f"Error: Permission denied for database: {e}", file=sys.stderr)
-        raise RuntimeError(f"Permission denied for database: {db_file}")
-    except Exception as e:
-        print(f"Error: Failed to initialize FalkorDB: {e}", file=sys.stderr)
-        raise RuntimeError(f"Failed to initialize FalkorDB: {e}")
+    except Exception:
+        logger.exception("Failed to initialize FalkorDB at %s", db_file)
+        raise
     finally:
-        # Cleanup: FalkorDB connections are managed by redislite.
-        # The connection will close automatically when db goes out of scope.
-        # The database file persists on disk.
         if db is not None:
-            print("FalkorDB shutting down", file=sys.stderr)
+            logger.info("FalkorDB shutting down")
 
-
-# Initialize FastMCP server with lifespan
 mcp = FastMCP("noesis-local", lifespan=app_lifespan)
 
 mcp.tool()(analyze_conversation_file)
-
 
 if __name__ == "__main__":
     # Run the server using stdio transport

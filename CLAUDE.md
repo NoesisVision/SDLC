@@ -4,8 +4,9 @@
 1. Use functional paradigm for data transformation.
 2. Use procedural paradigm for use cases coordination logic.
 3. Structure code base on capabilities not technical patterns (like entities, repositories, services).
-4. Mimic `src` structure in `tests`.
-5. Use **snake_case** for directory and file name.
+4. Split a large function into a hierarchical structure of private functions with descriptive names.
+5. Mimic `src` structure in `tests`.
+6. Use **snake_case** for directory and file name.
 
 ## TypeScript
 1. Use ESM modules — all imports must use `.js` extensions (even for `.ts` files).
@@ -18,3 +19,4 @@
 3. Use `Pydantic` for DTOs used in API.
 4. Use `pytest` for tests.
 5. Use docstrings with Google style for inline documentation.
+6. Do NOT use comments in method bodies. Use descriptive function and variable names. 
