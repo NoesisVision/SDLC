@@ -31,7 +31,6 @@ _SMART_QUOTES: list[tuple[str, str]] = [
     ("\u2013", "-"),
     ("\u2014", "--"),
 ]
-
 _TURN_PATTERN = re.compile(
     r"^\*\*(\d{1,2}:\d{2})\*\*\s*\n"
     r"(.+?)\n"
@@ -117,7 +116,6 @@ async def clean_conversation_file(file_path: str, ctx: Context) -> CleanConversa
 
 
 def _normalize_encoding(text: str) -> str:
-    """Apply all deterministic text normalization steps."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("\u00a0", " ")
     text = _INVISIBLE_CHARS.sub("", text)
@@ -129,22 +127,6 @@ def _normalize_encoding(text: str) -> str:
         text = text.replace(smart, straight)
 
     return text
-
-
-def _clean_text_block(text: str) -> str:
-    """Clean a speaker's text block and split into sentences."""
-    text = text.strip()
-    lines = text.split("\n")
-    lines = [line.strip() for line in lines if line.strip()]
-    text = " ".join(lines)
-    text = _MULTI_SPACES.sub(" ", text)
-    text = _CAPITALIZE_AFTER_PUNCT.sub(lambda m: m.group(1) + m.group(2).upper(), text)
-    return text
-
-
-def _split_sentences(text: str) -> list[str]:
-    sentences = _SENTENCE_SEGMENTER.segment(text)
-    return [s.strip() for s in sentences if s.strip()]
 
 
 def _extract_metadata(text: str) -> tuple[str | None, str | None, str]:
@@ -180,6 +162,21 @@ def _parse_statements(body: str) -> list[Statement]:
             statements.append(Statement(speaker=speaker, time=time, sentences=sentences))
 
     return statements
+
+
+def _clean_text_block(text: str) -> str:
+    text = text.strip()
+    lines = text.split("\n")
+    lines = [stripped for line in lines if (stripped := line.strip())]
+    text = " ".join(lines)
+    text = _MULTI_SPACES.sub(" ", text)
+    text = _CAPITALIZE_AFTER_PUNCT.sub(lambda m: m.group(1) + m.group(2).upper(), text)
+    return text
+
+
+def _split_sentences(text: str) -> list[str]:
+    sentences = _SENTENCE_SEGMENTER.segment(text)
+    return [stripped for s in sentences if (stripped := s.strip())]
 
 
 async def _ask_user_for_metadata(ctx: Context, field: str, file_path: Path) -> str:

@@ -8,17 +8,6 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcp_servers.noesis_local.server import noesis_server
 
 
-def _make_sampling_callback(response_text: str):
-    async def callback(context, params):
-        return types.CreateMessageResult(
-            role="assistant",
-            content=types.TextContent(type="text", text=response_text),
-            model="fake-model",
-        )
-
-    return callback
-
-
 BASIC_CONVERSATION = """\
 # System Modularization
 2026-02-19
@@ -37,11 +26,7 @@ async def test_basic_conversation_parsing(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "conv.md"
     conv_file.write_text(BASIC_CONVERSATION, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file))
 
     assert data["title"] == "System Modularization"
     assert data["date"] == "2026-02-19 12:13"
@@ -79,11 +64,7 @@ async def test_text_cleaning(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "dirty.md"
     conv_file.write_text(CONVERSATION_WITH_DIRTY_TEXT, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file))
 
     first_text = " ".join(data["statements"][0]["sentences"])
     assert "  " not in first_text
@@ -117,11 +98,7 @@ async def test_line_break_joining(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "breaks.md"
     conv_file.write_text(CONVERSATION_WITH_LINE_BREAKS, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file))
 
     sentences = data["statements"][0]["sentences"]
     assert len(sentences) == 2
@@ -144,11 +121,7 @@ async def test_missing_title_asks_user(tmp_path, monkeypatch) -> None:
 
     callback = _make_sampling_callback("Weekly Standup")
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True, sampling_callback=callback) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file), callback)
 
     assert data["title"] == "Weekly Standup"
     assert data["date"] == "2026-02-19 14:00"
@@ -170,11 +143,7 @@ async def test_missing_date_asks_user(tmp_path, monkeypatch) -> None:
 
     callback = _make_sampling_callback("2026-03-15")
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True, sampling_callback=callback) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file), callback)
 
     assert data["title"] == "Some Meeting"
     assert data["date"] == "2026-03-15 08:30"
@@ -191,11 +160,7 @@ async def test_windows_line_endings(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "windows.md"
     conv_file.write_bytes(CONVERSATION_WITH_WINDOWS_ENDINGS.encode("utf-8"))
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file))
 
     assert data["title"] == "Test"
     assert len(data["statements"]) == 1
@@ -243,11 +208,7 @@ async def test_encoding_artifact_cleanup(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "encoding.md"
     conv_file.write_text(CONVERSATION_ENCODING_ARTIFACTS, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file))
 
     all_text = " ".join(s for stmt in data["statements"] for s in stmt["sentences"])
     assert "\u2014" not in all_text
@@ -268,11 +229,7 @@ Dr. Smith arrived at 9 A.M. He started the meeting immediately.
     conv_file = tmp_path / "abbrev.md"
     conv_file.write_text(conversation, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file))
 
     sentences = data["statements"][0]["sentences"]
     assert len(sentences) == 2
@@ -305,12 +262,33 @@ First sentence. second sentence. third one here.
     conv_file = tmp_path / "cap.md"
     conv_file.write_text(conversation, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "clean_conversation_file", {"file_path": str(conv_file)}
-        )
-        data = json.loads(result.content[0].text)
+    data = await _call_clean_conversation_file(str(conv_file))
 
     sentences = data["statements"][0]["sentences"]
     for sentence in sentences:
         assert sentence[0].isupper(), f"Sentence should start with uppercase: {sentence}"
+
+def _make_sampling_callback(response_text: str):
+    async def callback(context, params):
+        return types.CreateMessageResult(
+            role="assistant",
+            content=types.TextContent(type="text", text=response_text),
+            model="fake-model",
+        )
+
+    return callback
+
+
+async def _call_clean_conversation_file(
+    file_path: str, sampling_callback=None
+) -> dict:
+    kwargs = {"raise_exceptions": True}
+    if sampling_callback is not None:
+        kwargs["sampling_callback"] = sampling_callback
+    async with create_connected_server_and_client_session(
+        noesis_server, **kwargs
+    ) as client:
+        result = await client.call_tool(
+            "clean_conversation_file", {"file_path": file_path}
+        )
+        return json.loads(result.content[0].text)
