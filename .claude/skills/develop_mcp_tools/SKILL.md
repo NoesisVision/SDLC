@@ -1,6 +1,6 @@
 ---
 name: Develop MCP tools
-description: Turn extension ideas for AI agents into MCP tools. Use it whenever a user asks for design or implementation of an MCP tool.
+description: Turn extension ideas for AI agents into MCP tools. Use it whenever a user asks for design or implementation of an MCP tool or capability used by an MCP tool.
 ---
 
 # Develop MCP tools
@@ -39,7 +39,7 @@ Identify functions or data structures the new tool can reuse.
 Analyze the request against existing capabilities.
 If scope, inputs, or expected output are unclear, ask targeted clarification questions before designing.
 
-### 3. Design the tool API
+### 3. Design the tool or capability API
 
 Propose the following for user acceptance before writing any code:
 - **Tool name**: snake_case verb-noun
@@ -48,16 +48,56 @@ Propose the following for user acceptance before writing any code:
 - **Output model**: a Pydantic `BaseModel` class with field names, types, and `Field(description=...)`
 - **LLM access**: whether `ctx: Context` is needed
 
-### 4. Implement the tool
+### 4. Implement the tool or capability
 
-File placement:
-- New capability module: `src/mcp_servers/<server_name>/<capability>.py`
+Tools:
+- New tool module: `src/mcp_servers/<server_name>/<tool>.py`
 - Register in `server.py`: `server.tool()(function_name)`
 
-### 5. Write end-to-end tests
+Capabilities:
+- New capability module: `src/mcp_servers/<server_name>/<capability>.py`
+
+### 5. Write capability tests
+
+Write these tests for capabilities added independently and created as a part of a tool.
 
 Test file: `tests/mcp_servers/<server_name>/test_<capability>.py`
 
+### 6. Write end-to-end tests
+
+Write these tests for tools ONLY. Do NOT write these tests for capabilities.
+
+Test file: `tests/mcp_servers/<server_name>/test_<tool>.py`
+
 - Import: `from mcp.shared.memory import create_connected_server_and_client_session`
 - Call tools through the MCP protocol (`client.call_tool(...)`) — not by calling implementation functions directly
-- Run: `uv run pytest tests/mcp_servers/<server_name>/`
+
+### 7. Checklist
+
+Before finishing, verify each item:
+
+  **Tool contract:**
+  - [ ] Tool function returns a `pydantic.BaseModel` subclass with `Field(description="...")`
+  - [ ] Docstring is informative and precise (it becomes the AI-visible tool description)
+  - [ ] `ctx: Context` is injected only if the tool calls the LLM
+
+  **stdio & logging:**
+  - [ ] No `print()` anywhere — stdout is the MCP JSON-RPC channel
+  - [ ] Module-level logging `logger = logging.getLogger(__name__)`
+
+  **Code style:**
+  - [ ] No comments inside function bodies
+  - [ ] No docstrings on private functions
+  - [ ] Public functions in alphabetical order; private functions after their callers
+  - [ ] Type hints on all public functions
+  - [ ] Google-style docstrings on public functions
+
+  **Tests:**
+  - [ ] Function tests for capabilities used by many tools
+  - [ ] Only E2E tests for tools
+  - [ ] E2E tests use fake MCP client (`create_connected_server_and_client_session`)
+  - [ ] Tools invoked via `client.call_tool(...)`, not by calling the function directly
+  - [ ] LLM responses simulated via `sampling_callback` when tool uses `ctx`
+
+  **Run:**
+  - [ ] `uv run pytest tests/mcp_servers/<server_name>/`
