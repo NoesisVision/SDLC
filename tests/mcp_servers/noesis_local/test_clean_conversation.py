@@ -216,18 +216,20 @@ async def test_encoding_artifact_cleanup(tmp_path, monkeypatch) -> None:
     assert "\u201d" not in all_text
 
 
-async def test_sentence_splitting_with_abbreviations(tmp_path, monkeypatch) -> None:
-    """Test that abbreviations like Dr. or e.g. don't cause false splits."""
-    monkeypatch.chdir(tmp_path)
-    conversation = """\
+CONVERSATION_WITH_ABBREVIATIONS = """\
 # Abbreviation Test
 2026-01-01
 **10:00**
 Speaker1
 Dr. Smith arrived at 9 A.M. He started the meeting immediately.
 """
+
+
+async def test_sentence_splitting_with_abbreviations(tmp_path, monkeypatch) -> None:
+    """Test that abbreviations like Dr. or e.g. don't cause false splits."""
+    monkeypatch.chdir(tmp_path)
     conv_file = tmp_path / "abbrev.md"
-    conv_file.write_text(conversation, encoding="utf-8")
+    conv_file.write_text(CONVERSATION_WITH_ABBREVIATIONS, encoding="utf-8")
 
     data = await _call_clean_conversation_file(str(conv_file))
 
@@ -249,18 +251,20 @@ async def test_tool_is_listed(tmp_path, monkeypatch) -> None:
         assert "file_path" in clean_tool.inputSchema["properties"]
 
 
-async def test_capitalization_after_period(tmp_path, monkeypatch) -> None:
-    """Test that lowercase letters after sentence-ending punctuation are capitalized."""
-    monkeypatch.chdir(tmp_path)
-    conversation = """\
+CONVERSATION_LOWERCASE_AFTER_PERIOD = """\
 # Cap Test
 2026-01-01
 **10:00**
 Speaker1
 First sentence. second sentence. third one here.
 """
+
+
+async def test_capitalization_after_period(tmp_path, monkeypatch) -> None:
+    """Test that lowercase letters after sentence-ending punctuation are capitalized."""
+    monkeypatch.chdir(tmp_path)
     conv_file = tmp_path / "cap.md"
-    conv_file.write_text(conversation, encoding="utf-8")
+    conv_file.write_text(CONVERSATION_LOWERCASE_AFTER_PERIOD, encoding="utf-8")
 
     data = await _call_clean_conversation_file(str(conv_file))
 
@@ -296,21 +300,21 @@ async def test_blank_line_between_timestamp_and_speaker(tmp_path, monkeypatch) -
     assert data["statements"][1]["speaker"] == "Anna Nowak"
 
 
-CONVERSATION_ALL_SPEAKERS_ON_TIMESTAMP_LINE = """\
-# All Broken
+CONVERSATION_NO_TIMESTAMPS = """\
+# No Timestamps
 2026-01-01
-**10:00** First Speaker
-Some text.
-**10:05** Second Speaker
-More text.
+Jan Kowalski
+Some text without any timestamp markers.
+Anna Nowak
+More text without timestamps.
 """
 
 
-async def test_all_turns_broken_raises_error(tmp_path, monkeypatch) -> None:
-    """Test that a file where all turns have speaker on the timestamp line raises an error."""
+async def test_no_timestamps_raises_error(tmp_path, monkeypatch) -> None:
+    """Test that a file with no timestamp markers raises an error."""
     monkeypatch.chdir(tmp_path)
-    conv_file = tmp_path / "all_broken.md"
-    conv_file.write_text(CONVERSATION_ALL_SPEAKERS_ON_TIMESTAMP_LINE, encoding="utf-8")
+    conv_file = tmp_path / "no_timestamps.md"
+    conv_file.write_text(CONVERSATION_NO_TIMESTAMPS, encoding="utf-8")
 
     async with create_connected_server_and_client_session(
         noesis_server, raise_exceptions=True
@@ -431,16 +435,19 @@ Normal turn.
 """
 
 
-async def test_speaker_on_timestamp_line_loses_turn(tmp_path, monkeypatch) -> None:
-    """Test that speaker name on the same line as timestamp causes that turn to be lost."""
+async def test_speaker_on_timestamp_line(tmp_path, monkeypatch) -> None:
+    """Test that speaker name on the same line as timestamp is split and parsed."""
     monkeypatch.chdir(tmp_path)
     conv_file = tmp_path / "same_line.md"
     conv_file.write_text(CONVERSATION_SPEAKER_ON_TIMESTAMP_LINE, encoding="utf-8")
 
     data = await _call_clean_conversation_file(str(conv_file))
 
-    assert len(data["statements"]) == 1
-    assert data["statements"][0]["speaker"] == "Anna Nowak"
+    assert len(data["statements"]) == 2
+    assert data["statements"][0]["speaker"] == "Jan Kowalski"
+    assert data["statements"][0]["time"] == "10:00"
+    assert "This text should be captured." in data["statements"][0]["sentences"][0]
+    assert data["statements"][1]["speaker"] == "Anna Nowak"
 
 
 CONVERSATION_INDENTED_BODY = """\
@@ -468,6 +475,64 @@ async def test_indented_body_text(tmp_path, monkeypatch) -> None:
     assert "This line has a leading tab." in full_text
     assert "Mixed indentation here." in full_text
     assert full_text[0] != " "
+
+
+CONVERSATION_NEWLINE_BEFORE_TIME = """\
+# Broken Time Before
+2026-01-01
+**
+10:00**
+Jan Kowalski
+First speaker.
+**
+10:05**
+Anna Nowak
+Second speaker.
+"""
+
+
+async def test_newline_before_time_in_marker(tmp_path, monkeypatch) -> None:
+    """Test that a line break between opening ** and the time is normalized."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "nl_before.md"
+    conv_file.write_text(CONVERSATION_NEWLINE_BEFORE_TIME, encoding="utf-8")
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    assert len(data["statements"]) == 2
+    assert data["statements"][0]["speaker"] == "Jan Kowalski"
+    assert data["statements"][0]["time"] == "10:00"
+    assert data["statements"][1]["speaker"] == "Anna Nowak"
+    assert data["statements"][1]["time"] == "10:05"
+
+
+CONVERSATION_NEWLINE_AFTER_TIME = """\
+# Broken Time After
+2026-01-01
+**10:00
+**
+Jan Kowalski
+First speaker.
+**10:05
+**
+Anna Nowak
+Second speaker.
+"""
+
+
+async def test_newline_after_time_in_marker(tmp_path, monkeypatch) -> None:
+    """Test that a line break between the time and closing ** is normalized."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "nl_after.md"
+    conv_file.write_text(CONVERSATION_NEWLINE_AFTER_TIME, encoding="utf-8")
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    assert len(data["statements"]) == 2
+    assert data["statements"][0]["speaker"] == "Jan Kowalski"
+    assert data["statements"][0]["time"] == "10:00"
+    assert data["statements"][1]["speaker"] == "Anna Nowak"
+    assert data["statements"][1]["time"] == "10:05"
 
 
 def _make_sampling_callback(response_text: str):

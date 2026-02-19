@@ -37,6 +37,10 @@ _TURN_PATTERN = re.compile(
     r"([\s\S]*?)(?=^\*\*\d{1,2}:\d{2}\*\*|\Z)",
     re.MULTILINE,
 )
+_BROKEN_TIME_MARKER = re.compile(r"^\*\*\s*(\d{1,2}:\d{2})\s*\*\*", re.MULTILINE)
+_SPEAKER_ON_TIMESTAMP_LINE = re.compile(
+    r"^(\*\*\d{1,2}:\d{2}\*\*)[ \t]+(.+)$", re.MULTILINE
+)
 _TITLE_PATTERN = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 _DATE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2})$", re.MULTILINE)
 
@@ -146,6 +150,7 @@ def _extract_metadata(text: str) -> tuple[str | None, str | None, str]:
 
 
 def _parse_statements(body: str) -> list[Statement]:
+    body = _normalize_turn_headers(body)
     statements: list[Statement] = []
 
     for match in _TURN_PATTERN.finditer(body):
@@ -162,6 +167,12 @@ def _parse_statements(body: str) -> list[Statement]:
             statements.append(Statement(speaker=speaker, time=time, sentences=sentences))
 
     return statements
+
+
+def _normalize_turn_headers(text: str) -> str:
+    text = _BROKEN_TIME_MARKER.sub(r"**\1**", text)
+    text = _SPEAKER_ON_TIMESTAMP_LINE.sub(r"\1\n\2", text)
+    return text
 
 
 def _clean_text_block(text: str) -> str:
