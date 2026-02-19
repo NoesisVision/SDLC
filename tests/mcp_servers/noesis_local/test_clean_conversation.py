@@ -268,6 +268,208 @@ First sentence. second sentence. third one here.
     for sentence in sentences:
         assert sentence[0].isupper(), f"Sentence should start with uppercase: {sentence}"
 
+CONVERSATION_BLANK_LINE_BETWEEN_TIMESTAMP_AND_SPEAKER = """\
+# Broken Format
+2026-01-01
+**10:00**
+
+Jan Kowalski
+This turn has a blank line before the speaker name.
+**10:05**
+Anna Nowak
+This turn is correctly formatted.
+"""
+
+
+async def test_blank_line_between_timestamp_and_speaker(tmp_path, monkeypatch) -> None:
+    """Test that blank lines between timestamp and speaker are absorbed by the regex."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "broken.md"
+    conv_file.write_text(
+        CONVERSATION_BLANK_LINE_BETWEEN_TIMESTAMP_AND_SPEAKER, encoding="utf-8"
+    )
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    assert len(data["statements"]) == 2
+    assert data["statements"][0]["speaker"] == "Jan Kowalski"
+    assert data["statements"][1]["speaker"] == "Anna Nowak"
+
+
+CONVERSATION_ALL_SPEAKERS_ON_TIMESTAMP_LINE = """\
+# All Broken
+2026-01-01
+**10:00** First Speaker
+Some text.
+**10:05** Second Speaker
+More text.
+"""
+
+
+async def test_all_turns_broken_raises_error(tmp_path, monkeypatch) -> None:
+    """Test that a file where all turns have speaker on the timestamp line raises an error."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "all_broken.md"
+    conv_file.write_text(CONVERSATION_ALL_SPEAKERS_ON_TIMESTAMP_LINE, encoding="utf-8")
+
+    async with create_connected_server_and_client_session(
+        noesis_server, raise_exceptions=True
+    ) as client:
+        result = await client.call_tool(
+            "clean_conversation_file", {"file_path": str(conv_file)}
+        )
+
+    assert result.isError
+
+
+CONVERSATION_EXTRA_BLANK_LINES_BETWEEN_TURNS = """\
+# Spacing Test
+2026-01-01
+**10:00**
+Jan Kowalski
+First speaker's text.
+
+
+**10:05**
+Anna Nowak
+Second speaker's text.
+"""
+
+
+async def test_extra_blank_lines_between_turns(tmp_path, monkeypatch) -> None:
+    """Test that extra blank lines between turns don't break statement splitting."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "spacing.md"
+    conv_file.write_text(
+        CONVERSATION_EXTRA_BLANK_LINES_BETWEEN_TURNS, encoding="utf-8"
+    )
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    assert len(data["statements"]) == 2
+    assert data["statements"][0]["speaker"] == "Jan Kowalski"
+    assert data["statements"][1]["speaker"] == "Anna Nowak"
+
+
+CONVERSATION_BLANK_LINES_WITHIN_BODY = """\
+# Body Gaps
+2026-01-01
+**10:00**
+Speaker1
+First sentence of the paragraph.
+
+Second sentence after a blank line.
+
+
+Third sentence after two blank lines.
+"""
+
+
+async def test_blank_lines_within_body(tmp_path, monkeypatch) -> None:
+    """Test that blank lines within a speaker's body are collapsed into continuous text."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "body_gaps.md"
+    conv_file.write_text(CONVERSATION_BLANK_LINES_WITHIN_BODY, encoding="utf-8")
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    sentences = data["statements"][0]["sentences"]
+    assert len(sentences) == 3
+    assert "First sentence" in sentences[0]
+    assert "Second sentence" in sentences[1]
+    assert "Third sentence" in sentences[2]
+
+
+CONVERSATION_TRAILING_SPACES_ON_TIMESTAMP = """\
+# Trailing Spaces
+2026-01-01
+**10:00**   \t
+Jan Kowalski
+This should work despite trailing whitespace on the timestamp line.
+"""
+
+
+async def test_trailing_spaces_on_timestamp_line(tmp_path, monkeypatch) -> None:
+    """Test that trailing spaces/tabs on the timestamp line are tolerated."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "trailing.md"
+    conv_file.write_text(
+        CONVERSATION_TRAILING_SPACES_ON_TIMESTAMP, encoding="utf-8"
+    )
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    assert len(data["statements"]) == 1
+    assert data["statements"][0]["speaker"] == "Jan Kowalski"
+
+
+CONVERSATION_NO_TRAILING_NEWLINE = (
+    "# No Newline\n2026-01-01\n**10:00**\nSpeaker1\nLast line has no newline."
+)
+
+
+async def test_missing_trailing_newline(tmp_path, monkeypatch) -> None:
+    """Test that a file without a trailing newline still parses the last turn."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "no_newline.md"
+    conv_file.write_text(CONVERSATION_NO_TRAILING_NEWLINE, encoding="utf-8")
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    assert len(data["statements"]) == 1
+    assert "Last line has no newline." in data["statements"][0]["sentences"][0]
+
+
+CONVERSATION_SPEAKER_ON_TIMESTAMP_LINE = """\
+# Same Line
+2026-01-01
+**10:00** Jan Kowalski
+This text should be captured.
+**10:05**
+Anna Nowak
+Normal turn.
+"""
+
+
+async def test_speaker_on_timestamp_line_loses_turn(tmp_path, monkeypatch) -> None:
+    """Test that speaker name on the same line as timestamp causes that turn to be lost."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "same_line.md"
+    conv_file.write_text(CONVERSATION_SPEAKER_ON_TIMESTAMP_LINE, encoding="utf-8")
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    assert len(data["statements"]) == 1
+    assert data["statements"][0]["speaker"] == "Anna Nowak"
+
+
+CONVERSATION_INDENTED_BODY = """\
+# Indented Body
+2026-01-01
+**10:00**
+Speaker1
+    This line has leading spaces.
+\tThis line has a leading tab.
+  Mixed indentation here.
+"""
+
+
+async def test_indented_body_text(tmp_path, monkeypatch) -> None:
+    """Test that leading whitespace in body lines is stripped during cleaning."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "indented.md"
+    conv_file.write_text(CONVERSATION_INDENTED_BODY, encoding="utf-8")
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    sentences = data["statements"][0]["sentences"]
+    full_text = " ".join(sentences)
+    assert "This line has leading spaces." in full_text
+    assert "This line has a leading tab." in full_text
+    assert "Mixed indentation here." in full_text
+    assert full_text[0] != " "
+
+
 def _make_sampling_callback(response_text: str):
     async def callback(context, params):
         return types.CreateMessageResult(
