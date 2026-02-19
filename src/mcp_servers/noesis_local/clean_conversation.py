@@ -55,15 +55,10 @@ class CleanConversationFileResponse(BaseModel):
 
     title: str = Field(description="Title of the conversation")
     date: str = Field(description="Date and time of the first statement in YYYY-MM-DD HH:MM format")
-    statements: list[Statement] = Field(
-        min_length=1, description="Ordered list of speaker statements"
-    )
+    statements: list[Statement] = Field(min_length=1, description="Ordered list of speaker statements")
 
 
-async def clean_conversation_file(
-    file_path: str,
-    ctx: Context,
-) -> CleanConversationFileResponse:
+async def clean_conversation_file(file_path: str, ctx: Context) -> CleanConversationFileResponse:
     """Clean and structure a conversation transcript from a markdown file.
 
     Parses speaker turns, fixes broken syntax (line breaks, whitespace,

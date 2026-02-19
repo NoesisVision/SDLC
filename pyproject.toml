@@ -7,7 +7,7 @@ name = "noesis-sdlc"
 version = "1.0.0"
 description = "SDLC tools and MCP servers for Noesis"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = {text = "Proprietary"}
 authors = [
     {name = "Noesis Team"}
@@ -54,8 +54,8 @@ addopts = [
 ]
 
 [tool.black]
-line-length = 100
-target-version = ["py38", "py39", "py310", "py311"]
+line-length = 120
+target-version = ["py314"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -74,7 +74,7 @@ extend-exclude = '''
 
 [tool.isort]
 profile = "black"
-line_length = 100
+line_length = 120
 multi_line_output = 3
 include_trailing_comma = true
 force_grid_wrap = 0
@@ -82,7 +82,7 @@ use_parentheses = true
 ensure_newline_before_comments = true
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -115,8 +115,8 @@ module = "sklearn.*"
 ignore_missing_imports = true
 
 [tool.ruff]
-line-length = 100
-target-version = "py38"
+line-length = 120
+target-version = "py314"
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings

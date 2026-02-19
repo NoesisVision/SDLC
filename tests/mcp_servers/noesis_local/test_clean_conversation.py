@@ -37,9 +37,7 @@ async def test_basic_conversation_parsing(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "conv.md"
     conv_file.write_text(BASIC_CONVERSATION, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
@@ -81,9 +79,7 @@ async def test_text_cleaning(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "dirty.md"
     conv_file.write_text(CONVERSATION_WITH_DIRTY_TEXT, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
@@ -121,9 +117,7 @@ async def test_line_break_joining(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "breaks.md"
     conv_file.write_text(CONVERSATION_WITH_LINE_BREAKS, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
@@ -150,9 +144,7 @@ async def test_missing_title_asks_user(tmp_path, monkeypatch) -> None:
 
     callback = _make_sampling_callback("Weekly Standup")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True, sampling_callback=callback
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True, sampling_callback=callback) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
@@ -178,9 +170,7 @@ async def test_missing_date_asks_user(tmp_path, monkeypatch) -> None:
 
     callback = _make_sampling_callback("2026-03-15")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True, sampling_callback=callback
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True, sampling_callback=callback) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
@@ -201,9 +191,7 @@ async def test_windows_line_endings(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "windows.md"
     conv_file.write_bytes(CONVERSATION_WITH_WINDOWS_ENDINGS.encode("utf-8"))
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
@@ -217,9 +205,7 @@ async def test_file_not_found(tmp_path, monkeypatch) -> None:
     """Test that a missing file raises an error through MCP."""
     monkeypatch.chdir(tmp_path)
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": "/nonexistent/file.md"}
         )
@@ -233,9 +219,7 @@ async def test_empty_file(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "empty.md"
     conv_file.write_text("", encoding="utf-8")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
@@ -259,17 +243,13 @@ async def test_encoding_artifact_cleanup(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "encoding.md"
     conv_file.write_text(CONVERSATION_ENCODING_ARTIFACTS, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
         data = json.loads(result.content[0].text)
 
-    all_text = " ".join(
-        s for stmt in data["statements"] for s in stmt["sentences"]
-    )
+    all_text = " ".join(s for stmt in data["statements"] for s in stmt["sentences"])
     assert "\u2014" not in all_text
     assert "\u201c" not in all_text
     assert "\u201d" not in all_text
@@ -288,9 +268,7 @@ Dr. Smith arrived at 9 A.M. He started the meeting immediately.
     conv_file = tmp_path / "abbrev.md"
     conv_file.write_text(conversation, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )
@@ -308,9 +286,7 @@ async def test_tool_is_listed(tmp_path, monkeypatch) -> None:
         result = await client.list_tools()
         tools = result.tools
 
-        clean_tool = next(
-            (t for t in tools if t.name == "clean_conversation_file"), None
-        )
+        clean_tool = next((t for t in tools if t.name == "clean_conversation_file"), None)
         assert clean_tool is not None
         assert clean_tool.inputSchema is not None
         assert "file_path" in clean_tool.inputSchema["properties"]
@@ -329,9 +305,7 @@ First sentence. second sentence. third one here.
     conv_file = tmp_path / "cap.md"
     conv_file.write_text(conversation, encoding="utf-8")
 
-    async with create_connected_server_and_client_session(
-        noesis_server, raise_exceptions=True
-    ) as client:
+    async with create_connected_server_and_client_session(noesis_server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": str(conv_file)}
         )

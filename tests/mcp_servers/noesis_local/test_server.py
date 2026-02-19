@@ -16,9 +16,7 @@ async def test_database_initialization(tmp_path, monkeypatch) -> None:
         assert noesis_dir.is_dir()
 
         db_files = list(noesis_dir.glob("graph.db*"))
-        assert len(db_files) > 0, (
-            f"Database files should be created. Found: {list(noesis_dir.iterdir())}"
-        )
+        assert len(db_files) > 0, f"Database files should be created. Found: {list(noesis_dir.iterdir())}"
 
         settings_file = noesis_dir / "graph.db.settings"
         assert settings_file.exists()
@@ -53,9 +51,7 @@ async def test_server_lists_tools(tmp_path, monkeypatch) -> None:
         result = await client.list_tools()
         tools = result.tools
 
-        analyze_tool = next(
-            (t for t in tools if t.name == "analyze_conversation_file"), None
-        )
+        analyze_tool = next((t for t in tools if t.name == "analyze_conversation_file"), None)
         assert analyze_tool is not None, "analyze_conversation_file tool not found"
         assert analyze_tool.description is not None
         assert analyze_tool.inputSchema is not None

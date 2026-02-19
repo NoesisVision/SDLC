@@ -33,10 +33,7 @@ class AnalyzeConversationFileResponse(BaseModel):
         default=None,
         description="List of domain-specific terms with their definitions (if any identified)",
     )
-    topics: list[Topic] = Field(
-        min_length=1,
-        description="List of topics discussed in the conversation",
-    )
+    topics: list[Topic] = Field(min_length=1, description="List of topics discussed in the conversation")
 
 
 CONVERSATION_ANALYSIS_PROMPT = """You are an expert conversation analyst. Your task is to perform an in-depth analysis of the provided conversation transcript.
@@ -86,10 +83,7 @@ Here is the conversation to analyze:
 {conversation}"""
 
 
-async def analyze_conversation_file(
-    file_path: str,
-    ctx: Context,
-) -> AnalyzeConversationFileResponse:
+async def analyze_conversation_file(file_path: str, ctx: Context) -> AnalyzeConversationFileResponse:
     """Analyze a conversation transcript from a file using LLM.
 
     Performs in-depth conversation analysis including
