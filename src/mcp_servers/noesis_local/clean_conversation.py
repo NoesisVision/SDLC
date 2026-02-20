@@ -5,13 +5,16 @@ import re
 from pathlib import Path
 
 import pysbd
+from langdetect import LangDetectException, detect
 from mcp.server.fastmcp import Context
 from mcp.types import SamplingMessage, TextContent
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-_SENTENCE_SEGMENTER = pysbd.Segmenter(language="en", clean=False)
+_PYSBD_LANGUAGES = set(pysbd.languages.LANGUAGE_CODES.keys())
+_SEGMENTER_CACHE: dict[str, pysbd.Segmenter] = {}
+_LANGUAGE_SAMPLE_SIZE = 1000
 
 _INVISIBLE_CHARS = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff\u2028\u2029]")
 _MULTI_SPACES = re.compile(r" {2,}")
@@ -99,7 +102,8 @@ async def clean_conversation_file(file_path: str, ctx: Context) -> CleanConversa
 
     cleaned_text = _normalize_encoding(raw_text)
     title, date, body = _extract_metadata(cleaned_text)
-    statements = _parse_statements(body)
+    language = _detect_language(body)
+    statements = _parse_statements(body, language)
 
     if not statements:
         raise ValueError(f"No recognizable speaker turns found in: {resolved_path}")
@@ -149,7 +153,7 @@ def _extract_metadata(text: str) -> tuple[str | None, str | None, str]:
     return title, date, body.strip()
 
 
-def _parse_statements(body: str) -> list[Statement]:
+def _parse_statements(body: str, language: str) -> list[Statement]:
     body = _normalize_turn_headers(body)
     statements: list[Statement] = []
 
@@ -162,7 +166,7 @@ def _parse_statements(body: str) -> list[Statement]:
         if not cleaned:
             continue
 
-        sentences = _split_sentences(cleaned)
+        sentences = _split_sentences(cleaned, language)
         if sentences:
             statements.append(Statement(speaker=speaker, time=time, sentences=sentences))
 
@@ -185,10 +189,24 @@ def _clean_text_block(text: str) -> str:
     return text
 
 
-def _split_sentences(text: str) -> list[str]:
-    sentences = _SENTENCE_SEGMENTER.segment(text)
+def _detect_language(text: str) -> str:
+    sample = text[:_LANGUAGE_SAMPLE_SIZE]
+    try:
+        detected = detect(sample)
+    except LangDetectException:
+        return "en"
+    return detected if detected in _PYSBD_LANGUAGES else "en"
+
+
+def _split_sentences(text: str, language: str) -> list[str]:
+    segmenter = _get_segmenter(language)
+    sentences = segmenter.segment(text)
     return [stripped for s in sentences if (stripped := s.strip())]
 
+def _get_segmenter(language: str) -> pysbd.Segmenter:
+    if language not in _SEGMENTER_CACHE:
+        _SEGMENTER_CACHE[language] = pysbd.Segmenter(language=language, clean=False)
+    return _SEGMENTER_CACHE[language]
 
 async def _ask_user_for_metadata(ctx: Context, field: str, file_path: Path) -> str:
     result = await ctx.session.create_message(

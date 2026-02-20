@@ -535,6 +535,34 @@ async def test_newline_after_time_in_marker(tmp_path, monkeypatch) -> None:
     assert data["statements"][1]["time"] == "10:05"
 
 
+CONVERSATION_POLISH = """\
+# Spotkanie projektowe
+2026-02-19
+**12:13**
+Jan Kowalski
+Moim zdaniem powinniśmy to zrobić. Bez tego nie będzie działać.
+**12:15**
+Anna Nowak
+Zgadzam się z Janem. Przystąpmy do realizacji tego wariantu.
+"""
+
+
+async def test_polish_language_detection(tmp_path, monkeypatch) -> None:
+    """Test that Polish text is detected and segmented with the Polish pysbd model."""
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "polish.md"
+    conv_file.write_text(CONVERSATION_POLISH, encoding="utf-8")
+
+    data = await _call_clean_conversation_file(str(conv_file))
+
+    assert data["title"] == "Spotkanie projektowe"
+    assert len(data["statements"]) == 2
+    first = data["statements"][0]
+    assert first["speaker"] == "Jan Kowalski"
+    assert len(first["sentences"]) == 2
+    assert "powinniśmy" in first["sentences"][0]
+
+
 def _make_sampling_callback(response_text: str):
     async def callback(context, params):
         return types.CreateMessageResult(
