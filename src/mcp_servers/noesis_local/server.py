@@ -19,6 +19,7 @@ from redislite.falkordb_client import FalkorDB
 
 from .analyze_conversation import analyze_conversation_file
 from .clean_conversation import clean_conversation_file
+from .structure_conversation import structure_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ noesis_server = FastMCP("noesis-local", lifespan=app_lifespan)
 
 noesis_server.tool()(analyze_conversation_file)
 noesis_server.tool()(clean_conversation_file)
+noesis_server.tool()(structure_conversation)
 
 if __name__ == "__main__":
     # Run the server using stdio transport
