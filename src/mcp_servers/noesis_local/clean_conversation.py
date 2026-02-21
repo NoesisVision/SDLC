@@ -48,23 +48,23 @@ _TITLE_PATTERN = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 _DATE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2})$", re.MULTILINE)
 
 
-class Statement(BaseModel):
+class SpeakerTurn(BaseModel):
     """A single speaker turn in the conversation."""
 
     speaker: str = Field(description="Name of the speaker")
-    time: str = Field(description="Time of the statement in HH:MM format")
+    time: str = Field(description="Time of the statement relative to the beginning of the conversation in HH:MM format")
     sentences: list[str] = Field(description="Individual sentences from the speaker's text")
 
 
-class CleanConversationFileResponse(BaseModel):
+class CleanedConversation(BaseModel):
     """Cleaned and structured conversation transcript."""
 
     title: str = Field(description="Title of the conversation")
     date: str = Field(description="Date and time of the first statement in YYYY-MM-DD HH:MM format")
-    statements: list[Statement] = Field(min_length=1, description="Ordered list of speaker statements")
+    turns: list[SpeakerTurn] = Field(min_length=1, description="Ordered list of speaker turns")
 
 
-async def clean_conversation_file(file_path: str, ctx: Context) -> CleanConversationFileResponse:
+async def clean_conversation_file(file_path: str, ctx: Context) -> CleanedConversation:
     """Clean and structure a conversation transcript from a markdown file.
 
     Parses speaker turns, fixes broken syntax (line breaks, whitespace,
@@ -116,10 +116,10 @@ async def clean_conversation_file(file_path: str, ctx: Context) -> CleanConversa
         asked_date = await _ask_user_for_metadata(ctx, "date", resolved_path)
         date_with_time = f"{asked_date} {first_time}"
 
-    return CleanConversationFileResponse(
+    return CleanedConversation(
         title=title,
         date=date_with_time,
-        statements=statements,
+        turns=statements,
     )
 
 
@@ -153,9 +153,9 @@ def _extract_metadata(text: str) -> tuple[str | None, str | None, str]:
     return title, date, body.strip()
 
 
-def _parse_statements(body: str, language: str) -> list[Statement]:
+def _parse_statements(body: str, language: str) -> list[SpeakerTurn]:
     body = _normalize_turn_headers(body)
-    statements: list[Statement] = []
+    statements: list[SpeakerTurn] = []
 
     for match in _TURN_PATTERN.finditer(body):
         time = match.group(1)
@@ -168,7 +168,7 @@ def _parse_statements(body: str, language: str) -> list[Statement]:
 
         sentences = _split_sentences(cleaned, language)
         if sentences:
-            statements.append(Statement(speaker=speaker, time=time, sentences=sentences))
+            statements.append(SpeakerTurn(speaker=speaker, time=time, sentences=sentences))
 
     return statements
 
