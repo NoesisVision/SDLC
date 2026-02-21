@@ -30,3 +30,4 @@
 6. Use docstrings with Google style for inline documentation.
 7. Do NOT use comments in method bodies. Use descriptive function and variable names.
 8. Use ONLY `uv` to run scripts.
+9. Access Pydantic model fields via **typed attributes** (`result.id`, `result.items[0].name`), never via dict keys. Use `.model_dump()` only at serialization boundaries (API responses, file I/O).

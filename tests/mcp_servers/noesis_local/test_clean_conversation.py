@@ -1,10 +1,9 @@
 """End-to-end tests for the clean_conversation_file MCP tool."""
 
-import json
-
 from mcp import types
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from mcp_servers.noesis_local.clean_conversation import CleanedConversation
 from mcp_servers.noesis_local.server import noesis_server
 
 
@@ -26,23 +25,23 @@ async def test_basic_conversation_parsing(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "conv.md"
     conv_file.write_text(BASIC_CONVERSATION, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert data["title"] == "System Modularization"
-    assert data["date"] == "2026-02-19 12:13"
-    assert len(data["statements"]) == 2
+    assert result.title == "System Modularization"
+    assert result.date == "2026-02-19 12:13"
+    assert len(result.turns) == 2
 
-    first = data["statements"][0]
-    assert first["speaker"] == "Jan Kowalski"
-    assert first["time"] == "12:13"
-    assert len(first["sentences"]) == 2
-    assert "In my opinion" in first["sentences"][0]
-    assert "Without that" in first["sentences"][1]
+    first = result.turns[0]
+    assert first.speaker == "Jan Kowalski"
+    assert first.time == "12:13"
+    assert len(first.sentences) == 2
+    assert "In my opinion" in first.sentences[0]
+    assert "Without that" in first.sentences[1]
 
-    second = data["statements"][1]
-    assert second["speaker"] == "Anna Nowak"
-    assert second["time"] == "12:15"
-    assert len(second["sentences"]) == 2
+    second = result.turns[1]
+    assert second.speaker == "Anna Nowak"
+    assert second.time == "12:15"
+    assert len(second.sentences) == 2
 
 
 CONVERSATION_WITH_DIRTY_TEXT = """\
@@ -64,9 +63,9 @@ async def test_text_cleaning(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "dirty.md"
     conv_file.write_text(CONVERSATION_WITH_DIRTY_TEXT, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    first_text = " ".join(data["statements"][0]["sentences"])
+    first_text = " ".join(result.turns[0].sentences)
     assert "  " not in first_text
     assert "\u00a0" not in first_text
     assert "\u201c" not in first_text
@@ -74,7 +73,7 @@ async def test_text_cleaning(tmp_path, monkeypatch) -> None:
     assert '"smart quotes"' in first_text
     assert "'single'" in first_text
 
-    second_text = " ".join(data["statements"][1]["sentences"])
+    second_text = " ".join(result.turns[1].sentences)
     assert "\u200b" not in second_text
     assert "zerowidth" in second_text
     assert "And lowercase" in second_text
@@ -98,9 +97,9 @@ async def test_line_break_joining(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "breaks.md"
     conv_file.write_text(CONVERSATION_WITH_LINE_BREAKS, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    sentences = data["statements"][0]["sentences"]
+    sentences = result.turns[0].sentences
     assert len(sentences) == 2
     assert "split across multiple lines for no good reason" in sentences[0]
 
@@ -121,10 +120,10 @@ async def test_missing_title_asks_user(tmp_path, monkeypatch) -> None:
 
     callback = _make_sampling_callback("Weekly Standup")
 
-    data = await _call_clean_conversation_file(str(conv_file), callback)
+    result = await _call_clean_conversation_file(str(conv_file), callback)
 
-    assert data["title"] == "Weekly Standup"
-    assert data["date"] == "2026-02-19 14:00"
+    assert result.title == "Weekly Standup"
+    assert result.date == "2026-02-19 14:00"
 
 
 CONVERSATION_NO_DATE = """\
@@ -143,10 +142,10 @@ async def test_missing_date_asks_user(tmp_path, monkeypatch) -> None:
 
     callback = _make_sampling_callback("2026-03-15")
 
-    data = await _call_clean_conversation_file(str(conv_file), callback)
+    result = await _call_clean_conversation_file(str(conv_file), callback)
 
-    assert data["title"] == "Some Meeting"
-    assert data["date"] == "2026-03-15 08:30"
+    assert result.title == "Some Meeting"
+    assert result.date == "2026-03-15 08:30"
 
 
 CONVERSATION_WITH_WINDOWS_ENDINGS = (
@@ -160,10 +159,10 @@ async def test_windows_line_endings(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "windows.md"
     conv_file.write_bytes(CONVERSATION_WITH_WINDOWS_ENDINGS.encode("utf-8"))
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert data["title"] == "Test"
-    assert len(data["statements"]) == 1
+    assert result.title == "Test"
+    assert len(result.turns) == 1
 
 
 async def test_file_not_found(tmp_path, monkeypatch) -> None:
@@ -208,9 +207,9 @@ async def test_encoding_artifact_cleanup(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "encoding.md"
     conv_file.write_text(CONVERSATION_ENCODING_ARTIFACTS, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    all_text = " ".join(s for stmt in data["statements"] for s in stmt["sentences"])
+    all_text = " ".join(s for turn in result.turns for s in turn.sentences)
     assert "\u2014" not in all_text
     assert "\u201c" not in all_text
     assert "\u201d" not in all_text
@@ -231,9 +230,9 @@ async def test_sentence_splitting_with_abbreviations(tmp_path, monkeypatch) -> N
     conv_file = tmp_path / "abbrev.md"
     conv_file.write_text(CONVERSATION_WITH_ABBREVIATIONS, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    sentences = data["statements"][0]["sentences"]
+    sentences = result.turns[0].sentences
     assert len(sentences) == 2
     assert "Dr. Smith" in sentences[0]
 
@@ -266,9 +265,9 @@ async def test_capitalization_after_period(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "cap.md"
     conv_file.write_text(CONVERSATION_LOWERCASE_AFTER_PERIOD, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    sentences = data["statements"][0]["sentences"]
+    sentences = result.turns[0].sentences
     for sentence in sentences:
         assert sentence[0].isupper(), f"Sentence should start with uppercase: {sentence}"
 
@@ -293,11 +292,11 @@ async def test_blank_line_between_timestamp_and_speaker(tmp_path, monkeypatch) -
         CONVERSATION_BLANK_LINE_BETWEEN_TIMESTAMP_AND_SPEAKER, encoding="utf-8"
     )
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert len(data["statements"]) == 2
-    assert data["statements"][0]["speaker"] == "Jan Kowalski"
-    assert data["statements"][1]["speaker"] == "Anna Nowak"
+    assert len(result.turns) == 2
+    assert result.turns[0].speaker == "Jan Kowalski"
+    assert result.turns[1].speaker == "Anna Nowak"
 
 
 CONVERSATION_NO_TIMESTAMPS = """\
@@ -348,11 +347,11 @@ async def test_extra_blank_lines_between_turns(tmp_path, monkeypatch) -> None:
         CONVERSATION_EXTRA_BLANK_LINES_BETWEEN_TURNS, encoding="utf-8"
     )
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert len(data["statements"]) == 2
-    assert data["statements"][0]["speaker"] == "Jan Kowalski"
-    assert data["statements"][1]["speaker"] == "Anna Nowak"
+    assert len(result.turns) == 2
+    assert result.turns[0].speaker == "Jan Kowalski"
+    assert result.turns[1].speaker == "Anna Nowak"
 
 
 CONVERSATION_BLANK_LINES_WITHIN_BODY = """\
@@ -375,9 +374,9 @@ async def test_blank_lines_within_body(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "body_gaps.md"
     conv_file.write_text(CONVERSATION_BLANK_LINES_WITHIN_BODY, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    sentences = data["statements"][0]["sentences"]
+    sentences = result.turns[0].sentences
     assert len(sentences) == 3
     assert "First sentence" in sentences[0]
     assert "Second sentence" in sentences[1]
@@ -401,10 +400,10 @@ async def test_trailing_spaces_on_timestamp_line(tmp_path, monkeypatch) -> None:
         CONVERSATION_TRAILING_SPACES_ON_TIMESTAMP, encoding="utf-8"
     )
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert len(data["statements"]) == 1
-    assert data["statements"][0]["speaker"] == "Jan Kowalski"
+    assert len(result.turns) == 1
+    assert result.turns[0].speaker == "Jan Kowalski"
 
 
 CONVERSATION_NO_TRAILING_NEWLINE = (
@@ -418,10 +417,10 @@ async def test_missing_trailing_newline(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "no_newline.md"
     conv_file.write_text(CONVERSATION_NO_TRAILING_NEWLINE, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert len(data["statements"]) == 1
-    assert "Last line has no newline." in data["statements"][0]["sentences"][0]
+    assert len(result.turns) == 1
+    assert "Last line has no newline." in result.turns[0].sentences[0]
 
 
 CONVERSATION_SPEAKER_ON_TIMESTAMP_LINE = """\
@@ -441,13 +440,13 @@ async def test_speaker_on_timestamp_line(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "same_line.md"
     conv_file.write_text(CONVERSATION_SPEAKER_ON_TIMESTAMP_LINE, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert len(data["statements"]) == 2
-    assert data["statements"][0]["speaker"] == "Jan Kowalski"
-    assert data["statements"][0]["time"] == "10:00"
-    assert "This text should be captured." in data["statements"][0]["sentences"][0]
-    assert data["statements"][1]["speaker"] == "Anna Nowak"
+    assert len(result.turns) == 2
+    assert result.turns[0].speaker == "Jan Kowalski"
+    assert result.turns[0].time == "10:00"
+    assert "This text should be captured." in result.turns[0].sentences[0]
+    assert result.turns[1].speaker == "Anna Nowak"
 
 
 CONVERSATION_INDENTED_BODY = """\
@@ -467,9 +466,9 @@ async def test_indented_body_text(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "indented.md"
     conv_file.write_text(CONVERSATION_INDENTED_BODY, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    sentences = data["statements"][0]["sentences"]
+    sentences = result.turns[0].sentences
     full_text = " ".join(sentences)
     assert "This line has leading spaces." in full_text
     assert "This line has a leading tab." in full_text
@@ -497,13 +496,13 @@ async def test_newline_before_time_in_marker(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "nl_before.md"
     conv_file.write_text(CONVERSATION_NEWLINE_BEFORE_TIME, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert len(data["statements"]) == 2
-    assert data["statements"][0]["speaker"] == "Jan Kowalski"
-    assert data["statements"][0]["time"] == "10:00"
-    assert data["statements"][1]["speaker"] == "Anna Nowak"
-    assert data["statements"][1]["time"] == "10:05"
+    assert len(result.turns) == 2
+    assert result.turns[0].speaker == "Jan Kowalski"
+    assert result.turns[0].time == "10:00"
+    assert result.turns[1].speaker == "Anna Nowak"
+    assert result.turns[1].time == "10:05"
 
 
 CONVERSATION_NEWLINE_AFTER_TIME = """\
@@ -526,13 +525,13 @@ async def test_newline_after_time_in_marker(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "nl_after.md"
     conv_file.write_text(CONVERSATION_NEWLINE_AFTER_TIME, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert len(data["statements"]) == 2
-    assert data["statements"][0]["speaker"] == "Jan Kowalski"
-    assert data["statements"][0]["time"] == "10:00"
-    assert data["statements"][1]["speaker"] == "Anna Nowak"
-    assert data["statements"][1]["time"] == "10:05"
+    assert len(result.turns) == 2
+    assert result.turns[0].speaker == "Jan Kowalski"
+    assert result.turns[0].time == "10:00"
+    assert result.turns[1].speaker == "Anna Nowak"
+    assert result.turns[1].time == "10:05"
 
 
 CONVERSATION_POLISH = """\
@@ -553,14 +552,14 @@ async def test_polish_language_detection(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "polish.md"
     conv_file.write_text(CONVERSATION_POLISH, encoding="utf-8")
 
-    data = await _call_clean_conversation_file(str(conv_file))
+    result = await _call_clean_conversation_file(str(conv_file))
 
-    assert data["title"] == "Spotkanie projektowe"
-    assert len(data["statements"]) == 2
-    first = data["statements"][0]
-    assert first["speaker"] == "Jan Kowalski"
-    assert len(first["sentences"]) == 2
-    assert "powinniśmy" in first["sentences"][0]
+    assert result.title == "Spotkanie projektowe"
+    assert len(result.turns) == 2
+    first = result.turns[0]
+    assert first.speaker == "Jan Kowalski"
+    assert len(first.sentences) == 2
+    assert "powinniśmy" in first.sentences[0]
 
 
 def _make_sampling_callback(response_text: str):
@@ -576,7 +575,7 @@ def _make_sampling_callback(response_text: str):
 
 async def _call_clean_conversation_file(
     file_path: str, sampling_callback=None
-) -> dict:
+) -> CleanedConversation:
     kwargs = {"raise_exceptions": True}
     if sampling_callback is not None:
         kwargs["sampling_callback"] = sampling_callback
@@ -586,4 +585,4 @@ async def _call_clean_conversation_file(
         result = await client.call_tool(
             "clean_conversation_file", {"file_path": file_path}
         )
-        return json.loads(result.content[0].text)
+        return CleanedConversation.model_validate_json(result.content[0].text)
