@@ -29,6 +29,26 @@ class QualityAttributeType(str, Enum):
     OTHER = "other"
 
 
+class Actor(BaseModel):
+    id: str
+    name: str
+    description: str
+
+
+class BusinessGoal(BaseModel):
+    id: str
+    name: str
+    description: str
+
+
+class ActorRef(BaseModel):
+    id: str = Field(description="Reference to an Actor id")
+
+
+class BusinessGoalRef(BaseModel):
+    id: str = Field(description="Reference to a BusinessGoal id")
+
+
 class DomainConceptRef(BaseModel):
     id: str = Field(description="Reference to a DomainConcept id")
 
@@ -55,6 +75,8 @@ class Rule(BaseModel):
 class UseCase(BaseModel):
     id: str
     name: str
+    actor: ActorRef
+    business_goal: BusinessGoalRef = Field(alias="businessGoal")
     uc_description: str | None = Field(default=None, alias="UCDescription")
     uc_type: UseCaseType = Field(alias="UseCaseType")
     state: State
@@ -86,6 +108,8 @@ class QualityAttribute(BaseModel):
 
 
 class DesignDoc(BaseModel):
+    actors: list[Actor] = []
+    business_goal: BusinessGoal = Field(alias="businessGoal")
     rules: list[Rule] = []
     use_cases: list[UseCase] = Field(default_factory=list, alias="useCases")
     domain_concepts: list[DomainConcept] = Field(default_factory=list, alias="domainConcepts")
