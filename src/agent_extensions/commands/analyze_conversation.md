@@ -1,11 +1,45 @@
 # Analyze conversation
 
-You MUST use `noesis:analyze-conversation` MCP tool to analyze conversation in: $ARGUMENTS.  
-If `noesis:analyze-conversation` MCP tool is not installed, ask the user to install it first.  
+Read the conversation file at: $ARGUMENTS
 
-## CRITICAL: File Handling Rules
+If ARGUMENTS do not contain a file path, ask the user to provide it.
+If the file is empty or unreadable, inform the user about the problem.
 
-If ARGUMENTS do not contain a file path, ask the user to provide it.  
-DO NOT open, read or inspect the file contents.
-DO NOT pass the file path to any other tool.
-IMMEDIATELY pass the path string to `noesis:analyze-conversation` MCP tool.
+## Analysis instructions
+
+Analyze the conversation and produce a structured JSON response with the following components:
+
+1. **Summary**: A concise summary (2-4 sentences) of the overall conversation, capturing the main purpose and outcome.
+
+2. **Domain Terms**: Identify domain-specific terminology used in the conversation. Only include terms that:
+   - Are specific to a particular field, technology, or domain
+   - Have enough context in the conversation to provide a meaningful definition
+   - Would benefit from explanation
+   If no clear domain terms are identified, set `domain_terms` to `null`.
+
+3. **Topics**: Break down the conversation into distinct topics that were discussed. For each topic:
+   - Provide a clear, descriptive title
+   - Write a brief summary (1-3 sentences) of what was discussed
+   There must be at least one topic.
+
+## Output format
+
+Return ONLY the following JSON (no markdown code blocks, no additional explanations):
+
+```json
+{
+  "summary": "Your overall conversation summary here",
+  "domain_terms": [
+    {
+      "term": "term name",
+      "definition": "definition based on conversation context"
+    }
+  ],
+  "topics": [
+    {
+      "title": "Topic title",
+      "summary": "Brief summary of this topic"
+    }
+  ]
+}
+```

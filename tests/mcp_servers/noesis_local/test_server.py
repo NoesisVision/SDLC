@@ -42,18 +42,3 @@ async def test_database_persists_across_restarts(tmp_path, monkeypatch) -> None:
         db_files_after_restart = list(noesis_dir.glob("graph.db*"))
         assert len(db_files_after_restart) > 0
         assert settings_file.exists()
-
-
-async def test_server_lists_tools(tmp_path, monkeypatch) -> None:
-    """Test that the server correctly lists available tools."""
-    monkeypatch.chdir(tmp_path)
-    async with create_connected_server_and_client_session(noesis_server) as client:
-        result = await client.list_tools()
-        tools = result.tools
-
-        analyze_tool = next((t for t in tools if t.name == "analyze_conversation_file"), None)
-        assert analyze_tool is not None, "analyze_conversation_file tool not found"
-        assert analyze_tool.description is not None
-        assert analyze_tool.inputSchema is not None
-        assert "properties" in analyze_tool.inputSchema
-        assert "file_path" in analyze_tool.inputSchema["properties"]

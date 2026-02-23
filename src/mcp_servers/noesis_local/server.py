@@ -17,7 +17,6 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from redislite.falkordb_client import FalkorDB
 
-from .analyze_conversation import analyze_conversation_file
 from .clean_conversation import clean_conversation_file
 from .structure_conversation import structure_conversation
 
@@ -78,7 +77,6 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
 
 noesis_server = FastMCP("noesis-local", lifespan=app_lifespan)
 
-noesis_server.tool()(analyze_conversation_file)
 noesis_server.tool()(clean_conversation_file)
 noesis_server.tool()(structure_conversation)
 
