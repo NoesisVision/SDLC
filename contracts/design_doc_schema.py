@@ -86,10 +86,10 @@ class QualityAttribute(BaseModel):
 
 
 class DesignDoc(BaseModel):
-    rules: list[Rule] | None = None
-    use_cases: list[UseCase] | None = Field(default=None, alias="useCases")
-    domain_concepts: list[DomainConcept] | None = Field(default=None, alias="domainConcepts")
-    scenarios: list[Scenario] | None = None
-    quality_attributes: list[QualityAttribute] | None = Field(default=None, alias="qualityAttributes")
+    rules: list[Rule] = Field(default_factory=list)
+    use_cases: list[UseCase] = Field(default_factory=list, alias="useCases")
+    domain_concepts: list[DomainConcept] = Field(default_factory=list, alias="domainConcepts")
+    scenarios: list[Scenario] = Field(default_factory=list)
+    quality_attributes: list[QualityAttribute] = Field(default_factory=list, alias="qualityAttributes")
 
     model_config = {"populate_by_name": True}
