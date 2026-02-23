@@ -14,7 +14,7 @@ class State(str, Enum):
     ASSUMED = "Assumed"
 
 
-class UCType(str, Enum):
+class UseCaseType(str, Enum):
     COMMAND = "Command"
     EVENT = "Event"
     QUERY = "Query"
@@ -56,7 +56,7 @@ class UseCase(BaseModel):
     id: str
     name: str
     uc_description: str | None = Field(default=None, alias="UCDescription")
-    uc_type: UCType = Field(alias="UCType")
+    uc_type: UseCaseType = Field(alias="UCType")
     state: State
     input: list[DomainConceptRef] | None = None
     rules: list[RuleRef] | None = None
