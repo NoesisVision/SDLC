@@ -29,6 +29,17 @@ class QualityAttributeType(str, Enum):
     OTHER = "other"
 
 
+class BuildingBlockType(str, Enum):
+    AGGREGATE = "Aggregate"
+    ENTITY = "Entity"
+    VALUE_OBJECT = "Value object"
+    DOMAIN_EVENT = "Domain event"
+    DOMAIN_SERVICE = "Domain service"
+    REPOSITORY = "Repository"
+    FACTORY = "Factory"
+    OBJECT = "Object"
+
+
 class Actor(BaseModel):
     id: str
     name: str
@@ -63,6 +74,39 @@ class ScenarioRef(BaseModel):
 
 class QualityAttributeRef(BaseModel):
     id: str = Field(description="Reference to a QualityAttribute id")
+
+
+class BuildingBlockRef(BaseModel):
+    id: str = Field(description="Reference to a BuildingBlock id")
+
+
+class Attribute(BaseModel):
+    name: str
+    type: str
+
+
+class Behaviour(BaseModel):
+    name: str
+    description: str
+    input: list[DomainConceptRef] = []
+    output: list[DomainConceptRef] = []
+    rules: list[RuleRef] = []
+    emits: list[BuildingBlockRef] = []
+
+
+class Relation(BaseModel):
+    target: BuildingBlockRef
+    relation_type: str = Field(alias="relationType")
+
+
+class BuildingBlock(BaseModel):
+    id: str
+    name: str
+    description: str
+    block_type: BuildingBlockType = Field(alias="blockType")
+    attributes: list[Attribute] = []
+    behaviours: list[Behaviour] = []
+    relations: list[Relation] = []
 
 
 class Rule(BaseModel):
@@ -115,3 +159,4 @@ class DesignDoc(BaseModel):
     domain_concepts: list[DomainConcept] = Field(default_factory=list, alias="domainConcepts")
     scenarios: list[Scenario] = []
     quality_attributes: list[QualityAttribute] = Field(default_factory=list, alias="qualityAttributes")
+    building_blocks: list[BuildingBlock] = Field(default_factory=list, alias="buildingBlocks")
