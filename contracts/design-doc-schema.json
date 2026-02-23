@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "design-doc-schema.json",
+  "title": "Design Doc Schema",
+  "description": "Schema for rules, use cases, domain concepts, scenarios, and quality attributes",
+  "type": "object",
+  "properties": {
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Rule" }
+    },
+    "useCases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/UseCase" }
+    },
+    "domainConcepts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DomainConcept" }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Scenario" }
+    },
+    "qualityAttributes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/QualityAttribute" }
+    }
+  },
+  "$defs": {
+    "Rule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ruleType": {
+          "type": "string",
+          "enum": ["Consistency", "Structure", "Computation", "State change"]
+        },
+        "state": {
+          "type": "string",
+          "enum": ["Confirmed", "Assumed"]
+        },
+        "ruleDescription": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "type", "state", "description"]
+    },
+    "UseCase": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "UCDescription": {
+          "type": "string"
+        },
+        "UCType": {
+          "type": "string",
+          "enum": ["Command", "Event", "Query"]
+        },
+        "state": {
+          "type": "string",
+          "enum": ["Confirmed", "Assumed"]
+        },
+        "input": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DomainConceptRef" }
+        },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RuleRef" }
+        },
+        "output": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DomainConceptRef" }
+        },
+        "sideEffects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ScenarioRef" }
+        },
+        "qualities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/QualityAttributeRef" }
+        }
+      },
+      "required": ["id", "name", "type", "state"]
+    },
+    "DomainConcept": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "definition": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "definition"]
+    },
+    "Scenario": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "ScenarioDescription": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        }
+      },
+      "required": ["name", "description", "content"]
+    },
+    "QualityAttribute": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "QAType": {
+          "type": "string",
+          "enum": ["performance", "availability", "CAPEX", "OPEX", "security", "other"]
+        },
+        "QADescription": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "type", "description"]
+    },
+    "DomainConceptRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Reference to a DomainConcept id"
+        }
+      },
+      "required": ["id"]
+    },
+    "RuleRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Reference to a Rule id"
+        }
+      },
+      "required": ["id"]
+    },
+    "ScenarioRef": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Reference to a Scenario name"
+        }
+      },
+      "required": ["name"]
+    },
+    "QualityAttributeRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Reference to a QualityAttribute id"
+        }
+      },
+      "required": ["id"]
+    }
+  }
+}
