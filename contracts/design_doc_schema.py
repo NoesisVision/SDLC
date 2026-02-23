@@ -14,13 +14,13 @@ class State(str, Enum):
     ASSUMED = "Assumed"
 
 
-class UCType(str, Enum):
+class UseCaseType(str, Enum):
     COMMAND = "Command"
     EVENT = "Event"
     QUERY = "Query"
 
 
-class QAType(str, Enum):
+class QualityAttributeType(str, Enum):
     PERFORMANCE = "performance"
     AVAILABILITY = "availability"
     CAPEX = "CAPEX"
@@ -56,14 +56,14 @@ class UseCase(BaseModel):
     id: str
     name: str
     uc_description: str | None = Field(default=None, alias="UCDescription")
-    uc_type: UCType = Field(alias="UCType")
+    uc_type: UseCaseType = Field(alias="UseCaseType")
     state: State
-    input: list[DomainConceptRef] | None = None
-    rules: list[RuleRef] | None = None
-    output: list[DomainConceptRef] | None = None
-    side_effects: list[str] | None = Field(default=None, alias="sideEffects")
-    scenarios: list[ScenarioRef] | None = None
-    qualities: list[QualityAttributeRef] | None = None
+    input: list[DomainConceptRef] = []
+    rules: list[RuleRef] = []
+    output: list[DomainConceptRef] = []
+    side_effects: list[str] = Field(default_factory=list, alias="sideEffects")
+    scenarios: list[ScenarioRef] = []
+    qualities: list[QualityAttributeRef] = []
 
 
 class DomainConcept(BaseModel):
@@ -81,15 +81,13 @@ class Scenario(BaseModel):
 class QualityAttribute(BaseModel):
     id: str
     name: str
-    qa_type: QAType = Field(alias="QAType")
+    qa_type: QualityAttributeType = Field(alias="QualityAttributeType")
     qa_description: str = Field(alias="QADescription")
 
 
 class DesignDoc(BaseModel):
-    rules: list[Rule] | None = None
-    use_cases: list[UseCase] | None = Field(default=None, alias="useCases")
-    domain_concepts: list[DomainConcept] | None = Field(default=None, alias="domainConcepts")
-    scenarios: list[Scenario] | None = None
-    quality_attributes: list[QualityAttribute] | None = Field(default=None, alias="qualityAttributes")
-
-    model_config = {"populate_by_name": True}
+    rules: list[Rule] = []
+    use_cases: list[UseCase] = Field(default_factory=list, alias="useCases")
+    domain_concepts: list[DomainConcept] = Field(default_factory=list, alias="domainConcepts")
+    scenarios: list[Scenario] = []
+    quality_attributes: list[QualityAttribute] = Field(default_factory=list, alias="qualityAttributes")
