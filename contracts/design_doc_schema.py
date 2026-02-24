@@ -141,6 +141,14 @@ class Factory(BaseModel):
     behaviours: list[Behaviour] = []
 
 
+class ExternalIntegration(BaseModel):
+    id: str
+    name: str
+    description: str
+    owner: str | None = Field(default=None, description="BoundedContext or DomainModule id")
+    behaviours: list[Behaviour] = []
+
+
 class DomainModule(BaseModel):
     id: str
     name: str
@@ -155,6 +163,7 @@ class DomainModule(BaseModel):
     application_services: list[str] = Field(default_factory=list, alias="applicationServices", description="List of ApplicationService ids")
     repositories: list[str] = Field(default_factory=list, description="List of Repository ids")
     factories: list[str] = Field(default_factory=list, description="List of Factory ids")
+    external_integrations: list[str] = Field(default_factory=list, alias="externalIntegrations", description="List of ExternalIntegration ids")
 
 
 class BoundedContext(BaseModel):
@@ -173,6 +182,7 @@ class BoundedContext(BaseModel):
     application_services: list[str] = Field(default_factory=list, alias="applicationServices", description="List of ApplicationService ids")
     repositories: list[str] = Field(default_factory=list, description="List of Repository ids")
     factories: list[str] = Field(default_factory=list, description="List of Factory ids")
+    external_integrations: list[str] = Field(default_factory=list, alias="externalIntegrations", description="List of ExternalIntegration ids")
 
 
 class Rule(BaseModel):
@@ -230,3 +240,4 @@ class DesignDoc(BaseModel):
     application_services: list[ApplicationService] = Field(default_factory=list, alias="applicationServices")
     repositories: list[Repository] = []
     factories: list[Factory] = []
+    external_integrations: list[ExternalIntegration] = Field(default_factory=list, alias="externalIntegrations")
