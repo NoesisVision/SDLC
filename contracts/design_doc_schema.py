@@ -29,17 +29,6 @@ class QualityAttributeType(str, Enum):
     OTHER = "other"
 
 
-class BuildingBlockType(str, Enum):
-    AGGREGATE = "Aggregate"
-    ENTITY = "Entity"
-    VALUE_OBJECT = "Value object"
-    DOMAIN_EVENT = "Domain event"
-    DOMAIN_SERVICE = "Domain service"
-    REPOSITORY = "Repository"
-    FACTORY = "Factory"
-    OBJECT = "Object"
-
-
 class Actor(BaseModel):
     id: str
     name: str
@@ -52,34 +41,6 @@ class BusinessGoal(BaseModel):
     description: str
 
 
-class ActorRef(BaseModel):
-    id: str = Field(description="Reference to an Actor id")
-
-
-class BusinessGoalRef(BaseModel):
-    id: str = Field(description="Reference to a BusinessGoal id")
-
-
-class DomainConceptRef(BaseModel):
-    id: str = Field(description="Reference to a DomainConcept id")
-
-
-class RuleRef(BaseModel):
-    id: str = Field(description="Reference to a Rule id")
-
-
-class ScenarioRef(BaseModel):
-    name: str = Field(description="Reference to a Scenario name")
-
-
-class QualityAttributeRef(BaseModel):
-    id: str = Field(description="Reference to a QualityAttribute id")
-
-
-class BuildingBlockRef(BaseModel):
-    id: str = Field(description="Reference to a BuildingBlock id")
-
-
 class Attribute(BaseModel):
     name: str
     type: str
@@ -88,25 +49,86 @@ class Attribute(BaseModel):
 class Behaviour(BaseModel):
     name: str
     description: str
-    input: list[DomainConceptRef] = []
-    output: list[DomainConceptRef] = []
-    rules: list[RuleRef] = []
-    emits: list[BuildingBlockRef] = []
+    input: list[str] = Field(default_factory=list, description="List of building block ids")
+    output: list[str] = Field(default_factory=list, description="List of building block ids")
+    rules: list[str] = Field(default_factory=list, description="List of Rule ids")
+    emits: list[str] = Field(default_factory=list, description="List of DomainEvent ids")
 
 
-class Relation(BaseModel):
-    target: BuildingBlockRef
-    relation_type: str = Field(alias="relationType")
-
-
-class BuildingBlock(BaseModel):
+class Aggregate(BaseModel):
     id: str
     name: str
     description: str
-    block_type: BuildingBlockType = Field(alias="blockType")
     attributes: list[Attribute] = []
     behaviours: list[Behaviour] = []
-    relations: list[Relation] = []
+    entities: list[str] = Field(default_factory=list, description="List of Entity ids")
+    value_objects: list[str] = Field(default_factory=list, alias="valueObjects", description="List of ValueObject ids")
+    domain_events: list[str] = Field(default_factory=list, alias="domainEvents", description="List of DomainEvent ids")
+
+
+class Entity(BaseModel):
+    id: str
+    name: str
+    description: str
+    attributes: list[Attribute] = []
+    behaviours: list[Behaviour] = []
+
+
+class ValueObject(BaseModel):
+    id: str
+    name: str
+    description: str
+    attributes: list[Attribute] = []
+    behaviours: list[Behaviour] = []
+
+
+class DomainEvent(BaseModel):
+    id: str
+    name: str
+    description: str
+    attributes: list[Attribute] = []
+
+
+class DomainCommand(BaseModel):
+    id: str
+    name: str
+    description: str
+    attributes: list[Attribute] = []
+
+
+class DomainQuery(BaseModel):
+    id: str
+    name: str
+    description: str
+    attributes: list[Attribute] = []
+
+
+class DomainService(BaseModel):
+    id: str
+    name: str
+    description: str
+    behaviours: list[Behaviour] = []
+
+
+class ApplicationService(BaseModel):
+    id: str
+    name: str
+    description: str
+    behaviours: list[Behaviour] = []
+
+
+class Repository(BaseModel):
+    id: str
+    name: str
+    description: str
+    behaviours: list[Behaviour] = []
+
+
+class Factory(BaseModel):
+    id: str
+    name: str
+    description: str
+    behaviours: list[Behaviour] = []
 
 
 class Rule(BaseModel):
@@ -119,23 +141,17 @@ class Rule(BaseModel):
 class UseCase(BaseModel):
     id: str
     name: str
-    actor: ActorRef
-    business_goal: BusinessGoalRef = Field(alias="businessGoal")
+    actor: str = Field(description="Reference to an Actor id")
+    business_goal: str = Field(alias="businessGoal", description="Reference to a BusinessGoal id")
     uc_description: str | None = Field(default=None, alias="UCDescription")
     uc_type: UseCaseType = Field(alias="UseCaseType")
     state: State
-    input: list[DomainConceptRef] = []
-    rules: list[RuleRef] = []
-    output: list[DomainConceptRef] = []
+    input: list[str] = Field(default_factory=list, description="List of building block ids")
+    rules: list[str] = Field(default_factory=list, description="List of Rule ids")
+    output: list[str] = Field(default_factory=list, description="List of building block ids")
     side_effects: list[str] = Field(default_factory=list, alias="sideEffects")
-    scenarios: list[ScenarioRef] = []
-    qualities: list[QualityAttributeRef] = []
-
-
-class DomainConcept(BaseModel):
-    id: str
-    name: str
-    definition: str
+    scenarios: list[str] = Field(default_factory=list, description="List of Scenario names")
+    qualities: list[str] = Field(default_factory=list, description="List of QualityAttribute ids")
 
 
 class Scenario(BaseModel):
@@ -156,7 +172,15 @@ class DesignDoc(BaseModel):
     business_goal: BusinessGoal = Field(alias="businessGoal")
     rules: list[Rule] = []
     use_cases: list[UseCase] = Field(default_factory=list, alias="useCases")
-    domain_concepts: list[DomainConcept] = Field(default_factory=list, alias="domainConcepts")
     scenarios: list[Scenario] = []
     quality_attributes: list[QualityAttribute] = Field(default_factory=list, alias="qualityAttributes")
-    building_blocks: list[BuildingBlock] = Field(default_factory=list, alias="buildingBlocks")
+    aggregates: list[Aggregate] = []
+    entities: list[Entity] = []
+    value_objects: list[ValueObject] = Field(default_factory=list, alias="valueObjects")
+    domain_events: list[DomainEvent] = Field(default_factory=list, alias="domainEvents")
+    domain_commands: list[DomainCommand] = Field(default_factory=list, alias="domainCommands")
+    domain_queries: list[DomainQuery] = Field(default_factory=list, alias="domainQueries")
+    domain_services: list[DomainService] = Field(default_factory=list, alias="domainServices")
+    application_services: list[ApplicationService] = Field(default_factory=list, alias="applicationServices")
+    repositories: list[Repository] = []
+    factories: list[Factory] = []
