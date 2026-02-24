@@ -72,7 +72,8 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
         yield ctx
     finally:
         if ctx.db is not None:
-            logger.info("FalkorDB shutting down")
+            ctx.db.close()
+            logger.info("FalkorDB shut down")
 
 
 noesis_server = FastMCP("noesis-local", lifespan=app_lifespan)

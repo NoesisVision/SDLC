@@ -47,6 +47,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+markers = ["real_db: test uses real FalkorDB lifecycle (not shared instance)"]
 addopts = [
     "-v",
     "--strict-markers",
