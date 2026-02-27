@@ -1,7 +1,0 @@
-[runtime]
-# To pozwala agentowi na używanie narzędzi zainstalowanych w Twoim systemie
-type = "local"
-enable_lsp = true
-
-[capability.lsp]
-java = "jdtls"
