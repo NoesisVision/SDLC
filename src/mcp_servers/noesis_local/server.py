@@ -17,8 +17,16 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from redislite.falkordb_client import FalkorDB
 
-from .clean_conversation import clean_conversation_file
-from .structure_conversation import structure_conversation
+from .conversations_cleaning import clean_conversation, set_conversation_metadata
+from .conversations_registry import add_conversation
+from .conversation_output import finalize_conversation
+from .idea_units_extraction import (
+    get_extraction_batch,
+    prepare_extraction_batches,
+    store_extraction_result,
+    validate_and_merge_idea_units,
+)
+from .topic_assignment import apply_topic_arbitration, assign_topics, embed_idea_units
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +86,17 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
 
 noesis_server = FastMCP("noesis-local", lifespan=app_lifespan)
 
-noesis_server.tool()(clean_conversation_file)
-noesis_server.tool()(structure_conversation)
+noesis_server.tool()(add_conversation)
+noesis_server.tool()(apply_topic_arbitration)
+noesis_server.tool()(assign_topics)
+noesis_server.tool()(clean_conversation)
+noesis_server.tool()(embed_idea_units)
+noesis_server.tool()(finalize_conversation)
+noesis_server.tool()(get_extraction_batch)
+noesis_server.tool()(prepare_extraction_batches)
+noesis_server.tool()(set_conversation_metadata)
+noesis_server.tool()(store_extraction_result)
+noesis_server.tool()(validate_and_merge_idea_units)
 
 if __name__ == "__main__":
     # Run the server using stdio transport

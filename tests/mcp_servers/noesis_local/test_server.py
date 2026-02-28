@@ -42,3 +42,25 @@ async def test_database_persists_across_restarts(tmp_path, monkeypatch) -> None:
     async with create_connected_server_and_client_session(noesis_server):
         db_files_after_restart = list(noesis_dir.glob("graph.db*"))
         assert len(db_files_after_restart) > 0
+
+
+async def test_server_lists_tools(tmp_path, monkeypatch) -> None:
+    """Test that the server correctly lists available tools."""
+    monkeypatch.chdir(tmp_path)
+    async with create_connected_server_and_client_session(noesis_server) as client:
+        result = await client.list_tools()
+        tools = result.tools
+
+        tool_names = {t.name for t in tools}
+
+        assert "add_conversation" in tool_names
+        assert "clean_conversation" in tool_names
+        assert "set_conversation_metadata" in tool_names
+        assert "prepare_extraction_batches" in tool_names
+        assert "validate_and_merge_idea_units" in tool_names
+        assert "embed_idea_units" in tool_names
+        assert "assign_topics" in tool_names
+        assert "apply_topic_arbitration" in tool_names
+        assert "finalize_conversation" in tool_names
+        assert "get_extraction_batch" in tool_names
+        assert "store_extraction_result" in tool_names
