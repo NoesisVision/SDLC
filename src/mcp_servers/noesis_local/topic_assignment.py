@@ -9,10 +9,12 @@ from sentence_transformers import SentenceTransformer
 
 from .conversations_registry import ConversationState, get_conversation
 from .idea_units_extraction import IdeaUnit, IdeaUnitCategory, TurnIdeaUnits
-from .topic_registry import EMBEDDING_MODEL, HIGH_CONFIDENCE_THRESHOLD, LOW_CONFIDENCE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
+_HIGH_CONFIDENCE_THRESHOLD = 0.82
+_LOW_CONFIDENCE_THRESHOLD = 0.65
+_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # ---------------------------------------------------------------------------
 # Response Models
@@ -84,7 +86,7 @@ async def embed_idea_units(conversation_id: str) -> EmbedResponse:
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
     turn_idea_units = [TurnIdeaUnits(**t) for t in state.idea_units]
-    model = SentenceTransformer(EMBEDDING_MODEL)
+    model = SentenceTransformer(_EMBEDDING_MODEL)
     texts, indices = _collect_embeddable_texts(turn_idea_units)
 
     if not texts:
@@ -204,12 +206,12 @@ def _run_assignment_loop(
         scores = _compute_similarities(embedding, centroids)
         best_topic_id, best_score = scores[0]
 
-        if best_score > HIGH_CONFIDENCE_THRESHOLD:
+        if best_score > _HIGH_CONFIDENCE_THRESHOLD:
             _assign_to_existing(topics, best_topic_id, embedding)
             _record_assignment(assignments, best_topic_id, speaker, time, idea_unit)
             position += 1
 
-        elif best_score < LOW_CONFIDENCE_THRESHOLD:
+        elif best_score < _LOW_CONFIDENCE_THRESHOLD:
             tid, next_id = _create_placeholder_topic(topics, next_id, idea_unit, embedding)
             _record_assignment(assignments, tid, speaker, time, idea_unit)
             position += 1
