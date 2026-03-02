@@ -48,31 +48,20 @@ For each batch index `N` (from 0 to batch_count-1), launch a Task subagent with:
 - **subagent_type:** `idea_unit_extractor`
 - **prompt:** `Extract idea units from conversation_id="<conversation_id>", batch_index=<N>.`
 
-Wait for all subagents to complete before proceeding.
+Wait for all subagents to complete. Each subagent handles its own retries. If a subagent reports failure, ask the user what to do.
 
-### Step 4: Validate & Retry Loop
-
-Call the `get_failed_batches` MCP tool with `conversation_id`.
-
-Parse the response:
-- If `status` is `"all_passed"` — proceed to Step 5
-- If `status` is `"has_failures"`:
-  1. Check `max_retries_exceeded` — if non-empty, report failure to the user and stop
-  2. Re-launch subagents (Step 3 prompt) for each batch in `failed_batches` (use `batch_index` from each entry)
-  3. Call `get_failed_batches` again and repeat
-
-### Step 5: Compute Embeddings
+### Step 4: Compute Embeddings
 
 Call the `embed_idea_units` MCP tool with `conversation_id`.
 
 This may take a moment for large conversations. Proceed when done.
 
-### Step 6: Assign Topics (Iterative)
+### Step 5: Assign Topics (Iterative)
 
 Call the `assign_topics` MCP tool with `conversation_id`.
 
 Parse the response:
-- If `status` is `"success"` — proceed to Step 7. The response includes `topics_for_labeling`.
+- If `status` is `"success"` — proceed to Step 6. The response includes `topics_for_labeling`.
 - If `status` is `"arbitration_needed"`:
   1. The response contains `arbitration_request` with: `fragment` (the text), `category`, and `candidates` (each with `topic_id`, `score`, and `representative_texts`)
   2. Decide: does the fragment belong to one of the candidate topics, or is it a new topic?
@@ -82,9 +71,9 @@ Parse the response:
   3. Call the `apply_topic_arbitration` MCP tool with `conversation_id` and `topic_id` (the chosen ID or `"NEW"`)
   4. Parse the response — it may return another `arbitration_needed` or `success`. Repeat until `success`.
 
-### Step 7: Generate Topic Labels & Summaries
+### Step 6: Generate Topic Labels & Summaries
 
-Use the `topics_for_labeling` array from the successful Step 6 response. Each entry contains `topic_id`, `representative_texts`, and `categories`.
+Use the `topics_for_labeling` array from the successful Step 5 response. Each entry contains `topic_id`, `representative_texts`, and `categories`.
 
 For each topic, generate:
 - **label**: A 2-5 word topic name based on the `representative_texts` and `categories`
@@ -100,7 +89,7 @@ Build a JSON string in this format:
 }
 ```
 
-### Step 8: Build Final Output
+### Step 7: Build Final Output
 
 Call the `finalize_conversation` MCP tool with:
 - `conversation_id`: the ID from Step 0

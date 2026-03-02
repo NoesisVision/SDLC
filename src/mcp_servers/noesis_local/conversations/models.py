@@ -37,6 +37,16 @@ class ConversationStatus(str, Enum):
     FINALIZED = "FINALIZED"
 
 
+
+@dataclass
+class ExtractionBatch:
+    """A single batch of speaker turns prepared for idea-unit extraction."""
+
+    batch_index: int
+    turns: str
+    expected_turns: list[SpeakerTurn]
+
+
 @dataclass
 class ConversationState:
     """Holds all intermediate state for a single conversation being structured."""
@@ -47,10 +57,9 @@ class ConversationState:
     title: str | None = None
     date: str | None = None
     turns: list[SpeakerTurn] | None = None
-    batches: list[dict] = field(default_factory=list)
-    batch_results: dict[int, str] = field(default_factory=dict)
-    batch_retry_counts: dict[int, int] = field(default_factory=dict)
-    idea_units: list[dict] | None = None
+    batches: list[ExtractionBatch] = field(default_factory=list)
+    batch_results: dict[int, list[TurnIdeaUnits]] = field(default_factory=dict)
+    idea_units: list[TurnIdeaUnits] | None = None
     embeddings: dict[int, np.ndarray] = field(default_factory=dict)
     assignment_state: dict | None = None
     topics_draft: dict | None = None
@@ -118,7 +127,7 @@ class SetMetadataResponse(BaseModel):
 class GetBatchResponse(BaseModel):
     """Response from get_extraction_batch."""
 
-    turns: str = Field(description="Formatted conversation turns for this batch")
+    turns: str = Field(description="JSON array of speaker turns for this batch")
     batch_index: int = Field(description="Index of this batch")
 
 
@@ -132,35 +141,12 @@ class PrepareBatchesResponse(BaseModel):
 class StoreBatchResultResponse(BaseModel):
     """Response from store_extraction_result."""
 
-    status: str = Field(description="'success'")
-
-
-class ValidateAndMergeResponse(BaseModel):
-    """Response from validate_and_merge_idea_units."""
-
-    status: str = Field(description="'success' or 'retry_needed'")
-    failed_batches: list[int] = Field(default_factory=list, description="Batch indices that failed validation")
-    turn_count: int = Field(default=0, description="Number of validated turns (when successful)")
-
-
-class FailedBatchInfo(BaseModel):
-    """Information about a single failed batch."""
-
-    batch_index: int = Field(description="Index of the failed batch")
-    retry_count: int = Field(description="Number of retries attempted so far")
-
-
-class GetFailedBatchesResponse(BaseModel):
-    """Response from get_failed_batches."""
-
-    status: str = Field(description="'all_passed' or 'has_failures'")
-    failed_batches: list[FailedBatchInfo] = Field(
-        default_factory=list, description="Batches that failed validation"
+    status: str = Field(description="'success', 'invalid_json', or 'validation_failed'")
+    error_details: str | None = Field(
+        default=None,
+        description="Actionable description of what went wrong. Present when status is not 'success'.",
     )
-    max_retries_exceeded: list[int] = Field(
-        default_factory=list, description="Batch indices that exceeded max retries"
-    )
-    turn_count: int = Field(default=0, description="Number of validated turns (when all passed)")
+
 
 
 # ---------------------------------------------------------------------------

@@ -48,9 +48,8 @@ async def embed_idea_units(conversation_id: str) -> EmbedResponse:
     if state.idea_units is None:
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
-    turn_idea_units = [TurnIdeaUnits(**t) for t in state.idea_units]
     model = SentenceTransformer(_EMBEDDING_MODEL)
-    texts, indices = _collect_embeddable_texts(turn_idea_units)
+    texts, indices = _collect_embeddable_texts(state.idea_units)
 
     if not texts:
         state.embeddings = {}
@@ -79,8 +78,7 @@ async def assign_topics(conversation_id: str) -> AssignResponse:
     if state.idea_units is None:
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
-    turn_idea_units = [TurnIdeaUnits(**t) for t in state.idea_units]
-    flat_units = _flatten_idea_units(turn_idea_units)
+    flat_units = _flatten_idea_units(state.idea_units)
     return _run_assignment_loop(state, flat_units, topics={}, next_id=1, position=0, assignments={})
 
 
@@ -105,8 +103,6 @@ async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> Assign
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
     astate = state.assignment_state
-    turn_idea_units = [TurnIdeaUnits(**t) for t in state.idea_units]
-
     topics = _restore_topics(astate)
     next_id = astate["next_id"]
     assignments = astate["assignments"]
@@ -133,7 +129,7 @@ async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> Assign
         _record_assignment(assignments, best_candidate, speaker, time, idea_unit)
 
     position = pending["resume_position"]
-    flat_units = _flatten_idea_units(turn_idea_units)
+    flat_units = _flatten_idea_units(state.idea_units)
     return _run_assignment_loop(state, flat_units, topics, next_id, position, assignments)
 
 
@@ -194,11 +190,11 @@ def _run_assignment_loop(
     )
 
 
-def _collect_embeddable_texts(turn_idea_units: list[TurnIdeaUnits]) -> tuple[list[str], list[int]]:
+def _collect_embeddable_texts(turns: list[TurnIdeaUnits]) -> tuple[list[str], list[int]]:
     texts: list[str] = []
     indices: list[int] = []
     global_idx = 0
-    for turn in turn_idea_units:
+    for turn in turns:
         for idea_unit in turn.idea_units:
             if idea_unit.category != IdeaUnitCategory.Irrelevant:
                 texts.append(" ".join(idea_unit.sentences))

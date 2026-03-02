@@ -22,10 +22,8 @@ from mcp_servers.noesis_local.conversations.registry import add_conversation
 from mcp_servers.noesis_local.conversations.finalizing import finalize_conversation
 from mcp_servers.noesis_local.conversations.idea_units_extracting import (
     get_extraction_batch,
-    get_failed_batches,
     prepare_extraction_batches,
     store_extraction_result,
-    validate_and_merge_idea_units,
 )
 from mcp_servers.noesis_local.conversations.topics_assigning import apply_topic_arbitration, assign_topics, embed_idea_units
 
@@ -94,11 +92,9 @@ noesis_server.tool()(clean_conversation)
 noesis_server.tool()(embed_idea_units)
 noesis_server.tool()(finalize_conversation)
 noesis_server.tool()(get_extraction_batch)
-noesis_server.tool()(get_failed_batches)
 noesis_server.tool()(prepare_extraction_batches)
 noesis_server.tool()(set_conversation_metadata)
 noesis_server.tool()(store_extraction_result)
-noesis_server.tool()(validate_and_merge_idea_units)
 
 if __name__ == "__main__":
     # Run the server using stdio transport

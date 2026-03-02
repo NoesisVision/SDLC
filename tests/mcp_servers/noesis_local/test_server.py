@@ -57,7 +57,6 @@ async def test_server_lists_tools(tmp_path, monkeypatch) -> None:
         assert "clean_conversation" in tool_names
         assert "set_conversation_metadata" in tool_names
         assert "prepare_extraction_batches" in tool_names
-        assert "validate_and_merge_idea_units" in tool_names
         assert "embed_idea_units" in tool_names
         assert "assign_topics" in tool_names
         assert "apply_topic_arbitration" in tool_names
