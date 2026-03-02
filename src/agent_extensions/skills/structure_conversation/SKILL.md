@@ -7,6 +7,10 @@ description: Structure a conversation transcript into topics with classified ide
 
 Structure a conversation transcript (markdown file) into semantically grouped topics with classified idea units (Issue, Position, Argument, Decision).
 
+## Core Principles
+
+- NEVER load the whole conversation file into LLM context.
+
 ## Setup
 
 - **MCP server:** `noesis_local` (all tools are registered there)
@@ -16,12 +20,8 @@ Structure a conversation transcript (markdown file) into semantically grouped to
 
 ### Step 0: Register Conversation
 
-Call the `add_conversation` MCP tool:
-- `file_path`: absolute path to the conversation markdown file
-
-Parse the response to get `conversation_id`. Use this ID for **all** subsequent tool calls.
-
-NEWER load the whole file into LLM context.
+- Call the `add_conversation` MCP tool. Pass absolute path to the conversation markdown file as `file_path`.
+- Parse the response to get `conversation_id`. Use this ID for **all** subsequent tool calls.
 
 ### Step 1: Clean & Parse
 
@@ -37,32 +37,29 @@ Parse the response:
 
 ### Step 2: Prepare Batches
 
-Call the `prepare_extraction_batches` MCP tool with `conversation_id`.
-
-Parse the response to get `batch_count`.
+- Call the `prepare_extraction_batches` MCP tool with `conversation_id`.
+- Parse the response to get `batch_count`.
 
 ### Step 3: Extract Idea Units (Parallel Subagents)
 
-Launch Task subagents to process batches. Use **haiku** model. Launch up to 3 in parallel.
+Launch `idea_unit_extractor` subagents to process batches. Launch up to 3 in parallel.
 
-For each batch index `N` (from 0 to batch_count-1), launch a Task subagent with this prompt:
-
-```
-Call the `get_extraction_batch` MCP tool with conversation_id="<conversation_id>" and batch_index=<N>.
-The response contains a "prompt" key with extraction instructions.
-Follow the instructions in that prompt exactly. Output ONLY the raw JSON array as specified — no markdown fences, no explanation.
-Then call the `store_extraction_result` MCP tool with conversation_id="<conversation_id>", batch_index=<N>, and result=<the JSON you produced>.
-```
+For each batch index `N` (from 0 to batch_count-1), launch a Task subagent with:
+- **subagent_type:** `idea_unit_extractor`
+- **prompt:** `Extract idea units from conversation_id="<conversation_id>", batch_index=<N>.`
 
 Wait for all subagents to complete before proceeding.
 
-### Step 4: Validate & Merge
+### Step 4: Validate & Retry Loop
 
-Call the `validate_and_merge_idea_units` MCP tool with `conversation_id`.
+Call the `get_failed_batches` MCP tool with `conversation_id`.
 
 Parse the response:
-- If `status` is `"success"` — proceed to Step 5
-- If `status` is `"retry_needed"` — check `failed_batches` array, re-launch subagents for those batches (up to 3 total attempts per batch). If a batch fails 3 times, report failure to the user and stop.
+- If `status` is `"all_passed"` — proceed to Step 5
+- If `status` is `"has_failures"`:
+  1. Check `max_retries_exceeded` — if non-empty, report failure to the user and stop
+  2. Re-launch subagents (Step 3 prompt) for each batch in `failed_batches` (use `batch_index` from each entry)
+  3. Call `get_failed_batches` again and repeat
 
 ### Step 5: Compute Embeddings
 

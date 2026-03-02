@@ -5,9 +5,9 @@ import re
 
 import pysbd
 from langdetect import LangDetectException, detect
-from pydantic import BaseModel, Field
 
-from .conversations_registry import CONVERSATION_ID_PATTERN, get_conversation
+from .models import CleanResponse, ConversationStatus, SetMetadataResponse, SpeakerTurn
+from .registry import CONVERSATION_ID_PATTERN, get_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -43,37 +43,6 @@ _TITLE_PATTERN = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 _DATE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2})$", re.MULTILINE)
 
 
-class SpeakerTurn(BaseModel):
-    """A single speaker turn in the conversation."""
-
-    speaker: str = Field(description="Name of the speaker")
-    time: str = Field(
-        description="Time of the statement relative to the beginning of the conversation in HH:MM format"
-    )
-    sentences: list[str] = Field(description="Individual sentences from the speaker's text")
-
-
-class CleanedConversation(BaseModel):
-    """Cleaned and structured conversation transcript."""
-
-    title: str = Field(description="Title of the conversation")
-    date: str = Field(description="Date and time of the first statement in YYYY-MM-DD HH:MM format")
-    turns: list[SpeakerTurn] = Field(min_length=1, description="Ordered list of speaker turns")
-
-
-class CleanResponse(BaseModel):
-    """Response from clean_conversation."""
-
-    status: str = Field(description="'success' or 'incomplete'")
-    missing: list[str] = Field(default_factory=list, description="Missing metadata fields")
-
-
-class SetMetadataResponse(BaseModel):
-    """Response from set_conversation_metadata."""
-
-    status: str = Field(description="'success'")
-
-
 async def clean_conversation(conversation_id: str) -> CleanResponse:
     """Clean and parse a conversation transcript from a markdown file.
 
@@ -93,71 +62,62 @@ async def clean_conversation(conversation_id: str) -> CleanResponse:
     if not raw_text.strip():
         raise ValueError(f"File is empty: {state.source_path}")
 
-    cleaned_text = _normalize_encoding(raw_text)
-    title, date, body = _extract_metadata(cleaned_text)
+    normalized_text = _normalize_encoding(raw_text)
+    state.normalized_text = normalized_text
+    state.status = ConversationStatus.NORMALIZED
+
+    title, date, body = _extract_metadata(normalized_text)
     language = _detect_language(body)
-    statements = _parse_statements(body, language)
-
-    if not statements:
+    turns = _parse_speaker_turns(body, language)
+    if not turns:
         raise ValueError(f"No recognizable speaker turns found in: {state.source_path}")
+    state.turns = turns
+    state.status = ConversationStatus.SPEAKER_TURNS_EXTRACTED
 
-    return _build_clean_response(state, title, date, statements)
+    state.title = title
+    state.date = date
+    missing = []
+    if not title:
+        missing.append("title")
+    if not date:
+        missing.append("date")
+    if len(missing) > 0:
+        return CleanResponse(status="incomplete", missing=missing)
+
+    state.status = ConversationStatus.METADATA_ASSIGNED
+    return CleanResponse(status="success", missing=[])
 
 
 async def set_conversation_metadata(conversation_id: str, title: str = "", date: str = "") -> SetMetadataResponse:
     """Apply missing metadata and finalize cleaned conversation data.
 
-    Reads partial data from memory, applies provided title/date, and stores
-    the complete cleaned conversation in memory.
+    Reads typed fields from state, applies provided title/date overrides.
 
     Args:
         conversation_id: UUID identifying the conversation.
-        title: Conversation title (uses partial value if empty).
-        date: Conversation date in YYYY-MM-DD format (uses partial value if empty).
+        title: Conversation title (uses existing value if empty).
+        date: Conversation date in YYYY-MM-DD format (uses existing value if empty).
 
     Returns:
         Status indicating success.
     """
     state = get_conversation(conversation_id)
 
-    if state.cleaned_partial is None:
-        raise ValueError(f"No partial data found for conversation {conversation_id}")
+    if state.turns is None:
+        raise ValueError(f"No speaker turns found for conversation {conversation_id}")
 
-    partial = state.cleaned_partial
-    resolved_title = title or partial.get("title")
-    resolved_date = date or partial.get("date")
-    first_time = partial["first_time"]
-    turns = [SpeakerTurn(**t) for t in partial["turns"]]
-
+    resolved_title = title or state.title
     if not resolved_title:
         raise ValueError("Title is required but not provided")
+    state.title = resolved_title
 
-    date_with_time = f"{resolved_date} {first_time}" if resolved_date else first_time
-    conversation = CleanedConversation(title=resolved_title, date=date_with_time, turns=turns)
-    state.cleaned = conversation.model_dump()
+    resolved_date = date or state.date
+    if not resolved_date:
+        raise ValueError("Date is required but not provided")
+    state.date = resolved_date
+
+    state.status = ConversationStatus.METADATA_ASSIGNED
     return SetMetadataResponse(status="success")
-
-
-def _build_clean_response(state, title, date, statements):
-    missing = []
-    if not title:
-        missing.append("title")
-    if not date:
-        missing.append("date")
-
-    first_time = statements[0].time
-    if title and date:
-        conversation = CleanedConversation(title=title, date=f"{date} {first_time}", turns=statements)
-        state.cleaned = conversation.model_dump()
-        return CleanResponse(status="success", missing=[])
-
-    state.cleaned_partial = {
-        "title": title,
-        "date": date,
-        "first_time": first_time,
-        "turns": [t.model_dump() for t in statements],
-    }
-    return CleanResponse(status="incomplete", missing=missing)
 
 
 def _strip_conversation_id_line(text: str) -> str:
@@ -197,7 +157,7 @@ def _extract_metadata(text: str) -> tuple[str | None, str | None, str]:
     return title, date, body.strip()
 
 
-def _parse_statements(body: str, language: str) -> list[SpeakerTurn]:
+def _parse_speaker_turns(body: str, language: str) -> list[SpeakerTurn]:
     body = _normalize_turn_headers(body)
     statements: list[SpeakerTurn] = []
 

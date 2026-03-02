@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcp_servers.noesis_local.conversations_cleaning import CleanResponse, SetMetadataResponse
-from mcp_servers.noesis_local.conversations_registry import AddConversationResponse, reset_store
+from mcp_servers.noesis_local.conversations.models import AddConversationResponse, CleanResponse, SetMetadataResponse
+from mcp_servers.noesis_local.conversations.registry import reset_store
 from mcp_servers.noesis_local.server import noesis_server
 
 BASIC_CONVERSATION = """\

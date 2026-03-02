@@ -3,37 +3,13 @@
 import logging
 import re
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 
-import numpy as np
-from pydantic import BaseModel, Field
+from .models import AddConversationResponse, ConversationState
 
 logger = logging.getLogger(__name__)
 
 CONVERSATION_ID_PATTERN = re.compile(r"^<!--\s*conversation_id:\s*([\w-]+)\s*-->")
-
-
-@dataclass
-class ConversationState:
-    """Holds all intermediate state for a single conversation being structured."""
-
-    source_path: Path
-    cleaned_partial: dict | None = None
-    cleaned: dict | None = None
-    batches: list[dict] = field(default_factory=list)
-    batch_results: dict[int, str] = field(default_factory=dict)
-    idea_units: list[dict] | None = None
-    embeddings: dict[int, np.ndarray] = field(default_factory=dict)
-    assignment_state: dict | None = None
-    topics_draft: dict | None = None
-
-
-class AddConversationResponse(BaseModel):
-    """Response from add_conversation."""
-
-    conversation_id: str = Field(description="UUID identifying the conversation")
-
 
 _store: dict[str, ConversationState] = {}
 

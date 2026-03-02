@@ -7,10 +7,14 @@ import numpy as np
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcp_servers.noesis_local.conversations_registry import get_conversation, register_conversation, reset_store
-from mcp_servers.noesis_local.idea_units_extraction import IdeaUnitCategory, TurnIdeaUnits
+from mcp_servers.noesis_local.conversations.models import (
+    AssignResponse,
+    EmbedResponse,
+    IdeaUnitCategory,
+    TurnIdeaUnits,
+)
+from mcp_servers.noesis_local.conversations.registry import get_conversation, register_conversation, reset_store
 from mcp_servers.noesis_local.server import noesis_server
-from mcp_servers.noesis_local.topic_assignment import AssignResponse, EmbedResponse
 
 IDEA_UNITS_DATA = [
     {

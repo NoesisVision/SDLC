@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcp_servers.noesis_local.conversations_registry import get_conversation, register_conversation, reset_store
-from mcp_servers.noesis_local.conversation_output import FinalizeResponse
+from mcp_servers.noesis_local.conversations.models import ConversationStatus, FinalizeResponse, SpeakerTurn
+from mcp_servers.noesis_local.conversations.registry import get_conversation, register_conversation, reset_store
 from mcp_servers.noesis_local.server import noesis_server
 
 
@@ -31,7 +31,10 @@ async def test_finalize(tmp_path, monkeypatch) -> None:
     conv_file.write_text("dummy", encoding="utf-8")
 
     state = register_conversation(conversation_id, conv_file.resolve())
-    state.cleaned = {"title": "Sprint Planning Meeting", "date": "2026-03-01 10:00", "turns": []}
+    state.title = "Sprint Planning Meeting"
+    state.date = "2026-03-01"
+    state.turns = [SpeakerTurn(speaker="Jan Kowalski", time="10:00", sentences=["We need to decide on the database technology."])]
+    state.status = ConversationStatus.METADATA_ASSIGNED
     state.topics_draft = {
         "topics": [
             {

@@ -1,86 +1,39 @@
-"""Idea unit models, batch extraction, and validation for conversation analysis."""
+"""Batch extraction and validation of idea units from conversation transcripts."""
 
 import json
 import logging
-from enum import Enum
-from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
-from .conversations_cleaning import SpeakerTurn
-from .conversations_registry import get_conversation
+from .models import (
+    ConversationState,
+    FailedBatchInfo,
+    GetBatchResponse,
+    GetFailedBatchesResponse,
+    PrepareBatchesResponse,
+    SpeakerTurn,
+    StoreBatchResultResponse,
+    TurnIdeaUnits,
+    ValidateAndMergeResponse,
+)
+from .registry import get_conversation
 
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 8
 _OVERLAP = 3
-
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
-_EXTRACTION_PROMPT = (_PROMPTS_DIR / "idea_extraction.md").read_text(encoding="utf-8")
-
-
-class IdeaUnitCategory(str, Enum):
-    """Classification categories for idea units in a conversation."""
-
-    Issue = "Issue"
-    Position = "Position"
-    Argument = "Argument"
-    Decision = "Decision"
-    Irrelevant = "Irrelevant"
-
-
-class IdeaUnit(BaseModel):
-    """A coherent fragment of a speaker's statement carrying one piece of information."""
-
-    sentences: list[str] = Field(description="Consecutive sentences forming one coherent idea")
-    category: IdeaUnitCategory = Field(description="Discourse classification of the idea unit")
-
-
-class TurnIdeaUnits(BaseModel):
-    """A single speaker turn split into idea units."""
-
-    speaker: str = Field(description="Name of the speaker")
-    time: str = Field(description="Time of the statement in HH:MM format")
-    idea_units: list[IdeaUnit] = Field(description="Idea units extracted from this turn")
-
-
-class GetBatchResponse(BaseModel):
-    """Response from get_extraction_batch."""
-
-    prompt: str = Field(description="Extraction prompt for the LLM")
-    batch_index: int = Field(description="Index of this batch")
-
-
-class PrepareBatchesResponse(BaseModel):
-    """Response from prepare_extraction_batches."""
-
-    status: str = Field(description="'success'")
-    batch_count: int = Field(description="Number of batches created")
-
-
-class StoreBatchResultResponse(BaseModel):
-    """Response from store_extraction_result."""
-
-    status: str = Field(description="'success'")
-
-
-class ValidateAndMergeResponse(BaseModel):
-    """Response from validate_and_merge_idea_units."""
-
-    status: str = Field(description="'success' or 'retry_needed'")
-    failed_batches: list[int] = Field(default_factory=list, description="Batch indices that failed validation")
-    turn_count: int = Field(default=0, description="Number of validated turns (when successful)")
+_MAX_RETRIES = 3
 
 
 async def get_extraction_batch(conversation_id: str, batch_index: int) -> GetBatchResponse:
-    """Retrieve the extraction prompt for a specific batch.
+    """Retrieve the formatted turns for a specific batch.
 
     Args:
         conversation_id: UUID identifying the conversation.
         batch_index: Zero-based index of the batch to retrieve.
 
     Returns:
-        The extraction prompt and batch index.
+        The formatted conversation turns and batch index.
     """
     state = get_conversation(conversation_id)
 
@@ -88,7 +41,46 @@ async def get_extraction_batch(conversation_id: str, batch_index: int) -> GetBat
         raise ValueError(f"Batch index {batch_index} out of range (0..{len(state.batches) - 1})")
 
     batch = state.batches[batch_index]
-    return GetBatchResponse(prompt=batch["prompt"], batch_index=batch_index)
+    return GetBatchResponse(turns=batch["turns"], batch_index=batch_index)
+
+
+async def get_failed_batches(conversation_id: str) -> GetFailedBatchesResponse:
+    """Identify failed batches and track retry counts.
+
+    If all batches pass validation, merges idea units into state and returns
+    ``status="all_passed"``. Otherwise increments retry counters and returns
+    failure details.
+
+    Args:
+        conversation_id: UUID identifying the conversation.
+
+    Returns:
+        Status with failed batch details or validated turn count.
+    """
+    state = get_conversation(conversation_id)
+    failed_indices, all_turn_idea_units = _find_failed_batches(state)
+
+    if not failed_indices:
+        state.idea_units = [t.model_dump() for t in all_turn_idea_units]
+        return GetFailedBatchesResponse(
+            status="all_passed", turn_count=len(all_turn_idea_units)
+        )
+
+    failed_infos: list[FailedBatchInfo] = []
+    max_retries_exceeded: list[int] = []
+
+    for idx in failed_indices:
+        count = state.batch_retry_counts.get(idx, 0) + 1
+        state.batch_retry_counts[idx] = count
+        failed_infos.append(FailedBatchInfo(batch_index=idx, retry_count=count))
+        if count >= _MAX_RETRIES:
+            max_retries_exceeded.append(idx)
+
+    return GetFailedBatchesResponse(
+        status="has_failures",
+        failed_batches=failed_infos,
+        max_retries_exceeded=max_retries_exceeded,
+    )
 
 
 async def prepare_extraction_batches(conversation_id: str) -> PrepareBatchesResponse:
@@ -105,23 +97,23 @@ async def prepare_extraction_batches(conversation_id: str) -> PrepareBatchesResp
     """
     state = get_conversation(conversation_id)
 
-    if state.cleaned is None:
+    if state.turns is None:
         raise ValueError(f"No cleaned data found for conversation {conversation_id}")
 
-    turns = [SpeakerTurn(**t) for t in state.cleaned["turns"]]
+    turns = state.turns
     batch_ranges = _compute_batch_ranges(len(turns))
     state.batches = []
 
     for context_start, batch_end, extract_start in batch_ranges:
         batch_turns = turns[context_start:batch_end]
         extract_offset = extract_start - context_start
-        prompt = _build_extraction_prompt(batch_turns)
+        formatted_turns = _format_batch_turns(batch_turns)
         expected_turns = [t.model_dump() for t in batch_turns[extract_offset:]]
 
         state.batches.append({
             "batch_index": len(state.batches),
             "extract_offset": extract_offset,
-            "prompt": prompt,
+            "turns": formatted_turns,
             "expected_turns": expected_turns,
         })
 
@@ -163,39 +155,12 @@ async def validate_and_merge_idea_units(conversation_id: str) -> ValidateAndMerg
         Status, failed batch indices (if any), and validated turn count.
     """
     state = get_conversation(conversation_id)
-    failed_batches: list[int] = []
-    all_turn_idea_units: list[dict] = []
+    failed_indices, all_turn_idea_units = _find_failed_batches(state)
 
-    for batch_data in state.batches:
-        batch_index = batch_data["batch_index"]
+    if failed_indices:
+        return ValidateAndMergeResponse(status="retry_needed", failed_batches=failed_indices)
 
-        if batch_index not in state.batch_results:
-            failed_batches.append(batch_index)
-            logger.warning("Missing result for batch %d", batch_index)
-            continue
-
-        raw_result = state.batch_results[batch_index]
-        parsed = _parse_llm_response(raw_result)
-
-        if parsed is None:
-            failed_batches.append(batch_index)
-            logger.warning("Failed to parse result for batch %d", batch_index)
-            continue
-
-        expected_turns = [SpeakerTurn(**t) for t in batch_data["expected_turns"]]
-        validated = _validate_and_build(parsed, expected_turns)
-
-        if validated is None:
-            failed_batches.append(batch_index)
-            logger.warning("Validation failed for batch %d", batch_index)
-            continue
-
-        all_turn_idea_units.extend([t.model_dump() for t in validated])
-
-    if failed_batches:
-        return ValidateAndMergeResponse(status="retry_needed", failed_batches=failed_batches)
-
-    state.idea_units = all_turn_idea_units
+    state.idea_units = [t.model_dump() for t in all_turn_idea_units]
     return ValidateAndMergeResponse(status="success", turn_count=len(all_turn_idea_units))
 
 
@@ -213,11 +178,43 @@ def _compute_batch_ranges(total_turns: int) -> list[tuple[int, int, int]]:
     return ranges
 
 
-def _build_extraction_prompt(turns: list[SpeakerTurn]) -> str:
-    formatted_turns = "\n".join(
+def _format_batch_turns(turns: list[SpeakerTurn]) -> str:
+    return "\n".join(
         f"[{turn.time}] {turn.speaker}: {' | '.join(turn.sentences)}" for turn in turns
     )
-    return _EXTRACTION_PROMPT.format(turns=formatted_turns)
+
+
+def _find_failed_batches(state: ConversationState) -> tuple[list[int], list[TurnIdeaUnits]]:
+    failed_indices: list[int] = []
+    all_turn_idea_units: list[TurnIdeaUnits] = []
+
+    for batch_data in state.batches:
+        batch_index = batch_data["batch_index"]
+
+        if batch_index not in state.batch_results:
+            failed_indices.append(batch_index)
+            logger.warning("Missing result for batch %d", batch_index)
+            continue
+
+        raw_result = state.batch_results[batch_index]
+        parsed = _parse_llm_response(raw_result)
+
+        if parsed is None:
+            failed_indices.append(batch_index)
+            logger.warning("Failed to parse result for batch %d", batch_index)
+            continue
+
+        expected_turns = [SpeakerTurn(**t) for t in batch_data["expected_turns"]]
+        validated = _validate_and_build(parsed, expected_turns)
+
+        if validated is None:
+            failed_indices.append(batch_index)
+            logger.warning("Validation failed for batch %d", batch_index)
+            continue
+
+        all_turn_idea_units.extend(validated)
+
+    return failed_indices, all_turn_idea_units
 
 
 def _parse_llm_response(raw: str) -> list[dict] | None:

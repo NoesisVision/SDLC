@@ -4,63 +4,26 @@ import logging
 from collections import defaultdict
 
 import numpy as np
-from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
-from .conversations_registry import ConversationState, get_conversation
-from .idea_units_extraction import IdeaUnit, IdeaUnitCategory, TurnIdeaUnits
+from .models import (
+    ArbitrationCandidate,
+    ArbitrationRequest,
+    AssignResponse,
+    ConversationState,
+    EmbedResponse,
+    IdeaUnit,
+    IdeaUnitCategory,
+    TopicForLabeling,
+    TurnIdeaUnits,
+)
+from .registry import get_conversation
 
 logger = logging.getLogger(__name__)
 
 _HIGH_CONFIDENCE_THRESHOLD = 0.82
 _LOW_CONFIDENCE_THRESHOLD = 0.65
 _EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-
-# ---------------------------------------------------------------------------
-# Response Models
-# ---------------------------------------------------------------------------
-
-
-class EmbedResponse(BaseModel):
-    """Response from embed_idea_units."""
-
-    status: str = Field(description="'success'")
-    embedded_count: int = Field(description="Number of idea units embedded")
-
-
-class ArbitrationCandidate(BaseModel):
-    """A candidate topic for arbitration."""
-
-    topic_id: str = Field(description="Topic identifier")
-    score: float = Field(description="Cosine similarity score")
-    representative_texts: list[str] = Field(description="Sample texts from this topic")
-
-
-class ArbitrationRequest(BaseModel):
-    """Returned when assignment needs LLM arbitration."""
-
-    fragment: str = Field(description="The idea unit text needing arbitration")
-    category: str = Field(description="Idea unit category")
-    candidates: list[ArbitrationCandidate] = Field(description="Top candidate topics")
-
-
-class TopicForLabeling(BaseModel):
-    """Lightweight topic data for LLM labeling in Step 7."""
-
-    topic_id: str = Field(description="Topic identifier")
-    representative_texts: list[str] = Field(description="Sample texts from this topic")
-    categories: list[str] = Field(description="Idea unit categories in this topic")
-
-
-class AssignResponse(BaseModel):
-    """Response from assign_topics or apply_topic_arbitration."""
-
-    status: str = Field(description="'success' or 'arbitration_needed'")
-    topic_count: int = Field(default=0, description="Number of topics (when successful)")
-    arbitration_request: ArbitrationRequest | None = Field(default=None, description="Present when arbitration needed")
-    topics_for_labeling: list[TopicForLabeling] | None = Field(
-        default=None, description="Present when status='success'; topic data for LLM labeling"
-    )
 
 
 # ---------------------------------------------------------------------------
