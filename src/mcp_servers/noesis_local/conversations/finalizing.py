@@ -6,11 +6,11 @@ from pathlib import Path
 
 from .models import (
     FinalizeResponse,
-    IdeaUnit,
     StructuredConversation,
     Topic,
     TopicStatement,
     TopicSummary,
+    TopicsDraft,
 )
 from .registry import get_conversation, remove_conversation
 
@@ -68,25 +68,24 @@ async def finalize_conversation(conversation_id: str, topics_refined: str) -> Fi
 def _build_structured_conversation(
     title: str,
     date: str,
-    topics_draft: dict,
+    topics_draft: TopicsDraft,
     topics_refined: dict,
 ) -> StructuredConversation:
     label_map = {t["topic_id"]: t for t in topics_refined["topics"]}
 
     topics = []
-    for topic_data in topics_draft["topics"]:
-        topic_id = topic_data["topic_id"]
-        refined = label_map.get(topic_id, {})
-        label = refined.get("label", topic_data.get("label", "Unknown"))
-        summary = refined.get("summary", topic_data.get("summary", ""))
+    for entry in topics_draft.topics:
+        refined = label_map.get(entry.topic_id, {})
+        label = refined.get("label", entry.label or "Unknown")
+        summary = refined.get("summary", entry.summary or "")
 
         statements = [
             TopicStatement(
-                speaker=stmt["speaker"],
-                time=stmt["time"],
-                idea_units=[IdeaUnit(**iu) for iu in stmt["idea_units"]],
+                speaker=stmt.speaker,
+                time=stmt.time,
+                idea_units=stmt.idea_units,
             )
-            for stmt in topic_data["statements"]
+            for stmt in entry.statements
         ]
         topics.append(Topic(name=label, summary=summary, statements=statements))
 

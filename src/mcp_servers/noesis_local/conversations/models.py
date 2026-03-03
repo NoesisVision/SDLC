@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -79,8 +80,74 @@ class ConversationState:
     date: str | None = None
     turns: list[SpeakerTurn] | None = None
     batches: list[ExtractionBatch] = field(default_factory=list)
-    assignment_state: dict | None = None
-    topics_draft: dict | None = None
+    assignment_state: "AssignmentProgress | None" = None
+    topics_draft: "TopicsDraft | None" = None
+
+
+class FlatIdeaUnit(NamedTuple):
+    """A flattened idea unit with its speaker and time context."""
+
+    speaker: str
+    time: str
+    idea_unit: IdeaUnit
+
+
+@dataclass
+class TopicCluster:
+    """A topic centroid with the number of assigned idea units."""
+
+    centroid: np.ndarray
+    idea_unit_count: int
+
+
+@dataclass
+class AssignmentEntry:
+    """An idea unit assigned to a topic, retaining speaker context."""
+
+    speaker: str
+    time: str
+    idea_unit: IdeaUnit
+
+
+@dataclass
+class PendingArbitration:
+    """State saved when the assignment loop pauses for arbitration."""
+
+    speaker: str
+    time: str
+    idea_unit: IdeaUnit
+    candidates: list[tuple[str, float]]
+    resume_position: int
+    position: int
+
+
+@dataclass
+class AssignmentProgress:
+    """Full state of an in-progress topic assignment loop."""
+
+    topics: dict[str, TopicCluster]
+    next_id: int
+    assignments: dict[str, list[AssignmentEntry]]
+    pending_arbitration: PendingArbitration | None = None
+
+
+@dataclass
+class TopicDraftEntry:
+    """A single topic in the draft, before label refinement."""
+
+    topic_id: str
+    label: str
+    summary: str
+    representative_texts: list[str]
+    categories: list[str]
+    statements: list["TopicStatement"]
+
+
+@dataclass
+class TopicsDraft:
+    """Collection of draft topics produced by the assignment phase."""
+
+    topics: list[TopicDraftEntry]
 
 
 # ---------------------------------------------------------------------------

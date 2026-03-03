@@ -10,12 +10,20 @@ from .models import (
     ArbitrationCandidate,
     ArbitrationRequest,
     AssignResponse,
+    AssignmentEntry,
+    AssignmentProgress,
     ConversationState,
     EmbedResponse,
+    FlatIdeaUnit,
     IdeaUnit,
     IdeaUnitCategory,
+    PendingArbitration,
     SpeakerTurn,
+    TopicCluster,
+    TopicDraftEntry,
     TopicForLabeling,
+    TopicStatement,
+    TopicsDraft,
 )
 from .registry import get_conversation
 
@@ -79,7 +87,8 @@ async def assign_topics(conversation_id: str) -> AssignResponse:
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
     flat_units = _flatten_idea_units(state.turns)
-    return _run_assignment_loop(state, flat_units, topics={}, next_id=1, position=0, assignments={})
+    progress = AssignmentProgress(topics={}, next_id=1, assignments={})
+    return _run_assignment_loop(state, flat_units, progress, position=0)
 
 
 async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> AssignResponse:
@@ -102,35 +111,29 @@ async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> Assign
     if state.turns is None or not all(t.idea_units is not None for t in state.turns):
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
-    astate = state.assignment_state
-    topics = _restore_topics(astate)
-    next_id = astate["next_id"]
-    assignments = astate["assignments"]
-    pending = astate["pending_arbitration"]
+    progress = state.assignment_state
+    pending = progress.pending_arbitration
 
     flat_units = _flatten_idea_units(state.turns)
-    pending_position = pending["position"]
-    idea_unit = flat_units[pending_position][2]
+    idea_unit = flat_units[pending.position].idea_unit
     embedding = idea_unit.embedding
-    speaker = pending["speaker"]
-    time = pending["time"]
 
     if topic_id == "NEW":
-        new_tid = f"topic_{next_id:03d}"
-        next_id += 1
-        topics[new_tid] = {"centroid": embedding.tolist(), "idea_unit_count": 1}
-        _record_assignment(assignments, new_tid, speaker, time, idea_unit)
-    elif topic_id in topics:
-        _assign_to_existing(topics, topic_id, embedding)
-        _record_assignment(assignments, topic_id, speaker, time, idea_unit)
+        new_tid = f"topic_{progress.next_id:03d}"
+        progress.next_id += 1
+        progress.topics[new_tid] = TopicCluster(centroid=embedding, idea_unit_count=1)
+        _record_assignment(progress.assignments, new_tid, pending.speaker, pending.time, idea_unit)
+    elif topic_id in progress.topics:
+        _assign_to_existing(progress.topics, topic_id, embedding)
+        _record_assignment(progress.assignments, topic_id, pending.speaker, pending.time, idea_unit)
     else:
-        best_candidate = pending["candidates"][0]["topic_id"]
+        best_candidate = pending.candidates[0][0]
         logger.warning("Unknown topic_id '%s', falling back to best match '%s'", topic_id, best_candidate)
-        _assign_to_existing(topics, best_candidate, embedding)
-        _record_assignment(assignments, best_candidate, speaker, time, idea_unit)
+        _assign_to_existing(progress.topics, best_candidate, embedding)
+        _record_assignment(progress.assignments, best_candidate, pending.speaker, pending.time, idea_unit)
 
-    position = pending["resume_position"]
-    return _run_assignment_loop(state, flat_units, topics, next_id, position, assignments)
+    progress.pending_arbitration = None
+    return _run_assignment_loop(state, flat_units, progress, position=pending.resume_position)
 
 
 # ---------------------------------------------------------------------------
@@ -140,11 +143,9 @@ async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> Assign
 
 def _run_assignment_loop(
     state: ConversationState,
-    flat_units: list[tuple[str, str, IdeaUnit]],
-    topics: dict,
-    next_id: int,
+    flat_units: list[FlatIdeaUnit],
+    progress: AssignmentProgress,
     position: int,
-    assignments: dict,
 ) -> AssignResponse:
     while position < len(flat_units):
         speaker, time, idea_unit = flat_units[position]
@@ -155,37 +156,44 @@ def _run_assignment_loop(
 
         embedding = idea_unit.embedding
 
-        if not topics:
-            tid, next_id = _create_placeholder_topic(topics, next_id, idea_unit, embedding)
-            _record_assignment(assignments, tid, speaker, time, idea_unit)
+        if not progress.topics:
+            tid = _create_placeholder_topic(progress, embedding)
+            _record_assignment(progress.assignments, tid, speaker, time, idea_unit)
             position += 1
             continue
 
-        centroids = {tid: np.array(t["centroid"]) for tid, t in topics.items()}
-        scores = _compute_similarities(embedding, centroids)
+        scores = _compute_similarities(embedding, progress.topics)
         best_topic_id, best_score = scores[0]
 
         if best_score > _HIGH_CONFIDENCE_THRESHOLD:
-            _assign_to_existing(topics, best_topic_id, embedding)
-            _record_assignment(assignments, best_topic_id, speaker, time, idea_unit)
+            _assign_to_existing(progress.topics, best_topic_id, embedding)
+            _record_assignment(progress.assignments, best_topic_id, speaker, time, idea_unit)
             position += 1
 
         elif best_score < _LOW_CONFIDENCE_THRESHOLD:
-            tid, next_id = _create_placeholder_topic(topics, next_id, idea_unit, embedding)
-            _record_assignment(assignments, tid, speaker, time, idea_unit)
+            tid = _create_placeholder_topic(progress, embedding)
+            _record_assignment(progress.assignments, tid, speaker, time, idea_unit)
             position += 1
 
         else:
-            _save_assignment_state(state, topics, next_id, position, assignments, speaker, time, idea_unit, scores[:3])
-            arbitration = _build_arbitration_request(idea_unit, assignments, scores[:3])
+            progress.pending_arbitration = PendingArbitration(
+                speaker=speaker,
+                time=time,
+                idea_unit=idea_unit,
+                candidates=scores[:3],
+                resume_position=position + 1,
+                position=position,
+            )
+            state.assignment_state = progress
+            arbitration = _build_arbitration_request(idea_unit, progress.assignments, scores[:3])
             return AssignResponse(status="arbitration_needed", arbitration_request=arbitration)
 
-    topics_draft = _build_topics_draft(topics, assignments)
+    topics_draft = _build_topics_draft(progress.topics, progress.assignments)
     state.topics_draft = topics_draft
     state.assignment_state = None
     return AssignResponse(
         status="success",
-        topic_count=len(topics),
+        topic_count=len(progress.topics),
         topics_for_labeling=_build_topics_for_labeling(topics_draft),
     )
 
@@ -201,55 +209,59 @@ def _collect_embeddable_texts(turns: list[SpeakerTurn]) -> tuple[list[str], list
     return texts, idea_unit_refs
 
 
-def _flatten_idea_units(turns: list[SpeakerTurn]) -> list[tuple[str, str, IdeaUnit]]:
-    flat: list[tuple[str, str, IdeaUnit]] = []
+def _flatten_idea_units(turns: list[SpeakerTurn]) -> list[FlatIdeaUnit]:
+    flat: list[FlatIdeaUnit] = []
     for turn in turns:
         for idea_unit in turn.idea_units:
-            flat.append((turn.speaker, turn.time, idea_unit))
+            flat.append(FlatIdeaUnit(turn.speaker, turn.time, idea_unit))
     return flat
 
 
-def _compute_similarities(embedding: np.ndarray, centroids: dict[str, np.ndarray]) -> list[tuple[str, float]]:
+def _compute_similarities(
+    embedding: np.ndarray, topics: dict[str, TopicCluster]
+) -> list[tuple[str, float]]:
+    embedding_norm = np.linalg.norm(embedding)
     scores: list[tuple[str, float]] = []
-    for topic_id, centroid in centroids.items():
-        similarity = float(np.dot(embedding, centroid) / (np.linalg.norm(embedding) * np.linalg.norm(centroid)))
+    for topic_id, topic in topics.items():
+        similarity = float(
+            np.dot(embedding, topic.centroid) / (embedding_norm * np.linalg.norm(topic.centroid))
+        )
         scores.append((topic_id, similarity))
     scores.sort(key=lambda x: x[1], reverse=True)
     return scores
 
 
-def _create_placeholder_topic(
-    topics: dict, next_id: int, idea_unit: IdeaUnit, embedding: np.ndarray
-) -> tuple[str, int]:
-    topic_id = f"topic_{next_id:03d}"
-    topics[topic_id] = {"centroid": embedding.tolist(), "idea_unit_count": 1}
-    return topic_id, next_id + 1
+def _create_placeholder_topic(progress: AssignmentProgress, embedding: np.ndarray) -> str:
+    topic_id = f"topic_{progress.next_id:03d}"
+    progress.topics[topic_id] = TopicCluster(centroid=embedding, idea_unit_count=1)
+    progress.next_id += 1
+    return topic_id
 
 
-def _assign_to_existing(topics: dict, topic_id: str, embedding: np.ndarray) -> None:
+def _assign_to_existing(topics: dict[str, TopicCluster], topic_id: str, embedding: np.ndarray) -> None:
     topic = topics[topic_id]
-    centroid = np.array(topic["centroid"])
-    count = topic["idea_unit_count"]
-    new_centroid = (centroid * count + embedding) / (count + 1)
-    topic["centroid"] = new_centroid.tolist()
-    topic["idea_unit_count"] = count + 1
+    new_centroid = (topic.centroid * topic.idea_unit_count + embedding) / (topic.idea_unit_count + 1)
+    topic.centroid = new_centroid
+    topic.idea_unit_count += 1
 
 
-def _record_assignment(assignments: dict, topic_id: str, speaker: str, time: str, idea_unit: IdeaUnit) -> None:
+def _record_assignment(
+    assignments: dict[str, list[AssignmentEntry]], topic_id: str, speaker: str, time: str, idea_unit: IdeaUnit
+) -> None:
     if topic_id not in assignments:
         assignments[topic_id] = []
-    assignments[topic_id].append({"speaker": speaker, "time": time, "idea_unit": idea_unit.model_dump()})
+    assignments[topic_id].append(AssignmentEntry(speaker=speaker, time=time, idea_unit=idea_unit))
 
 
-def _get_representative_texts(assignments: dict, topic_id: str) -> list[str]:
+def _get_representative_texts(assignments: dict[str, list[AssignmentEntry]], topic_id: str) -> list[str]:
     if topic_id not in assignments:
         return []
-    return [" ".join(entry["idea_unit"]["sentences"]) for entry in assignments[topic_id][:5]]
+    return [" ".join(entry.idea_unit.sentences) for entry in assignments[topic_id][:5]]
 
 
 def _build_arbitration_request(
     idea_unit: IdeaUnit,
-    assignments: dict,
+    assignments: dict[str, list[AssignmentEntry]],
     candidates: list[tuple[str, float]],
 ) -> ArbitrationRequest:
     candidate_models = [
@@ -267,74 +279,42 @@ def _build_arbitration_request(
     )
 
 
-def _save_assignment_state(
-    state: ConversationState,
-    topics: dict,
-    next_id: int,
-    position: int,
-    assignments: dict,
-    speaker: str,
-    time: str,
-    idea_unit: IdeaUnit,
-    candidates: list[tuple[str, float]],
-) -> None:
-    state.assignment_state = {
-        "topics": topics,
-        "next_id": next_id,
-        "assignments": assignments,
-        "pending_arbitration": {
-            "speaker": speaker,
-            "time": time,
-            "idea_unit": idea_unit.model_dump(),
-            "candidates": [{"topic_id": tid, "score": s} for tid, s in candidates],
-            "resume_position": position + 1,
-            "position": position,
-        },
-    }
-
-
-def _restore_topics(astate: dict) -> dict:
-    topics = {}
-    for tid, tdata in astate.get("topics", {}).items():
-        topics[tid] = {"centroid": tdata["centroid"], "idea_unit_count": tdata["idea_unit_count"]}
-    return topics
-
-
-def _build_topics_draft(topics: dict, assignments: dict) -> dict:
-    topics_output = []
+def _build_topics_draft(
+    topics: dict[str, TopicCluster], assignments: dict[str, list[AssignmentEntry]]
+) -> TopicsDraft:
+    topics_output: list[TopicDraftEntry] = []
     for topic_id in sorted(topics.keys()):
         topic_assignments = assignments.get(topic_id, [])
 
-        statements_by_key: dict[tuple[str, str], list[dict]] = defaultdict(list)
+        statements_by_key: dict[tuple[str, str], list[IdeaUnit]] = defaultdict(list)
         for entry in topic_assignments:
-            key = (entry["speaker"], entry["time"])
-            statements_by_key[key].append(entry["idea_unit"])
+            statements_by_key[(entry.speaker, entry.time)].append(entry.idea_unit)
 
         statements = [
-            {"speaker": speaker, "time": time, "idea_units": idea_units}
+            TopicStatement(speaker=speaker, time=time, idea_units=idea_units)
             for (speaker, time), idea_units in statements_by_key.items()
         ]
 
-        all_texts = [" ".join(entry["idea_unit"]["sentences"]) for entry in topic_assignments]
+        all_texts = [" ".join(entry.idea_unit.sentences) for entry in topic_assignments]
 
-        topics_output.append({
-            "topic_id": topic_id,
-            "label": f"Topic {topic_id}",
-            "summary": "",
-            "representative_texts": all_texts[:10],
-            "categories": list({entry["idea_unit"]["category"] for entry in topic_assignments}),
-            "statements": statements,
-        })
+        topics_output.append(TopicDraftEntry(
+            topic_id=topic_id,
+            label=f"Topic {topic_id}",
+            summary="",
+            representative_texts=all_texts[:10],
+            categories=list({entry.idea_unit.category.value for entry in topic_assignments}),
+            statements=statements,
+        ))
 
-    return {"topics": topics_output}
+    return TopicsDraft(topics=topics_output)
 
 
-def _build_topics_for_labeling(topics_draft: dict) -> list[TopicForLabeling]:
+def _build_topics_for_labeling(topics_draft: TopicsDraft) -> list[TopicForLabeling]:
     return [
         TopicForLabeling(
-            topic_id=t["topic_id"],
-            representative_texts=t["representative_texts"],
-            categories=t["categories"],
+            topic_id=entry.topic_id,
+            representative_texts=entry.representative_texts,
+            categories=entry.categories,
         )
-        for t in topics_draft["topics"]
+        for entry in topics_draft.topics
     ]

@@ -6,7 +6,16 @@ from pathlib import Path
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcp_servers.noesis_local.conversations.models import ConversationStatus, FinalizeResponse, SpeakerTurn
+from mcp_servers.noesis_local.conversations.models import (
+    ConversationStatus,
+    FinalizeResponse,
+    IdeaUnit,
+    IdeaUnitCategory,
+    SpeakerTurn,
+    TopicDraftEntry,
+    TopicStatement,
+    TopicsDraft,
+)
 from mcp_servers.noesis_local.conversations.registry import get_conversation, register_conversation, reset_store
 from mcp_servers.noesis_local.server import noesis_server
 
@@ -35,29 +44,27 @@ async def test_finalize(tmp_path, monkeypatch) -> None:
     state.date = "2026-03-01"
     state.turns = [SpeakerTurn(speaker="Jan Kowalski", time="10:00", sentences=["We need to decide on the database technology."])]
     state.status = ConversationStatus.METADATA_ASSIGNED
-    state.topics_draft = {
-        "topics": [
-            {
-                "topic_id": "topic_001",
-                "label": "Topic topic_001",
-                "summary": "",
-                "representative_texts": ["database technology"],
-                "categories": ["Issue"],
-                "statements": [
-                    {
-                        "speaker": "Jan Kowalski",
-                        "time": "10:00",
-                        "idea_units": [
-                            {
-                                "sentences": ["We need to decide on the database technology."],
-                                "category": "Issue",
-                            }
-                        ],
-                    }
-                ],
-            }
-        ]
-    }
+    state.topics_draft = TopicsDraft(topics=[
+        TopicDraftEntry(
+            topic_id="topic_001",
+            label="Topic topic_001",
+            summary="",
+            representative_texts=["database technology"],
+            categories=["Issue"],
+            statements=[
+                TopicStatement(
+                    speaker="Jan Kowalski",
+                    time="10:00",
+                    idea_units=[
+                        IdeaUnit(
+                            sentences=["We need to decide on the database technology."],
+                            category=IdeaUnitCategory.Issue,
+                        )
+                    ],
+                )
+            ],
+        )
+    ])
 
     topics_refined = json.dumps({
         "topics": [
