@@ -136,8 +136,10 @@ async def test_store_batch_result_success(tmp_path, monkeypatch) -> None:
     assert result.status == "success"
 
     state = get_conversation(conversation_id)
-    assert state.idea_units is not None
-    assert len(state.idea_units) == 2
+    assert all(t.idea_units is not None for t in state.turns)
+    assert len(state.turns) == 2
+    assert len(state.turns[0].idea_units) == 1
+    assert len(state.turns[1].idea_units) == 1
 
 
 async def test_store_batch_result_partial(tmp_path, monkeypatch) -> None:
@@ -165,7 +167,7 @@ async def test_store_batch_result_partial(tmp_path, monkeypatch) -> None:
     assert result.status == "success"
 
     state = get_conversation(conversation_id)
-    assert state.idea_units is None
+    assert not all(t.idea_units is not None for t in state.turns)
 
 
 async def test_store_batch_result_invalid_json(tmp_path, monkeypatch) -> None:

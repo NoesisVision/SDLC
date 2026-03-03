@@ -10,88 +10,84 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcp_servers.noesis_local.conversations.models import (
     AssignResponse,
     EmbedResponse,
+    IdeaUnit,
     IdeaUnitCategory,
-    TurnIdeaUnits,
+    SpeakerTurn,
 )
 from mcp_servers.noesis_local.conversations.registry import get_conversation, register_conversation, reset_store
 from mcp_servers.noesis_local.server import noesis_server
 
-IDEA_UNITS_DATA = [
-    {
-        "speaker": "Jan Kowalski",
-        "time": "10:00",
-        "idea_units": [
-            {
-                "sentences": [
-                    "We need to decide on the database technology.",
-                    "Should we use PostgreSQL or MongoDB?",
-                ],
-                "category": "Issue",
-            }
+IDEA_UNITS_TURNS = [
+    SpeakerTurn(
+        speaker="Jan Kowalski",
+        time="10:00",
+        sentences=["We need to decide on the database technology.", "Should we use PostgreSQL or MongoDB?"],
+        idea_units=[
+            IdeaUnit(
+                sentences=["We need to decide on the database technology.", "Should we use PostgreSQL or MongoDB?"],
+                category=IdeaUnitCategory.Issue,
+            )
         ],
-    },
-    {
-        "speaker": "Anna Nowak",
-        "time": "10:02",
-        "idea_units": [
-            {
-                "sentences": [
-                    "I think PostgreSQL is better for our use case.",
-                    "It has strong ACID compliance and we need transactional guarantees.",
-                ],
-                "category": "Argument",
-            }
+    ),
+    SpeakerTurn(
+        speaker="Anna Nowak",
+        time="10:02",
+        sentences=["I think PostgreSQL is better for our use case.", "It has strong ACID compliance and we need transactional guarantees."],
+        idea_units=[
+            IdeaUnit(
+                sentences=["I think PostgreSQL is better for our use case.", "It has strong ACID compliance and we need transactional guarantees."],
+                category=IdeaUnitCategory.Argument,
+            )
         ],
-    },
-    {
-        "speaker": "Jan Kowalski",
-        "time": "10:04",
-        "idea_units": [
-            {"sentences": ["Good point."], "category": "Irrelevant"},
-            {"sentences": ["Let's go with PostgreSQL then."], "category": "Decision"},
-            {
-                "sentences": ["I will set up the development instance by Friday."],
-                "category": "Decision",
-            },
+    ),
+    SpeakerTurn(
+        speaker="Jan Kowalski",
+        time="10:04",
+        sentences=["Good point.", "Let's go with PostgreSQL then.", "I will set up the development instance by Friday."],
+        idea_units=[
+            IdeaUnit(sentences=["Good point."], category=IdeaUnitCategory.Irrelevant),
+            IdeaUnit(sentences=["Let's go with PostgreSQL then."], category=IdeaUnitCategory.Decision),
+            IdeaUnit(sentences=["I will set up the development instance by Friday."], category=IdeaUnitCategory.Decision),
         ],
-    },
-    {
-        "speaker": "Anna Nowak",
-        "time": "10:06",
-        "idea_units": [
-            {
-                "sentences": [
-                    "We also need to discuss the deployment pipeline.",
-                    "Are we using Docker or Kubernetes?",
-                ],
-                "category": "Issue",
-            }
+    ),
+    SpeakerTurn(
+        speaker="Anna Nowak",
+        time="10:06",
+        sentences=["We also need to discuss the deployment pipeline.", "Are we using Docker or Kubernetes?"],
+        idea_units=[
+            IdeaUnit(
+                sentences=["We also need to discuss the deployment pipeline.", "Are we using Docker or Kubernetes?"],
+                category=IdeaUnitCategory.Issue,
+            )
         ],
-    },
+    ),
 ]
 
-AMBIGUOUS_IDEA_UNITS = [
-    {
-        "speaker": "Alice",
-        "time": "10:00",
-        "idea_units": [
-            {"sentences": ["We should use React for the frontend."], "category": "Position"},
+AMBIGUOUS_IDEA_UNITS_TURNS = [
+    SpeakerTurn(
+        speaker="Alice",
+        time="10:00",
+        sentences=["We should use React for the frontend."],
+        idea_units=[
+            IdeaUnit(sentences=["We should use React for the frontend."], category=IdeaUnitCategory.Position),
         ],
-    },
-    {
-        "speaker": "Bob",
-        "time": "10:02",
-        "idea_units": [
-            {"sentences": ["The backend should use FastAPI."], "category": "Position"},
+    ),
+    SpeakerTurn(
+        speaker="Bob",
+        time="10:02",
+        sentences=["The backend should use FastAPI."],
+        idea_units=[
+            IdeaUnit(sentences=["The backend should use FastAPI."], category=IdeaUnitCategory.Position),
         ],
-    },
-    {
-        "speaker": "Alice",
-        "time": "10:04",
-        "idea_units": [
-            {"sentences": ["The API design needs to connect frontend and backend."], "category": "Issue"},
+    ),
+    SpeakerTurn(
+        speaker="Alice",
+        time="10:04",
+        sentences=["The API design needs to connect frontend and backend."],
+        idea_units=[
+            IdeaUnit(sentences=["The API design needs to connect frontend and backend."], category=IdeaUnitCategory.Issue),
         ],
-    },
+    ),
 ]
 
 
@@ -162,25 +158,23 @@ def _make_ambiguous_embeddings():
     return fake_encode
 
 
-def _setup_state_with_embeddings(conversation_id: str, tmp_path: Path, idea_units_data: list, fake_encode) -> None:
+def _setup_state_with_embeddings(conversation_id: str, tmp_path: Path, turns: list[SpeakerTurn], fake_encode) -> None:
     conv_file = tmp_path / "conv.md"
     conv_file.write_text("dummy", encoding="utf-8")
     state = register_conversation(conversation_id, conv_file.resolve())
-    state.idea_units = idea_units_data
+    state.turns = turns
 
-    turn_idea_units = [TurnIdeaUnits(**t) for t in idea_units_data]
     texts: list[str] = []
-    indices: list[int] = []
-    global_idx = 0
-    for turn in turn_idea_units:
+    idea_unit_refs: list[IdeaUnit] = []
+    for turn in turns:
         for iu in turn.idea_units:
             if iu.category != IdeaUnitCategory.Irrelevant:
                 texts.append(" ".join(iu.sentences))
-                indices.append(global_idx)
-            global_idx += 1
+                idea_unit_refs.append(iu)
 
     vectors = fake_encode(texts)
-    state.embeddings = {idx: vec for idx, vec in zip(indices, vectors)}
+    for iu, vec in zip(idea_unit_refs, vectors):
+        iu.embedding = vec
 
 
 async def _call_tool(tool_name: str, arguments: dict) -> str:
@@ -200,10 +194,10 @@ async def test_embed(tmp_path, monkeypatch) -> None:
     conv_file = tmp_path / "conv.md"
     conv_file.write_text("dummy", encoding="utf-8")
     state = register_conversation(conversation_id, conv_file.resolve())
-    state.idea_units = IDEA_UNITS_DATA
+    state.turns = IDEA_UNITS_TURNS
 
     fake_encode = _make_fake_embeddings()
-    with patch("mcp_servers.noesis_local.topic_assignment.SentenceTransformer") as mock_st:
+    with patch("mcp_servers.noesis_local.conversations.topics_assigning.SentenceTransformer") as mock_st:
         mock_st.return_value.encode = fake_encode
         raw = await _call_tool("embed_idea_units", {"conversation_id": conversation_id})
 
@@ -213,7 +207,10 @@ async def test_embed(tmp_path, monkeypatch) -> None:
     assert result.embedded_count == 5
 
     state = get_conversation(conversation_id)
-    assert len(state.embeddings) == 5
+    embedded_count = sum(
+        1 for t in state.turns for iu in t.idea_units if iu.embedding is not None
+    )
+    assert embedded_count == 5
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +222,7 @@ async def test_assign_no_arbitration(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     conversation_id = "test-assign-no-arb-id"
     fake_encode = _make_fake_embeddings()
-    _setup_state_with_embeddings(conversation_id, tmp_path, IDEA_UNITS_DATA, fake_encode)
+    _setup_state_with_embeddings(conversation_id, tmp_path, IDEA_UNITS_TURNS, fake_encode)
 
     raw = await _call_tool("assign_topics", {"conversation_id": conversation_id})
     result = AssignResponse.model_validate_json(raw)
@@ -256,7 +253,7 @@ async def test_assign_with_arbitration(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     conversation_id = "test-assign-arb-id"
     fake_encode = _make_ambiguous_embeddings()
-    _setup_state_with_embeddings(conversation_id, tmp_path, AMBIGUOUS_IDEA_UNITS, fake_encode)
+    _setup_state_with_embeddings(conversation_id, tmp_path, AMBIGUOUS_IDEA_UNITS_TURNS, fake_encode)
 
     raw = await _call_tool("assign_topics", {"conversation_id": conversation_id})
     result = AssignResponse.model_validate_json(raw)

@@ -14,8 +14,8 @@ from .models import (
     EmbedResponse,
     IdeaUnit,
     IdeaUnitCategory,
+    SpeakerTurn,
     TopicForLabeling,
-    TurnIdeaUnits,
 )
 from .registry import get_conversation
 
@@ -45,18 +45,18 @@ async def embed_idea_units(conversation_id: str) -> EmbedResponse:
     """
     state = get_conversation(conversation_id)
 
-    if state.idea_units is None:
+    if state.turns is None or not all(t.idea_units is not None for t in state.turns):
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
     model = SentenceTransformer(_EMBEDDING_MODEL)
-    texts, indices = _collect_embeddable_texts(state.idea_units)
+    texts, idea_unit_refs = _collect_embeddable_texts(state.turns)
 
     if not texts:
-        state.embeddings = {}
         return EmbedResponse(status="success", embedded_count=0)
 
     vectors = model.encode(texts, show_progress_bar=False)
-    state.embeddings = {idx: vec for idx, vec in zip(indices, vectors)}
+    for iu, vec in zip(idea_unit_refs, vectors):
+        iu.embedding = vec
     return EmbedResponse(status="success", embedded_count=len(texts))
 
 
@@ -75,10 +75,10 @@ async def assign_topics(conversation_id: str) -> AssignResponse:
     """
     state = get_conversation(conversation_id)
 
-    if state.idea_units is None:
+    if state.turns is None or not all(t.idea_units is not None for t in state.turns):
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
-    flat_units = _flatten_idea_units(state.idea_units)
+    flat_units = _flatten_idea_units(state.turns)
     return _run_assignment_loop(state, flat_units, topics={}, next_id=1, position=0, assignments={})
 
 
@@ -99,7 +99,7 @@ async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> Assign
 
     if state.assignment_state is None:
         raise ValueError(f"No assignment state found for conversation {conversation_id}")
-    if state.idea_units is None:
+    if state.turns is None or not all(t.idea_units is not None for t in state.turns):
         raise ValueError(f"No idea units found for conversation {conversation_id}")
 
     astate = state.assignment_state
@@ -108,9 +108,10 @@ async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> Assign
     assignments = astate["assignments"]
     pending = astate["pending_arbitration"]
 
-    idea_unit = IdeaUnit(**pending["idea_unit"])
-    global_idx = pending["embedding_global_idx"]
-    embedding = state.embeddings[global_idx]
+    flat_units = _flatten_idea_units(state.turns)
+    pending_position = pending["position"]
+    idea_unit = flat_units[pending_position][2]
+    embedding = idea_unit.embedding
     speaker = pending["speaker"]
     time = pending["time"]
 
@@ -129,7 +130,6 @@ async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> Assign
         _record_assignment(assignments, best_candidate, speaker, time, idea_unit)
 
     position = pending["resume_position"]
-    flat_units = _flatten_idea_units(state.idea_units)
     return _run_assignment_loop(state, flat_units, topics, next_id, position, assignments)
 
 
@@ -140,20 +140,20 @@ async def apply_topic_arbitration(conversation_id: str, topic_id: str) -> Assign
 
 def _run_assignment_loop(
     state: ConversationState,
-    flat_units: list[tuple[str, str, IdeaUnit, int]],
+    flat_units: list[tuple[str, str, IdeaUnit]],
     topics: dict,
     next_id: int,
     position: int,
     assignments: dict,
 ) -> AssignResponse:
     while position < len(flat_units):
-        speaker, time, idea_unit, global_idx = flat_units[position]
+        speaker, time, idea_unit = flat_units[position]
 
         if idea_unit.category == IdeaUnitCategory.Irrelevant:
             position += 1
             continue
 
-        embedding = state.embeddings[global_idx]
+        embedding = idea_unit.embedding
 
         if not topics:
             tid, next_id = _create_placeholder_topic(topics, next_id, idea_unit, embedding)
@@ -176,7 +176,7 @@ def _run_assignment_loop(
             position += 1
 
         else:
-            _save_assignment_state(state, topics, next_id, position, assignments, speaker, time, idea_unit, global_idx, scores[:3])
+            _save_assignment_state(state, topics, next_id, position, assignments, speaker, time, idea_unit, scores[:3])
             arbitration = _build_arbitration_request(idea_unit, assignments, scores[:3])
             return AssignResponse(status="arbitration_needed", arbitration_request=arbitration)
 
@@ -190,26 +190,22 @@ def _run_assignment_loop(
     )
 
 
-def _collect_embeddable_texts(turns: list[TurnIdeaUnits]) -> tuple[list[str], list[int]]:
+def _collect_embeddable_texts(turns: list[SpeakerTurn]) -> tuple[list[str], list[IdeaUnit]]:
     texts: list[str] = []
-    indices: list[int] = []
-    global_idx = 0
+    idea_unit_refs: list[IdeaUnit] = []
     for turn in turns:
         for idea_unit in turn.idea_units:
             if idea_unit.category != IdeaUnitCategory.Irrelevant:
                 texts.append(" ".join(idea_unit.sentences))
-                indices.append(global_idx)
-            global_idx += 1
-    return texts, indices
+                idea_unit_refs.append(idea_unit)
+    return texts, idea_unit_refs
 
 
-def _flatten_idea_units(turn_idea_units: list[TurnIdeaUnits]) -> list[tuple[str, str, IdeaUnit, int]]:
-    flat: list[tuple[str, str, IdeaUnit, int]] = []
-    global_idx = 0
-    for turn in turn_idea_units:
+def _flatten_idea_units(turns: list[SpeakerTurn]) -> list[tuple[str, str, IdeaUnit]]:
+    flat: list[tuple[str, str, IdeaUnit]] = []
+    for turn in turns:
         for idea_unit in turn.idea_units:
-            flat.append((turn.speaker, turn.time, idea_unit, global_idx))
-            global_idx += 1
+            flat.append((turn.speaker, turn.time, idea_unit))
     return flat
 
 
@@ -280,13 +276,11 @@ def _save_assignment_state(
     speaker: str,
     time: str,
     idea_unit: IdeaUnit,
-    global_idx: int,
     candidates: list[tuple[str, float]],
 ) -> None:
     state.assignment_state = {
         "topics": topics,
         "next_id": next_id,
-        "position": position,
         "assignments": assignments,
         "pending_arbitration": {
             "speaker": speaker,
@@ -294,7 +288,7 @@ def _save_assignment_state(
             "idea_unit": idea_unit.model_dump(),
             "candidates": [{"topic_id": tid, "score": s} for tid, s in candidates],
             "resume_position": position + 1,
-            "embedding_global_idx": global_idx,
+            "position": position,
         },
     }
 

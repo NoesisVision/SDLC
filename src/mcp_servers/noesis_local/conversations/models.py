@@ -5,12 +5,32 @@ from enum import Enum
 from pathlib import Path
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
 # Domain models
 # ---------------------------------------------------------------------------
+
+
+class IdeaUnitCategory(str, Enum):
+    """Classification categories for idea units in a conversation."""
+
+    Issue = "Issue"
+    Position = "Position"
+    Argument = "Argument"
+    Decision = "Decision"
+    Irrelevant = "Irrelevant"
+
+
+class IdeaUnit(BaseModel):
+    """A coherent fragment of a speaker's statement carrying one piece of information."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    sentences: list[str] = Field(description="Consecutive sentences forming one coherent idea")
+    category: IdeaUnitCategory = Field(description="Discourse classification of the idea unit")
+    embedding: np.ndarray | None = Field(default=None, exclude=True)
 
 
 class SpeakerTurn(BaseModel):
@@ -21,6 +41,7 @@ class SpeakerTurn(BaseModel):
         description="Time of the statement relative to the beginning of the conversation in HH:MM format"
     )
     sentences: list[str] = Field(description="Individual sentences from the speaker's text")
+    idea_units: list[IdeaUnit] | None = Field(default=None)
 
 
 class ConversationStatus(str, Enum):
@@ -58,36 +79,8 @@ class ConversationState:
     date: str | None = None
     turns: list[SpeakerTurn] | None = None
     batches: list[ExtractionBatch] = field(default_factory=list)
-    batch_results: dict[int, list[TurnIdeaUnits]] = field(default_factory=dict)
-    idea_units: list[TurnIdeaUnits] | None = None
-    embeddings: dict[int, np.ndarray] = field(default_factory=dict)
     assignment_state: dict | None = None
     topics_draft: dict | None = None
-
-
-class IdeaUnitCategory(str, Enum):
-    """Classification categories for idea units in a conversation."""
-
-    Issue = "Issue"
-    Position = "Position"
-    Argument = "Argument"
-    Decision = "Decision"
-    Irrelevant = "Irrelevant"
-
-
-class IdeaUnit(BaseModel):
-    """A coherent fragment of a speaker's statement carrying one piece of information."""
-
-    sentences: list[str] = Field(description="Consecutive sentences forming one coherent idea")
-    category: IdeaUnitCategory = Field(description="Discourse classification of the idea unit")
-
-
-class TurnIdeaUnits(BaseModel):
-    """A single speaker turn split into idea units."""
-
-    speaker: str = Field(description="Name of the speaker")
-    time: str = Field(description="Time of the statement in HH:MM format")
-    idea_units: list[IdeaUnit] = Field(description="Idea units extracted from this turn")
 
 
 # ---------------------------------------------------------------------------

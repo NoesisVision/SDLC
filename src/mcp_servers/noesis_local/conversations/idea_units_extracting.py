@@ -6,13 +6,12 @@ import logging
 from pydantic import TypeAdapter, ValidationError
 
 from .models import (
-    ConversationState,
     ExtractionBatch,
     GetBatchResponse,
+    IdeaUnit,
     PrepareBatchesResponse,
     SpeakerTurn,
     StoreBatchResultResponse,
-    TurnIdeaUnits,
 )
 from .registry import get_conversation
 
@@ -103,14 +102,13 @@ async def store_extraction_result(
     if isinstance(parsed, str):
         return StoreBatchResultResponse(status="invalid_json", error_details=parsed)
 
-    validated = _validate_llm_response(parsed, state.batches[batch_index].expected_turns)
+    expected_turns = state.batches[batch_index].expected_turns
+    validated = _validate_llm_response(parsed, expected_turns)
     if isinstance(validated, str):
         return StoreBatchResultResponse(status="validation_failed", error_details=validated)
 
-    state.batch_results[batch_index] = validated
-
-    if len(state.batch_results) == len(state.batches):
-        state.idea_units = _merge_batch_results(state)
+    for turn, idea_units in zip(expected_turns, validated):
+        turn.idea_units = idea_units
 
     return StoreBatchResultResponse(status="success")
 
@@ -135,13 +133,6 @@ def _serialize_batch_turns(turns: list[SpeakerTurn]) -> str:
 
 
 
-def _merge_batch_results(state: ConversationState) -> list[TurnIdeaUnits]:
-    all_turns: list[TurnIdeaUnits] = []
-    for batch_data in state.batches:
-        all_turns.extend(state.batch_results[batch_data.batch_index])
-    return all_turns
-
-
 def _parse_llm_response(raw: str) -> list[dict] | str:
     text = raw
     if text.startswith("```json"):
@@ -163,13 +154,13 @@ def _parse_llm_response(raw: str) -> list[dict] | str:
     return parsed
 
 
-def _validate_llm_response(parsed: list[dict], expected_turns: list[SpeakerTurn]) -> list[TurnIdeaUnits] | str:
+def _validate_llm_response(parsed: list[dict], expected_turns: list[SpeakerTurn]) -> list[list[IdeaUnit]] | str:
     if len(parsed) != len(expected_turns):
         return (
             f"Turn count mismatch: expected {len(expected_turns)}, got {len(parsed)}"
         )
 
-    results: list[TurnIdeaUnits] = []
+    results: list[list[IdeaUnit]] = []
     for turn_data, expected_turn in zip(parsed, expected_turns):
         turn_result = _validate_single_turn(turn_data, expected_turn)
         if isinstance(turn_result, str):
@@ -179,15 +170,28 @@ def _validate_llm_response(parsed: list[dict], expected_turns: list[SpeakerTurn]
     return results
 
 
-def _validate_single_turn(turn_data: dict, expected_turn: SpeakerTurn) -> TurnIdeaUnits | str:
+def _validate_single_turn(turn_data: dict, expected_turn: SpeakerTurn) -> list[IdeaUnit] | str:
+    if not isinstance(turn_data, dict):
+        return (
+            f"Invalid turn structure for {expected_turn.speaker} at {expected_turn.time}: "
+            f"expected object, got {type(turn_data).__name__}"
+        )
+
+    raw_idea_units = turn_data.get("idea_units")
+    if not isinstance(raw_idea_units, list):
+        return (
+            f"Invalid turn structure for {expected_turn.speaker} at {expected_turn.time}: "
+            f"expected 'idea_units' list"
+        )
+
     try:
-        turn_idea_units = TurnIdeaUnits(**turn_data)
+        idea_units = [IdeaUnit(**iu) for iu in raw_idea_units]
     except (ValidationError, TypeError) as e:
         return (
             f"Invalid turn structure for {expected_turn.speaker} at {expected_turn.time}: {e}"
         )
 
-    output_sentences = [s for iu in turn_idea_units.idea_units for s in iu.sentences]
+    output_sentences = [s for iu in idea_units for s in iu.sentences]
     expected_set = set(expected_turn.sentences)
     output_set = set(output_sentences)
 
@@ -207,4 +211,4 @@ def _validate_single_turn(turn_data: dict, expected_turn: SpeakerTurn) -> TurnId
     if len(output_sentences) != len(set(output_sentences)):
         return f"Duplicate sentences found for {expected_turn.speaker} at {expected_turn.time}"
 
-    return turn_idea_units
+    return idea_units
