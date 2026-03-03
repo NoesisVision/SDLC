@@ -6,8 +6,8 @@
     "difficulty": "advanced",
     "tasks": [
       {
-        "name": "ddd-weather-discount",
-        "path": "./tasks/ddd-weather-discount"
+        "name": "ddd-threshold-discount",
+        "path": "./tasks/ddd-threshold-discount"
       }
     ],
     "metadata": {

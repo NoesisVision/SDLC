@@ -1,19 +1,25 @@
 #!/bin/bash
 
-# DDD Weather Discount Challenge - Benchmark Runner
+# DDD Architectural Challenges - Benchmark Runner
 # This script runs the Harbor benchmark using the local registry
 
 set -e
 
+# Always run from the directory containing this script so that relative paths
+# in the config (jobs_dir, registry path) resolve correctly regardless of CWD.
+cd "$(dirname "$0")"
+
 # Configuration
 AGENT="${1:-claude-code}"
 MODEL="${2:-claude-sonnet-4-6}"
+TIMEOUT_SEC="${3:-720}"
 
 echo "=========================================="
 echo "Harbor Benchmark Runner"
 echo "Local Registry: local-registry"
 echo "Agent: $AGENT"
 echo "Model: $MODEL"
+echo "Agent timeout: ${TIMEOUT_SEC}s"
 echo "=========================================="
 echo ""
 
@@ -23,8 +29,6 @@ if ! command -v harbor &> /dev/null; then
     echo ""
     echo "Please install Harbor first:"
     echo "  pip install harbor-cli"
-    echo "  # or"
-    echo "  cargo install harbor"
     echo ""
     exit 1
 fi
@@ -48,23 +52,33 @@ fi
 echo "Running benchmark with local registry..."
 echo ""
 
-# Run Harbor with the local registry pointing to this directory
-if [[ "$AGENT" == "oracle" ]]; then
-    # Oracle agent doesn't need model specification
-    harbor run \
-      --registry-path ./local-registry.json \
-      --dataset ddd-architectural-challenges \
-      --task-name ddd-weather-discount \
-      --agent "$AGENT"
-else
-    # Claude and other AI agents need model specification
-    harbor run \
-      --registry-path ./local-registry.json \
-      --dataset ddd-architectural-challenges \
-      --task-name ddd-weather-discount \
-      --agent "$AGENT" \
-      --model "$MODEL"
-fi
+# Build config JSON inline to set agent timeout
+CONFIG_FILE=$(mktemp /tmp/harbor-run-XXXXXX.json)
+trap 'rm -f "$CONFIG_FILE"' EXIT
+
+cat > "$CONFIG_FILE" << EOF
+{
+  "jobs_dir": "jobs",
+  "n_attempts": 1,
+  "agents": [
+    {
+      "name": "$AGENT",
+      "model_name": "$MODEL",
+      "override_timeout_sec": $TIMEOUT_SEC
+    }
+  ],
+  "datasets": [
+    {
+      "name": "ddd-architectural-challenges",
+      "registry": {
+        "path": "local-registry.json"
+      }
+    }
+  ]
+}
+EOF
+
+harbor run --config "$CONFIG_FILE"
 
 echo ""
 echo "=========================================="
@@ -72,5 +86,5 @@ echo "Benchmark execution completed"
 echo "=========================================="
 echo ""
 echo "To view results, run:"
-echo "  harbor view ."
+echo "  harbor view jobs/<job-name>"
 echo ""
