@@ -61,5 +61,8 @@ async def test_server_lists_tools(tmp_path, monkeypatch) -> None:
         assert "assign_topics" in tool_names
         assert "apply_topic_arbitration" in tool_names
         assert "finalize_conversation" in tool_names
+        assert "get_conversation_topics" in tool_names
         assert "get_extraction_batch" in tool_names
+        assert "get_topic_data" in tool_names
+        assert "store_decision_record" in tool_names
         assert "store_extraction_result" in tool_names

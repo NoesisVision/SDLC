@@ -26,6 +26,8 @@ from mcp_servers.noesis_local.conversations.idea_units_extracting import (
     store_extraction_result,
 )
 from mcp_servers.noesis_local.conversations.topics_assigning import apply_topic_arbitration, assign_topics, embed_idea_units
+from mcp_servers.noesis_local.decision_records.loading import get_conversation_topics, get_topic_data
+from mcp_servers.noesis_local.decision_records.storing import store_decision_record
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +93,12 @@ noesis_server.tool()(assign_topics)
 noesis_server.tool()(clean_conversation)
 noesis_server.tool()(embed_idea_units)
 noesis_server.tool()(finalize_conversation)
+noesis_server.tool()(get_conversation_topics)
 noesis_server.tool()(get_extraction_batch)
+noesis_server.tool()(get_topic_data)
 noesis_server.tool()(prepare_extraction_batches)
 noesis_server.tool()(set_conversation_metadata)
+noesis_server.tool()(store_decision_record)
 noesis_server.tool()(store_extraction_result)
 
 if __name__ == "__main__":
