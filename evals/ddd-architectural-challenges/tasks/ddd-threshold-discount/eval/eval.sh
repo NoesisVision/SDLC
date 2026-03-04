@@ -11,7 +11,7 @@ echo "DDD Threshold Discount - Evaluation"
 echo "=========================================="
 echo ""
 
-cd /workspace/project
+cd /app
 
 echo "Step 1: Verifying project compiles..."
 echo "--------------------------------------"

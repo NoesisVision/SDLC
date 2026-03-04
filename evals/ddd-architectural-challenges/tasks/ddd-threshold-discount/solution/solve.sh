@@ -5,7 +5,7 @@
 
 set -e
 
-cd /workspace/project
+cd /app
 
 # -------------------------------------------------------------------
 # 1. Create ThresholdDiscount value object

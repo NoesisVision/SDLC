@@ -2,7 +2,7 @@
 
 ## Context
 
-You are working on an e-commerce system built using **Domain-Driven Design (DDD)** and **Hexagonal Architecture**. The codebase is located at `/workspace/project` (**.NET 8**, **C#**).
+You are working on an e-commerce system built using **Domain-Driven Design (DDD)** and **Hexagonal Architecture**. The codebase is located at `/app` (**.NET 8**, **C#**).
 
 ## Requirement
 

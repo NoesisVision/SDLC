@@ -9,7 +9,7 @@ echo "=========================================="
 echo ""
 
 # Navigate to project directory
-cd /workspace/project
+cd /app
 
 echo "Step 1: Verifying project compiles..."
 echo "--------------------------------------"

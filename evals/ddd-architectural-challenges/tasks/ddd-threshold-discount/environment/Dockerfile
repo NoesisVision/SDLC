@@ -9,14 +9,9 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /workspace
-
-# Clone the DDD-starter-dotnet repository
-RUN git clone https://github.com/itlibrium/DDD-starter-dotnet.git project
-
-# Set working directory to the project
-WORKDIR /workspace/project
+# Clone the DDD-starter-dotnet repository into /app
+WORKDIR /app
+RUN git clone https://github.com/itlibrium/DDD-starter-dotnet.git .
 
 # Restore dependencies and perform initial build
 # This ensures all NuGet packages are downloaded and the project is buildable
@@ -25,9 +20,6 @@ RUN dotnet build MyCompany.ECommerce.sln --configuration Debug --no-restore
 
 # Verify build succeeded
 RUN echo "Build verification completed successfully"
-
-# Set the working directory for the agent
-WORKDIR /workspace/project
 
 # Default command
 CMD ["/bin/bash"]
