@@ -1,0 +1,12 @@
+{
+  "agents": [
+    {
+      "import_path": "evals.claude_custom_agents:ConfigurableClaude",
+      "kwargs": {
+        "sandbox_files": {
+          "/app/CLAUDE.md": "evals/ddd-architectural-challenges/variants/baseline/CLAUDE.md"
+        }
+      }
+    }
+  ]
+}

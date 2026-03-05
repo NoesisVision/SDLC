@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sourcebot": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@sourcebot/mcp@latest"],
+      "env": {
+        "SOURCEBOT_HOST": "${SOURCEBOT_HOST}",
+        "SOURCEBOT_API_KEY": "${SOURCEBOT_API_KEY}"
+      }
+    }
+  }
+}
