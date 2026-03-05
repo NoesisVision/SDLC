@@ -1,17 +1,39 @@
 #!/bin/bash
 
 # DDD Architectural Challenges - Benchmark Runner
-# This script runs the Harbor benchmark using the local registry
+#
+# Runs a named variant against the local Harbor registry.
+# Each variant is a directory under variants/ containing:
+#   - harbor_config.json  – agent import path + sandbox_files mapping
+#   - CLAUDE.md           – agent instructions injected into /app/CLAUDE.md
+#   - claude_config.json  – (optional) MCP servers injected into sandbox
+#
+# Authentication:
+#   Uses CLAUDE_CODE_OAUTH_TOKEN from the environment. If not set, the script
+#   sources export_oauth_token.sh to extract it from the macOS Keychain.
+#   You can also set ANTHROPIC_API_KEY instead for API-key based auth.
+#
+# Usage:
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh [variant] [model] [timeout]
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik with-mcp
+#
+# Examples:
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh with-mcp
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh baseline claude-sonnet-4-6 900
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik with-mcp
 
 set -e
 
-# Always run from the directory containing this script so that relative paths
-# in the config (jobs_dir, registry path) resolve correctly regardless of CWD.
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+cd "$REPO_ROOT"
 
-# Parse named arguments
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+
 WITH_OPIK=false
-AGENT="claude-code"
+VARIANT="with-mcp"
 MODEL="claude-sonnet-4-6"
 TIMEOUT_SEC="720"
 
@@ -20,10 +42,6 @@ while [[ $# -gt 0 ]]; do
         --with-opik)
             WITH_OPIK=true
             shift
-            ;;
-        --agent)
-            AGENT="$2"
-            shift 2
             ;;
         --model)
             MODEL="$2"
@@ -34,75 +52,98 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         *)
-            AGENT="${1:-$AGENT}"
+            VARIANT="${1:-$VARIANT}"
             shift
             ;;
     esac
 done
 
-echo "=========================================="
-echo "Harbor Benchmark Runner"
-echo "Local Registry: local-registry"
-echo "Agent: $AGENT"
-echo "Model: $MODEL"
-echo "Agent timeout: ${TIMEOUT_SEC}s"
-echo "=========================================="
-echo ""
+VARIANT_DIR="${SCRIPT_DIR}/variants/${VARIANT}"
 
-# Check if Harbor CLI is installed
-if ! command -v harbor &> /dev/null; then
-    echo "ERROR: Harbor CLI is not installed."
+if [ ! -d "$VARIANT_DIR" ]; then
+    echo "ERROR: Variant '${VARIANT}' not found."
     echo ""
-    echo "Please install Harbor first:"
-    echo "  pip install harbor-cli"
+    echo "Available variants:"
+    ls -1 "${SCRIPT_DIR}/variants/" 2>/dev/null | sed 's/^/  /'
     echo ""
     exit 1
 fi
 
-# Check for Anthropic API key if using Claude agent
-if [[ "$AGENT" == "claude-code" ]]; then
-    if [ -z "$ANTHROPIC_API_KEY" ]; then
-        echo "ERROR: ANTHROPIC_API_KEY environment variable is not set."
-        echo ""
-        echo "Please set your Anthropic API key:"
-        echo "  export ANTHROPIC_API_KEY='your-api-key-here'"
-        echo ""
-        echo "Or get your API key from: https://console.anthropic.com/"
-        echo ""
-        exit 1
-    fi
-    echo "✓ Anthropic API key found"
-    echo ""
+if [ ! -f "${VARIANT_DIR}/harbor_config.json" ]; then
+    echo "ERROR: ${VARIANT_DIR}/harbor_config.json not found."
+    exit 1
 fi
 
-echo "Running benchmark with local registry..."
+echo "=========================================="
+echo "Harbor Benchmark Runner"
+echo "Variant: $VARIANT"
+echo "Model: $MODEL"
+echo "Agent timeout: ${TIMEOUT_SEC}s"
+[ "$WITH_OPIK" = true ] && echo "Opik: enabled"
+echo "=========================================="
 echo ""
 
-# Build config JSON inline to set agent timeout
+# ---------------------------------------------------------------------------
+# Prerequisites
+# ---------------------------------------------------------------------------
+
+if ! command -v harbor &> /dev/null; then
+    echo "ERROR: Harbor CLI is not installed."
+    echo "  pip install harbor-ai"
+    exit 1
+fi
+
+# Ensure authentication — prefer existing env vars, fall back to Keychain
+if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+    echo "No ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN found, trying Keychain..."
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/../export_oauth_token.sh"
+fi
+
+echo ""
+echo "Running benchmark..."
+echo ""
+
+# ---------------------------------------------------------------------------
+# Build merged config: variant harbor_config.json + dataset/jobs metadata
+# ---------------------------------------------------------------------------
+
 CONFIG_FILE=$(mktemp /tmp/harbor-run-XXXXXX.json)
 trap 'rm -f "$CONFIG_FILE"' EXIT
 
-cat > "$CONFIG_FILE" << EOF
-{
-  "jobs_dir": "jobs",
-  "n_attempts": 1,
-  "agents": [
-    {
-      "name": "$AGENT",
-      "model_name": "$MODEL",
-      "override_timeout_sec": $TIMEOUT_SEC
-    }
-  ],
-  "datasets": [
-    {
-      "name": "ddd-architectural-challenges",
-      "registry": {
-        "path": "local-registry.json"
-      }
-    }
-  ]
+# Merge variant's agent config with the dataset/jobs boilerplate using python
+python3 - "$VARIANT_DIR/harbor_config.json" "$CONFIG_FILE" "$SCRIPT_DIR" "$MODEL" "$TIMEOUT_SEC" << 'PYEOF'
+import json
+import sys
+
+variant_config_path = sys.argv[1]
+output_path = sys.argv[2]
+script_dir = sys.argv[3]
+model = sys.argv[4]
+timeout_sec = float(sys.argv[5])
+
+with open(variant_config_path) as f:
+    variant = json.load(f)
+
+for agent in variant.get("agents", []):
+    agent.setdefault("model_name", model)
+    agent.setdefault("override_timeout_sec", timeout_sec)
+
+config = {
+    "jobs_dir": f"{script_dir}/jobs",
+    "n_attempts": 1,
+    "agents": variant["agents"],
+    "datasets": [
+        {
+            "name": "ddd-architectural-challenges",
+            "registry": {"path": f"{script_dir}/local-registry.json"},
+        }
+    ],
 }
-EOF
+
+with open(output_path, "w") as f:
+    json.dump(config, f, indent=2)
+PYEOF
 
 if [ "$WITH_OPIK" = true ]; then
     echo "Opik tracking enabled"
@@ -118,5 +159,5 @@ echo "Benchmark execution completed"
 echo "=========================================="
 echo ""
 echo "To view results, run:"
-echo "  harbor view jobs/<job-name>"
+echo "  harbor view ${SCRIPT_DIR}/jobs/<job-name>"
 echo ""
