@@ -9,10 +9,36 @@ set -e
 # in the config (jobs_dir, registry path) resolve correctly regardless of CWD.
 cd "$(dirname "$0")"
 
-# Configuration
-AGENT="${1:-claude-code}"
-MODEL="${2:-claude-sonnet-4-6}"
-TIMEOUT_SEC="${3:-720}"
+# Parse named arguments
+WITH_OPIK=false
+AGENT="claude-code"
+MODEL="claude-sonnet-4-6"
+TIMEOUT_SEC="720"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --with-opik)
+            WITH_OPIK=true
+            shift
+            ;;
+        --agent)
+            AGENT="$2"
+            shift 2
+            ;;
+        --model)
+            MODEL="$2"
+            shift 2
+            ;;
+        --timeout)
+            TIMEOUT_SEC="$2"
+            shift 2
+            ;;
+        *)
+            AGENT="${1:-$AGENT}"
+            shift
+            ;;
+    esac
+done
 
 echo "=========================================="
 echo "Harbor Benchmark Runner"
@@ -78,7 +104,13 @@ cat > "$CONFIG_FILE" << EOF
 }
 EOF
 
-harbor run --config "$CONFIG_FILE"
+if [ "$WITH_OPIK" = true ]; then
+    echo "Opik tracking enabled"
+    echo ""
+    opik harbor run --config "$CONFIG_FILE"
+else
+    harbor run --config "$CONFIG_FILE"
+fi
 
 echo ""
 echo "=========================================="

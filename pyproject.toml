@@ -22,6 +22,12 @@ dependencies = [
     "numpy>=1.24.0",
     "pysbd>=0.3.4",
     "langdetect>=1.0.9",
+    "langfuse",
+    "arize-phoenix-otel",
+    "openinference-semantic-conventions",
+    "anthropic",
+    "python-dotenv",
+    "opik",
 ]
 
 [project.optional-dependencies]
