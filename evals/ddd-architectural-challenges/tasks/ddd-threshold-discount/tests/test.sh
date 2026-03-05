@@ -74,9 +74,9 @@ fi
 
 echo "Step 6: Verifying tests for ThresholdDiscount exist..."
 echo "--------------------------------------"
-if find . -path "*/Tests*" -name "*.cs" | xargs grep -l -i "threshold" 2>/dev/null | grep -q .; then
+if find Sources/Sales -type d -name "*Tests*" -exec grep -r -l -i "threshold" --include="*.cs" {} + 2>/dev/null | grep -q .; then
     echo "✓ SUCCESS: Test file(s) for ThresholdDiscount found"
-    find . -path "*/Tests*" -name "*.cs" | xargs grep -l -i "threshold" 2>/dev/null
+    find Sources/Sales -type d -name "*Tests*" -exec grep -r -l -i "threshold" --include="*.cs" {} + 2>/dev/null
     echo ""
 else
     echo "✗ FAILURE: No test file found containing ThresholdDiscount tests"
