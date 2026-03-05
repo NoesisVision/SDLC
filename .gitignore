@@ -50,5 +50,9 @@ promptfoo-results.html
 
 .serena/
 
+# Claude Code
+.claude/worktrees/
+
 #Harbor
 jobs
+trials
