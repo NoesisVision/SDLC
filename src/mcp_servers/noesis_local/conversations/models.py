@@ -280,6 +280,7 @@ class Topic(BaseModel):
 class StructuredConversation(BaseModel):
     """Full structured conversation output."""
 
+    conversation_id: str = Field(description="UUID identifying the conversation")
     title: str = Field(description="Title of the conversation")
     date: str = Field(description="Date and time in YYYY-MM-DD HH:MM format")
     topics: list[Topic] = Field(description="Topics discussed")

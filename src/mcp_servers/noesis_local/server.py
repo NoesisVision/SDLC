@@ -12,14 +12,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from redislite.falkordb_client import FalkorDB
+from redislite.falkordb_client import FalkorDB, Graph
 
 from mcp_servers.noesis_local.conversations.cleaning import clean_conversation, set_conversation_metadata
-from mcp_servers.noesis_local.conversations.registry import add_conversation
 from mcp_servers.noesis_local.conversations.finalizing import finalize_conversation
+from mcp_servers.noesis_local.conversations.graph_storing import sync_conversations_from_disk
+from mcp_servers.noesis_local.conversations.registry import add_conversation
 from mcp_servers.noesis_local.conversations.idea_units_extracting import (
     get_extraction_batch,
     prepare_extraction_batches,
@@ -39,9 +39,18 @@ class GraphContext:
     """Type-safe context for shared graph database resources."""
 
     db: FalkorDB
-    graph: Any  # FalkorDB graph object
+    graph: Graph
     db_path: Path
     graph_name: str = "noesis"
+
+
+def _ensure_indexes(graph: Graph) -> None:
+    try:
+        graph.query(
+            "CREATE INDEX FOR (c:Conversation) ON (c.conversation_id)"
+        )
+    except Exception:
+        logger.debug("Index on Conversation.conversation_id already exists or could not be created")
 
 
 def _initialize_graph_db() -> GraphContext:
@@ -59,6 +68,7 @@ def _initialize_graph_db() -> GraphContext:
     try:
         db = FalkorDB(str(db_file))
         graph = db.select_graph(NOESIS_GRAPH)
+        _ensure_indexes(graph)
         logger.info("FalkorDB initialized at %s", db_file)
         return GraphContext(db=db, graph=graph, db_path=db_file, graph_name=NOESIS_GRAPH)
     except Exception:
@@ -70,12 +80,13 @@ def _initialize_graph_db() -> GraphContext:
 async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
     """Manage FalkorDB lifecycle for the MCP server.
 
-    Initializes the database on startup and ensures proper cleanup on shutdown.
-    The database file is created in the working directory inherited from the
-    parent process (Claude/Gemini CLI).
+    Initializes the database on startup, syncs existing conversations from
+    disk, and ensures proper cleanup on shutdown. The database file is created
+    in the working directory inherited from the parent process.
     """
 
     ctx = _initialize_graph_db()
+    sync_conversations_from_disk(ctx.graph)
 
     try:
         yield ctx
