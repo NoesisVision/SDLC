@@ -16,7 +16,7 @@ dockerfile = "./environment/Dockerfile"
 
 [evaluation]
 type = "script"
-script = "./eval/eval.sh"
+script = "./tests/test.sh"
 timeout_seconds = 300
 
 [metadata]

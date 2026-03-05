@@ -7,7 +7,7 @@
     "tasks": [
       {
         "name": "ddd-threshold-discount",
-        "path": "./tasks/ddd-threshold-discount"
+        "path": "./evals/ddd-architectural-challenges/tasks/ddd-threshold-discount"
       }
     ],
     "metadata": {
