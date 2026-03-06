@@ -44,7 +44,7 @@ async def finalize_conversation(
     if state.topics_draft is None:
         raise ValueError(f"No topics draft found for conversation {conversation_id}")
 
-    date = f"{state.date} {state.turns[0].time}" if state.date else state.turns[0].time
+    date = state.date
     refined = json.loads(topics_refined)
     structured = _build_structured_conversation(
         conversation_id=conversation_id,

@@ -97,7 +97,7 @@ async def set_conversation_metadata(conversation_id: str, title: str = "", date:
     Args:
         conversation_id: UUID identifying the conversation.
         title: Conversation title (uses existing value if empty).
-        date: Conversation date in YYYY-MM-DD format (uses existing value if empty).
+        date: Conversation date and start time in YYYY-MM-DD HH:MM format (uses existing value if empty).
 
     Returns:
         Status indicating success.
