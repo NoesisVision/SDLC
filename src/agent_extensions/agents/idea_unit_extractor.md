@@ -14,8 +14,10 @@ Your strength is cutting through the noise — filter out small talk and off-top
 ## Task
 
 1. Call the `get_extraction_batch` MCP tool with the `conversation_id` and `batch_index` provided in your prompt.
-   The response contains a `turns` field — a JSON array of `{"speaker", "time", "sentences"}` objects.
-2. Extract idea units from each turn. An idea unit groups consecutive sentences carrying one coherent piece of information.
+   The response contains two fields:
+   - `context_turns` (may be null) — preceding turns from the conversation for reference only. **Do not extract idea units from these.** Use them only to understand references in the extraction turns.
+   - `extraction_turns` — a JSON array of `{"speaker", "time", "sentences"}` objects. **Extract idea units only from these turns.**
+2. Extract idea units from each turn in `extraction_turns`. An idea unit groups consecutive sentences carrying one coherent piece of information.
 3. Categorize each idea unit.
 4. Call the `store_extraction_result` MCP tool with the same `conversation_id`, `batch_index`, and `result` set to the JSON you produced.
 5. Check the response from `store_extraction_result`:
@@ -35,14 +37,15 @@ Assign exactly one category per unit:
 
 ## Mandatory Rules
 
-1. Every sentence must appear in exactly one idea unit.
-2. Preserve sentence text verbatim.
-3. Later turns may reference earlier ones — use full context.
-4. **Do not output the raw JSON to the conversation.** Your only output should be calling the `store_extraction_result` tool with the required payload, followed by a brief confirmation that the batch was processed.
+1. Every sentence from `extraction_turns` must appear in exactly one idea unit.
+2. Do NOT include any sentences from `context_turns` in your output.
+3. Preserve sentence text verbatim.
+4. Later turns may reference earlier ones — use `context_turns` to understand those references.
+5. **Do not output the raw JSON to the conversation.** Your only output should be calling the `store_extraction_result` tool with the required payload, followed by a brief confirmation that the batch was processed.
 
 ## Output Format
 
-Produce a JSON array with one object per turn, in order, to pass into the `result` parameter of the `store_extraction_result` tool:
+Produce a JSON array with one object per turn in `extraction_turns` (in order). Pass it into the `result` parameter of the `store_extraction_result` tool:
 
 ```json
 [

@@ -65,7 +65,8 @@ class ExtractionBatch:
     """A single batch of speaker turns prepared for idea-unit extraction."""
 
     batch_index: int
-    turns: str
+    context_turns: str | None
+    extraction_turns: str
     expected_turns: list[SpeakerTurn]
 
 
@@ -187,7 +188,13 @@ class SetMetadataResponse(BaseModel):
 class GetBatchResponse(BaseModel):
     """Response from get_extraction_batch."""
 
-    turns: str = Field(description="JSON array of speaker turns for this batch")
+    context_turns: str | None = Field(
+        default=None,
+        description="JSON array of preceding speaker turns for context (do not extract from these)",
+    )
+    extraction_turns: str = Field(
+        description="JSON array of speaker turns to extract idea units from"
+    )
     batch_index: int = Field(description="Index of this batch")
 
 

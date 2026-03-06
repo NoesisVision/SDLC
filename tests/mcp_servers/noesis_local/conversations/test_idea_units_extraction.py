@@ -97,7 +97,7 @@ async def test_get_batch(tmp_path, monkeypatch) -> None:
     result = GetBatchResponse.model_validate_json(raw)
 
     assert result.batch_index == 0
-    assert len(result.turns) > 0
+    assert len(result.extraction_turns) > 0
 
 
 async def test_store_batch_result_success(tmp_path, monkeypatch) -> None:
@@ -168,6 +168,42 @@ async def test_store_batch_result_partial(tmp_path, monkeypatch) -> None:
 
     state = get_conversation(conversation_id)
     assert not all(t.idea_units is not None for t in state.turns)
+
+
+async def test_overlap_batch_separates_context_from_extraction(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    conversation_id = "test-overlap-batch-id"
+
+    turns = [
+        SpeakerTurn(speaker=f"Speaker{i}", time=f"10:{i:02d}", sentences=[f"Sentence {i}."])
+        for i in range(12)
+    ]
+    _setup_state(conversation_id, tmp_path, "Test", "2026-01-01", turns)
+
+    await _call_tool("prepare_extraction_batches", {"conversation_id": conversation_id})
+
+    raw = await _call_tool("get_extraction_batch", {"conversation_id": conversation_id, "batch_index": 1})
+    batch = GetBatchResponse.model_validate_json(raw)
+
+    assert batch.context_turns is not None
+    context = json.loads(batch.context_turns)
+    extraction = json.loads(batch.extraction_turns)
+    assert len(context) == 3
+    assert len(extraction) == 4
+    assert context[0]["speaker"] == "Speaker5"
+    assert extraction[0]["speaker"] == "Speaker8"
+
+    second_batch_data = [
+        {"speaker": f"Speaker{i}", "time": f"10:{i:02d}", "idea_units": [{"sentences": [f"Sentence {i}."], "category": "Issue"}]}
+        for i in range(8, 12)
+    ]
+    raw = await _call_tool(
+        "store_extraction_result",
+        {"conversation_id": conversation_id, "batch_index": 1, "result": json.dumps(second_batch_data)},
+    )
+    result = StoreBatchResultResponse.model_validate_json(raw)
+
+    assert result.status == "success"
 
 
 async def test_store_batch_result_invalid_json(tmp_path, monkeypatch) -> None:
