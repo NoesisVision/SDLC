@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 
 _HIGH_CONFIDENCE_THRESHOLD = 0.82
 _LOW_CONFIDENCE_THRESHOLD = 0.65
-_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+_MERGE_THRESHOLD = 0.55
+_MIN_TOPIC_SIZE = 2
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +190,8 @@ def _run_assignment_loop(
             arbitration = _build_arbitration_request(idea_unit, progress.assignments, scores[:3])
             return AssignResponse(status="arbitration_needed", arbitration_request=arbitration)
 
+    _merge_small_topics(progress)
+
     topics_draft = _build_topics_draft(progress.topics, progress.assignments)
     state.topics_draft = topics_draft
     state.assignment_state = None
@@ -251,6 +255,39 @@ def _record_assignment(
     if topic_id not in assignments:
         assignments[topic_id] = []
     assignments[topic_id].append(AssignmentEntry(speaker=speaker, time=time, idea_unit=idea_unit))
+
+
+def _merge_small_topics(progress: AssignmentProgress) -> None:
+    small_tids = sorted(
+        tid for tid, cluster in progress.topics.items()
+        if cluster.idea_unit_count < _MIN_TOPIC_SIZE
+    )
+    for small_tid in small_tids:
+        if small_tid not in progress.topics:
+            continue
+        other_topics = {
+            tid: cluster for tid, cluster in progress.topics.items()
+            if tid != small_tid
+        }
+        if not other_topics:
+            break
+        scores = _compute_similarities(progress.topics[small_tid].centroid, other_topics)
+        best_tid, best_score = scores[0]
+        if best_score >= _MERGE_THRESHOLD:
+            _merge_topic_into(progress, small_tid, best_tid)
+
+
+def _merge_topic_into(progress: AssignmentProgress, source_tid: str, target_tid: str) -> None:
+    source = progress.topics[source_tid]
+    target = progress.topics[target_tid]
+    total = target.idea_unit_count + source.idea_unit_count
+    target.centroid = (target.centroid * target.idea_unit_count + source.centroid * source.idea_unit_count) / total
+    target.idea_unit_count = total
+    if source_tid in progress.assignments:
+        if target_tid not in progress.assignments:
+            progress.assignments[target_tid] = []
+        progress.assignments[target_tid].extend(progress.assignments.pop(source_tid))
+    del progress.topics[source_tid]
 
 
 def _get_representative_texts(assignments: dict[str, list[AssignmentEntry]], topic_id: str) -> list[str]:

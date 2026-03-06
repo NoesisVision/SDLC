@@ -63,6 +63,50 @@ IDEA_UNITS_TURNS = [
     ),
 ]
 
+MERGEABLE_IDEA_UNITS_TURNS = [
+    SpeakerTurn(
+        speaker="Jan Kowalski",
+        time="10:00",
+        sentences=["We need to decide on the database technology."],
+        idea_units=[
+            IdeaUnit(sentences=["We need to decide on the database technology."], category=IdeaUnitCategory.Issue),
+        ],
+    ),
+    SpeakerTurn(
+        speaker="Anna Nowak",
+        time="10:02",
+        sentences=["PostgreSQL has strong ACID compliance."],
+        idea_units=[
+            IdeaUnit(sentences=["PostgreSQL has strong ACID compliance."], category=IdeaUnitCategory.Argument),
+        ],
+    ),
+    SpeakerTurn(
+        speaker="Jan Kowalski",
+        time="10:04",
+        sentences=["We should use Docker for deployment."],
+        idea_units=[
+            IdeaUnit(sentences=["We should use Docker for deployment."], category=IdeaUnitCategory.Position),
+        ],
+    ),
+    SpeakerTurn(
+        speaker="Anna Nowak",
+        time="10:06",
+        sentences=["Kubernetes can orchestrate Docker containers."],
+        idea_units=[
+            IdeaUnit(sentences=["Kubernetes can orchestrate Docker containers."], category=IdeaUnitCategory.Argument),
+        ],
+    ),
+    SpeakerTurn(
+        speaker="Jan Kowalski",
+        time="10:08",
+        sentences=["We also need a database migration strategy."],
+        idea_units=[
+            IdeaUnit(sentences=["We also need a database migration strategy."], category=IdeaUnitCategory.Issue),
+        ],
+    ),
+]
+
+
 AMBIGUOUS_IDEA_UNITS_TURNS = [
     SpeakerTurn(
         speaker="Alice",
@@ -119,6 +163,35 @@ def _make_fake_embeddings():
                 vec = deploy_embedding + rng.standard_normal(384).astype(np.float32) * 0.03
             else:
                 vec = db_embedding + rng.standard_normal(384).astype(np.float32) * 0.03
+            vec = vec / np.linalg.norm(vec)
+            results.append(vec)
+        return np.array(results)
+
+    return fake_encode
+
+
+def _make_mergeable_embeddings():
+    rng = np.random.default_rng(77)
+    base = rng.standard_normal(384).astype(np.float32)
+    base = base / np.linalg.norm(base)
+
+    raw = rng.standard_normal(384).astype(np.float32)
+    other = raw - np.dot(raw, base) * base
+    other = other / np.linalg.norm(other)
+
+    raw2 = rng.standard_normal(384).astype(np.float32)
+    third = raw2 - np.dot(raw2, base) * base - np.dot(raw2, other) * other
+    third = third / np.linalg.norm(third)
+
+    outlier = 0.60 * base + 0.80 * third
+    outlier = outlier / np.linalg.norm(outlier)
+
+    directions = [base, base, other, other, outlier]
+
+    def fake_encode(texts, show_progress_bar=False):
+        results = []
+        for i, _text in enumerate(texts):
+            vec = directions[i] + rng.standard_normal(384).astype(np.float32) * 0.005
             vec = vec / np.linalg.norm(vec)
             results.append(vec)
         return np.array(results)
@@ -243,6 +316,35 @@ async def test_assign_no_arbitration(tmp_path, monkeypatch) -> None:
     state = get_conversation(conversation_id)
     assert state.topics_draft is not None
 
+
+# ---------------------------------------------------------------------------
+# Tests: small topic merging
+# ---------------------------------------------------------------------------
+
+
+async def test_assign_merges_small_topics(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    conversation_id = "test-merge-id"
+    fake_encode = _make_mergeable_embeddings()
+    _setup_state_with_embeddings(conversation_id, tmp_path, MERGEABLE_IDEA_UNITS_TURNS, fake_encode)
+
+    raw = await _call_tool("assign_topics", {"conversation_id": conversation_id})
+    result = AssignResponse.model_validate_json(raw)
+
+    while result.status == "arbitration_needed":
+        topic_id = result.arbitration_request.candidates[0].topic_id
+        raw = await _call_tool(
+            "apply_topic_arbitration",
+            {"conversation_id": conversation_id, "topic_id": topic_id},
+        )
+        result = AssignResponse.model_validate_json(raw)
+
+    assert result.status == "success"
+    assert result.topic_count == 2
+
+    state = get_conversation(conversation_id)
+    assert state.topics_draft is not None
+    assert len(state.topics_draft.topics) == 2
 
 # ---------------------------------------------------------------------------
 # Tests: assign_topics with arbitration
