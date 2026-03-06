@@ -60,17 +60,18 @@ async def test_store_decision_record(tmp_path, monkeypatch, _preload_cache) -> N
 
     record = json.dumps({
         "context": "The team needed to choose a database technology.",
+        "decision": {
+            "description": "PostgreSQL was chosen as the database.",
+            "rationale": "Better support for complex queries and strong ecosystem.",
+            "consequences": "Team needs PostgreSQL expertise; migrations are relational.",
+        },
         "alternative_options": [
             {
                 "description": "MongoDB for document flexibility.",
                 "rejection_rationale": "Lacks support for complex relational queries.",
             },
         ],
-        "decision": {
-            "description": "PostgreSQL was chosen as the database.",
-            "rationale": "Better support for complex queries and strong ecosystem.",
-            "consequences": "Team needs PostgreSQL expertise; migrations are relational.",
-        },
+        "design_concerns": ["Technology", "QualityAttribute"],
     })
 
     raw = await _call_tool(
@@ -90,6 +91,8 @@ async def test_store_decision_record(tmp_path, monkeypatch, _preload_cache) -> N
     content = output_path.read_text(encoding="utf-8")
     assert content.startswith("# Database Technology Choice")
     assert "## Context" in content
+    assert "## Design Concerns" in content
+    assert "Technology, QualityAttribute" in content
     assert "## Options" in content
     assert "## Decision" in content
     assert "PostgreSQL was chosen" in content
@@ -100,6 +103,7 @@ async def test_store_decision_record_markdown_format(tmp_path, monkeypatch, _pre
 
     record = json.dumps({
         "context": "Context text here.",
+        "design_concerns": ["BusinessRule"],
         "alternative_options": [
             {
                 "description": "Option B",
@@ -124,6 +128,8 @@ async def test_store_decision_record_markdown_format(tmp_path, monkeypatch, _pre
         "# Sprint Goals\n"
         "\n"
         "## Context\n\nContext text here.\n"
+        "\n"
+        "## Design Concerns\n\nBusinessRule\n"
         "\n"
         "## Options\n"
         "\n"

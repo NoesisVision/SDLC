@@ -2,8 +2,21 @@
 
 import uuid
 from dataclasses import dataclass, field
+from enum import Enum
 
 from pydantic import BaseModel, Field
+
+
+
+class DesignConcern(str, Enum):
+    """Category of design concern that a decision affects."""
+
+    BUSINESS_RULE = "BusinessRule"
+    DOMAIN_MODEL = "DomainModel"
+    QUALITY_ATTRIBUTE = "QualityAttribute"
+    TECHNOLOGY = "Technology"
+    INFRASTRUCTURE = "Infrastructure"
+    OTHER = "Other"
 
 
 class AlternativeDecisionOption(BaseModel):
@@ -37,11 +50,14 @@ class DecisionRecord(BaseModel):
     context: str = Field(
         description="Problem description synthesized from Issue-category idea units"
     )
+    decision: ChosenDecisionOption = Field(
+        description="Chosen path with reasoning from Decision and Argument-category idea units"
+    )
     alternative_options: list[AlternativeDecisionOption] = Field(
         description="Alternatives considered from Position-category idea units"
     )
-    decision: ChosenDecisionOption = Field(
-        description="Chosen path with reasoning from Decision and Argument-category idea units"
+    design_concerns: list[DesignConcern] = Field(
+        description="Design concern categories affected by this decision"
     )
 
 

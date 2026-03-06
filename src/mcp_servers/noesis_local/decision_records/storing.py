@@ -69,6 +69,9 @@ def _write_record_file(
 def _render_markdown(topic_name: str, record: DecisionRecord) -> str:
     sections = [f"# {topic_name}\n", f"## Context\n\n{record.context}\n"]
 
+    concerns_str = ", ".join(c.value for c in record.design_concerns)
+    sections.append(f"## Design Concerns\n\n{concerns_str}\n")
+
     if record.alternative_options:
         options_lines = ["## Options\n"]
         for option in record.alternative_options:
