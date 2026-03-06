@@ -1,11 +1,18 @@
 """End-to-end tests for conversation cleaning tools."""
 
+import json
 from pathlib import Path
 
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcp_servers.noesis_local.conversations.models import AddConversationResponse, CleanResponse, SetMetadataResponse
+from mcp_servers.noesis_local.conversations.models import (
+    AddConversationResponse,
+    CleanResponse,
+    GetBatchResponse,
+    PrepareBatchesResponse,
+    SetMetadataResponse,
+)
 from mcp_servers.noesis_local.conversations.registry import reset_store
 from mcp_servers.noesis_local.server import noesis_server
 
@@ -128,3 +135,46 @@ async def test_set_metadata(tmp_path, monkeypatch) -> None:
     result = SetMetadataResponse.model_validate_json(raw)
 
     assert result.status == "success"
+
+
+CONVERSATION_WITH_HOURS = """\
+# Architecture Workshop
+2026-03-01
+**59:30**
+Jan Kowalski
+This is the last turn before the hour mark.
+**01:00:10**
+Anna Nowak
+This is the first turn after the hour mark. We should discuss deployment.
+**01:02:15**
+Jan Kowalski
+Agreed. Let's plan the deployment pipeline for next sprint.
+"""
+
+
+async def test_clean_parses_hour_timestamps(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    conv_file = tmp_path / "conv.md"
+    conv_file.write_text(CONVERSATION_WITH_HOURS, encoding="utf-8")
+
+    conversation_id = await _add_conversation(conv_file)
+    raw = await _call_tool("clean_conversation", {"conversation_id": conversation_id})
+    result = CleanResponse.model_validate_json(raw)
+
+    assert result.status == "success"
+
+    raw = await _call_tool("prepare_extraction_batches", {"conversation_id": conversation_id})
+    batches = PrepareBatchesResponse.model_validate_json(raw)
+
+    assert batches.batch_count == 1
+
+    raw = await _call_tool(
+        "get_extraction_batch", {"conversation_id": conversation_id, "batch_index": 0}
+    )
+    batch = GetBatchResponse.model_validate_json(raw)
+    turns = json.loads(batch.extraction_turns)
+
+    assert len(turns) == 3
+    assert turns[0]["time"] == "59:30"
+    assert turns[1]["time"] == "01:00:10"
+    assert turns[2]["time"] == "01:02:15"

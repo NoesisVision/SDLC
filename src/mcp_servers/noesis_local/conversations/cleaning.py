@@ -33,12 +33,13 @@ _SMART_QUOTES: list[tuple[str, str]] = [
     ("\u2013", "-"),
     ("\u2014", "--"),
 ]
+_TIME = r"\d{1,2}:\d{2}(?::\d{2})?"
 _TURN_PATTERN = re.compile(
-    r"^\*\*(\d{1,2}:\d{2})\*\*\s*\n" r"(.+?)\n" r"([\s\S]*?)(?=^\*\*\d{1,2}:\d{2}\*\*|\Z)",
+    rf"^\*\*({_TIME})\*\*\s*\n" r"(.+?)\n" rf"([\s\S]*?)(?=^\*\*{_TIME}\*\*|\Z)",
     re.MULTILINE,
 )
-_BROKEN_TIME_MARKER = re.compile(r"^\*\*\s*(\d{1,2}:\d{2})\s*\*\*", re.MULTILINE)
-_SPEAKER_ON_TIMESTAMP_LINE = re.compile(r"^(\*\*\d{1,2}:\d{2}\*\*)[ \t]+(.+)$", re.MULTILINE)
+_BROKEN_TIME_MARKER = re.compile(rf"^\*\*\s*({_TIME})\s*\*\*", re.MULTILINE)
+_SPEAKER_ON_TIMESTAMP_LINE = re.compile(rf"^(\*\*{_TIME}\*\*)[ \t]+(.+)$", re.MULTILINE)
 _TITLE_PATTERN = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 _DATE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2})$", re.MULTILINE)
 
