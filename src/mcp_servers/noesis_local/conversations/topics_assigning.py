@@ -32,8 +32,10 @@ logger = logging.getLogger(__name__)
 _HIGH_CONFIDENCE_THRESHOLD = 0.82
 _LOW_CONFIDENCE_THRESHOLD = 0.65
 _EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
-_MERGE_THRESHOLD = 0.55
-_MIN_TOPIC_SIZE = 2
+_MERGE_THRESHOLD = 0.65
+_MERGE_THRESHOLD_AGGRESSIVE = 0.72
+_GLOBAL_MERGE_THRESHOLD = 0.78
+_MIN_TOPIC_SIZE = 3
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +193,7 @@ def _run_assignment_loop(
             return AssignResponse(status="arbitration_needed", arbitration_request=arbitration)
 
     _merge_small_topics(progress)
+    _merge_similar_topics(progress)
 
     topics_draft = _build_topics_draft(progress.topics, progress.assignments)
     state.topics_draft = topics_draft
@@ -258,6 +261,11 @@ def _record_assignment(
 
 
 def _merge_small_topics(progress: AssignmentProgress) -> None:
+    _merge_small_topics_pass(progress, _MERGE_THRESHOLD)
+    _merge_small_topics_pass(progress, _MERGE_THRESHOLD_AGGRESSIVE)
+
+
+def _merge_small_topics_pass(progress: AssignmentProgress, threshold: float) -> None:
     small_tids = sorted(
         tid for tid, cluster in progress.topics.items()
         if cluster.idea_unit_count < _MIN_TOPIC_SIZE
@@ -273,8 +281,36 @@ def _merge_small_topics(progress: AssignmentProgress) -> None:
             break
         scores = _compute_similarities(progress.topics[small_tid].centroid, other_topics)
         best_tid, best_score = scores[0]
-        if best_score >= _MERGE_THRESHOLD:
+        if best_score >= threshold:
             _merge_topic_into(progress, small_tid, best_tid)
+
+
+def _merge_similar_topics(progress: AssignmentProgress) -> None:
+    merged = True
+    while merged:
+        merged = False
+        tids = sorted(progress.topics.keys())
+        for i, tid_a in enumerate(tids):
+            if tid_a not in progress.topics:
+                continue
+            for tid_b in tids[i + 1:]:
+                if tid_b not in progress.topics:
+                    continue
+                cluster_a = progress.topics[tid_a]
+                cluster_b = progress.topics[tid_b]
+                similarity = float(
+                    np.dot(cluster_a.centroid, cluster_b.centroid)
+                    / (np.linalg.norm(cluster_a.centroid) * np.linalg.norm(cluster_b.centroid))
+                )
+                if similarity >= _GLOBAL_MERGE_THRESHOLD:
+                    if cluster_a.idea_unit_count >= cluster_b.idea_unit_count:
+                        _merge_topic_into(progress, tid_b, tid_a)
+                    else:
+                        _merge_topic_into(progress, tid_a, tid_b)
+                    merged = True
+                    break
+            if merged:
+                break
 
 
 def _merge_topic_into(progress: AssignmentProgress, source_tid: str, target_tid: str) -> None:

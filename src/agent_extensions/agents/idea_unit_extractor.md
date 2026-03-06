@@ -35,7 +35,12 @@ Assign exactly one category per unit:
 - **Position:** proposed solution, opinion, or stance
 - **Argument:** evidence or reasoning for/against a position
 - **Decision:** agreed conclusion or action item
-- **Irrelevant:** filler, greetings, procedural remarks (e.g. "let's move on", "can everyone hear me?", "OK, good"), meta-discussion about meeting logistics, off-topic small talk
+- **Irrelevant:** filler, greetings, procedural remarks, meta-discussion about meeting logistics, off-topic small talk. This includes:
+  - Short confirmations/acknowledgments with no substantive content ("tak", "OK", "zgadza się", "rozumiem", "yes", "right", "got it")
+  - Deictic references to visual elements without standalone meaning ("to tutaj na dole", "these two circles here")
+  - Personal asides without domain content ("nie wiem jeszcze jak", "I'm not sure yet")
+  - Meeting mechanics ("let's move on", "can everyone hear me?", "OK, good", "I see your cursor")
+  - Turns consisting solely of a single-word interjection or question echo
 
 ## Mandatory Rules
 
