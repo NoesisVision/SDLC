@@ -60,8 +60,17 @@ async def test_store_decision_record(tmp_path, monkeypatch, _preload_cache) -> N
 
     record = json.dumps({
         "context": "The team needed to choose a database technology.",
-        "options": "PostgreSQL was proposed for relational needs. MongoDB was considered for flexibility.",
-        "decision": "PostgreSQL was chosen due to better support for complex queries.",
+        "alternative_options": [
+            {
+                "description": "MongoDB for document flexibility.",
+                "rejection_rationale": "Lacks support for complex relational queries.",
+            },
+        ],
+        "decision": {
+            "description": "PostgreSQL was chosen as the database.",
+            "rationale": "Better support for complex queries and strong ecosystem.",
+            "consequences": "Team needs PostgreSQL expertise; migrations are relational.",
+        },
     })
 
     raw = await _call_tool(
@@ -75,7 +84,7 @@ async def test_store_decision_record(tmp_path, monkeypatch, _preload_cache) -> N
 
     output_path = Path(result.output_path)
     assert output_path.exists()
-    assert output_path.parent == tmp_path / ".noesis" / "decision" / "records" / "sprint-planning-meeting"
+    assert output_path.parent == tmp_path / ".noesis" / "decision_records" / "sprint-planning-meeting"
     assert output_path.name == "database-technology-choice.md"
 
     content = output_path.read_text(encoding="utf-8")
@@ -91,8 +100,17 @@ async def test_store_decision_record_markdown_format(tmp_path, monkeypatch, _pre
 
     record = json.dumps({
         "context": "Context text here.",
-        "options": "Option A and Option B.",
-        "decision": "Option A was selected.",
+        "alternative_options": [
+            {
+                "description": "Option B",
+                "rejection_rationale": "Too expensive.",
+            },
+        ],
+        "decision": {
+            "description": "Option A was selected.",
+            "rationale": "Best cost-to-value ratio.",
+            "consequences": "Requires additional training.",
+        },
     })
 
     raw = await _call_tool(
@@ -103,10 +121,21 @@ async def test_store_decision_record_markdown_format(tmp_path, monkeypatch, _pre
     content = Path(result.output_path).read_text(encoding="utf-8")
 
     expected = (
-        "# Sprint Goals\n\n"
-        "## Context\n\nContext text here.\n\n"
-        "## Options\n\nOption A and Option B.\n\n"
-        "## Decision\n\nOption A was selected.\n"
+        "# Sprint Goals\n"
+        "\n"
+        "## Context\n\nContext text here.\n"
+        "\n"
+        "## Options\n"
+        "\n"
+        "- **Option B** — Too expensive.\n"
+        "\n"
+        "## Decision\n"
+        "\n"
+        "Option A was selected.\n"
+        "\n"
+        "**Rationale:** Best cost-to-value ratio.\n"
+        "\n"
+        "**Consequences:** Requires additional training.\n"
     )
     assert content == expected
 
@@ -126,7 +155,7 @@ async def test_store_record_not_loaded_raises_error(tmp_path, monkeypatch) -> No
     monkeypatch.chdir(tmp_path)
 
     record = json.dumps({
-        "context": "c", "options": "o", "decision": "d",
+        "context": "c", "alternative_options": "o", "decision": "d",
     })
 
     assert await _call_tool_expect_error(
@@ -139,7 +168,7 @@ async def test_store_record_invalid_topic_index_raises_error(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
 
     record = json.dumps({
-        "context": "c", "options": "o", "decision": "d",
+        "context": "c", "alternative_options": "o", "decision": "d",
     })
 
     assert await _call_tool_expect_error(

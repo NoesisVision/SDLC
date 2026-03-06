@@ -6,11 +6,9 @@ import re
 from pathlib import Path
 
 from .loading import _cache
-from .models import StoreDecisionRecordResponse
+from .models import DecisionRecord, StoreDecisionRecordResponse
 
 logger = logging.getLogger(__name__)
-
-_REQUIRED_KEYS = {"context", "options", "decision"}
 
 
 async def store_decision_record(
@@ -18,8 +16,8 @@ async def store_decision_record(
 ) -> StoreDecisionRecordResponse:
     """Validate and store a decision record as a markdown file.
 
-    Parses the record JSON, validates required keys, and writes the decision
-    record to ``.noesis/decision/records/<slugified_title>/<slugified_topic>.md``.
+    Parses the record JSON, validates it against the DecisionRecord schema,
+    and writes to ``.noesis/decision_records/<slugified_title>/<slugified_topic>.md``.
 
     Args:
         conversation_id: UUID identifying the conversation.
@@ -44,21 +42,17 @@ async def store_decision_record(
         )
 
     parsed = json.loads(record)
-    _validate_record_keys(parsed)
+    decision_record = DecisionRecord.model_validate(parsed)
 
     topic_name = loaded.topics[topic_index]["name"]
-    output_path = _write_record_file(loaded.title, topic_name, parsed)
+    output_path = _write_record_file(loaded.title, topic_name, decision_record)
 
     return StoreDecisionRecordResponse(status="success", output_path=str(output_path))
 
 
-def _validate_record_keys(parsed: dict) -> None:
-    missing = _REQUIRED_KEYS - parsed.keys()
-    if missing:
-        raise ValueError(f"Record JSON missing required keys: {', '.join(sorted(missing))}")
-
-
-def _write_record_file(title: str, topic_name: str, parsed: dict) -> Path:
+def _write_record_file(
+    title: str, topic_name: str, record: DecisionRecord
+) -> Path:
     title_slug = _slugify(title)
     topic_slug = _slugify(topic_name)
 
@@ -66,15 +60,29 @@ def _write_record_file(title: str, topic_name: str, parsed: dict) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{topic_slug}.md"
 
-    content = (
-        f"# {topic_name}\n\n"
-        f"## Context\n\n{parsed['context']}\n\n"
-        f"## Options\n\n{parsed['options']}\n\n"
-        f"## Decision\n\n{parsed['decision']}\n"
+    output_path.write_text(
+        _render_markdown(topic_name, record), encoding="utf-8"
     )
-    output_path.write_text(content, encoding="utf-8")
-
     return output_path
+
+
+def _render_markdown(topic_name: str, record: DecisionRecord) -> str:
+    sections = [f"# {topic_name}\n", f"## Context\n\n{record.context}\n"]
+
+    if record.alternative_options:
+        options_lines = ["## Options\n"]
+        for option in record.alternative_options:
+            options_lines.append(
+                f"- **{option.description}** — {option.rejection_rationale}"
+            )
+        sections.append("\n".join(options_lines) + "\n")
+
+    sections.append(
+        f"## Decision\n\n{record.decision.description}\n\n"
+        f"**Rationale:** {record.decision.rationale}\n\n"
+        f"**Consequences:** {record.decision.consequences}\n"
+    )
+    return "\n".join(sections)
 
 
 def _slugify(text: str) -> str:
