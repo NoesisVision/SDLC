@@ -75,7 +75,7 @@ Parse the response:
 
 Use the `topics_for_labeling` array from the successful Step 5 response. Each entry contains `topic_id`, `representative_texts`, and `categories`.
 
-For each topic, generate:
+For each topic, generate **in the same language as the representative_texts**:
 - **label**: A 2-5 word topic name based on the `representative_texts` and `categories`
 - **summary**: A 1-2 sentence description of what was discussed in this topic
 

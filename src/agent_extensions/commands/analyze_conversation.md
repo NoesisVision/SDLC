@@ -47,6 +47,7 @@ Return your analysis as a JSON code block in exactly this format:
 ```
 
 Rules:
+- Write the entire analysis in the same language as the conversation
 - The `domain_terms` field can be `null` if no domain terms are identified
 - The `topics` array must contain at least one topic
 - Be concise but informative

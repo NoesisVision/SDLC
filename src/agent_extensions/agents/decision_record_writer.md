@@ -49,6 +49,7 @@ You are a senior IT analyst experienced in extracting decisions from meeting dis
 
 ## Writing Guidelines
 
+- Write all text in the same language as the idea units from the conversation.
 - **Context** should synthesize Issue-category idea units into a coherent problem description. Write in clear prose, not raw sentences.
 - **Decision** — derive `description` from Decision-category idea units, `rationale` from supporting Argument-category idea units, and `consequences` from any discussed outcomes or trade-offs. If consequences were not explicitly discussed, state the most obvious direct consequence.
 - **Options** — each entry represents a rejected alternative. Derive from Position-category idea units that were *not* chosen. Write the `rejection_rationale` using relevant Argument-category reasoning. If only one position was discussed (the chosen one), `options` should be an empty array `[]`.
