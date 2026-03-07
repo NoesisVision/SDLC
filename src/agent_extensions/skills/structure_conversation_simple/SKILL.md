@@ -10,6 +10,7 @@ Structure a conversation transcript (markdown file) into semantically grouped to
 ## Core Principles
 
 - NEVER load the whole conversation file into LLM context.
+- ALWAYS run cleanup (Step 6) when the workflow ends — whether it succeeds or fails at any step.
 
 ## Setup
 
@@ -31,6 +32,8 @@ Parse the JSON output:
   1. Use AskUserQuestion to ask the user for missing values
   2. Re-run with overrides: `uv run --script {skill_dir}/scripts/parse_conversation.py <file_path> --title "..." --date "..."`
   3. Proceed to Step 1
+
+The `work_dir` is a temporary directory at `{projectRoot}/.noesis/tmp/{executionId}`. It will be cleaned up in Step 6.
 
 ### Step 1: Prepare Batches
 
@@ -104,9 +107,20 @@ uv run --script {skill_dir}/scripts/build_output.py <work_dir>
 
 The JSON output contains:
 - `title`, `date`, and `topics` (name + summary for each)
-- `output_path`: path to the written `<file_stem>_structured.json` file
+- `output_path`: path to the written `<file_stem>_structured.json` file (placed next to the original conversation file)
 
 Present the summary to the user. Include the output file path.
+
+### Step 6: Cleanup
+
+**Always run this step** — after Step 5 succeeds, or if any earlier step fails.
+
+Run:
+```
+uv run --script {skill_dir}/scripts/cleanup.py <work_dir>
+```
+
+This removes the temporary working directory and all intermediate files.
 
 ## Reference Files
 

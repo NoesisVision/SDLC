@@ -64,7 +64,7 @@ def parse_conversation(file_path: Path, title_override: str | None, date_overrid
     """
     raw_text = file_path.read_text(encoding="utf-8")
     conversation_id, raw_text = _ensure_conversation_id(file_path, raw_text)
-    work_dir = _create_work_dir(file_path, conversation_id)
+    work_dir = _create_work_dir(file_path)
 
     text_without_id = _strip_conversation_id_line(raw_text)
     if not text_without_id.strip():
@@ -121,9 +121,10 @@ def _ensure_conversation_id(file_path: Path, raw_text: str) -> tuple[str, str]:
     return conversation_id, updated_text
 
 
-def _create_work_dir(file_path: Path, conversation_id: str) -> Path:
+def _create_work_dir(file_path: Path) -> Path:
     project_root = _find_project_root(file_path)
-    work_dir = project_root / ".noesis" / "conversations" / conversation_id
+    execution_id = str(uuid.uuid4())
+    work_dir = project_root / ".noesis" / "tmp" / execution_id
     work_dir.mkdir(parents=True, exist_ok=True)
     return work_dir
 

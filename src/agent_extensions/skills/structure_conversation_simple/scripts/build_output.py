@@ -34,9 +34,8 @@ def build_output(work_dir: Path) -> dict:
         "topics": topics,
     }
 
-    source_stem = parsed["source_stem"]
-    output_dir = work_dir.parent
-    output_path = output_dir / f"{source_stem}_structured.json"
+    source_path = Path(parsed["source_path"])
+    output_path = source_path.parent / f"{parsed['source_stem']}_structured.json"
     output_path.write_text(json.dumps(structured, indent=2, ensure_ascii=False), encoding="utf-8")
 
     topic_summaries = [{"name": t["name"], "summary": t["summary"]} for t in topics]
