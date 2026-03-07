@@ -5,7 +5,10 @@ import re
 import uuid
 from pathlib import Path
 
+from mcp.server.fastmcp import Context
+
 from .models import AddConversationResponse, ConversationState
+from .graph_storing import conversation_exists
 
 logger = logging.getLogger(__name__)
 
@@ -14,18 +17,23 @@ CONVERSATION_ID_PATTERN = re.compile(r"^<!--\s*conversation_id:\s*([\w-]+)\s*-->
 _store: dict[str, ConversationState] = {}
 
 
-async def add_conversation(file_path: str) -> AddConversationResponse:
+async def add_conversation(file_path: str, ctx: Context) -> AddConversationResponse:
     """Register a conversation file and assign a persistent conversation ID.
 
     If the file already contains a ``<!-- conversation_id: UUID -->`` comment
     on its first line, that ID is reused. Otherwise a new UUID4 is generated
     and prepended to the file.
 
+    When the conversation already exists in the graph database, returns
+    immediately with ``already_stored=True`` so the calling agent can skip
+    further processing.
+
     Args:
         file_path: Absolute path to the conversation markdown file.
+        ctx: MCP context providing access to the graph database.
 
     Returns:
-        The conversation_id for use with all subsequent tool calls.
+        The conversation_id and whether it was already stored in the graph.
     """
     resolved = Path(file_path).resolve()
 
@@ -45,6 +53,13 @@ async def add_conversation(file_path: str) -> AddConversationResponse:
         resolved.write_text(
             f"<!-- conversation_id: {conversation_id} -->\n{content}",
             encoding="utf-8",
+        )
+
+    graph = ctx.request_context.lifespan_context.graph
+    if conversation_exists(graph, conversation_id):
+        logger.info("Conversation %s already in graph, skipping", conversation_id)
+        return AddConversationResponse(
+            conversation_id=conversation_id, already_stored=True
         )
 
     register_conversation(conversation_id, resolved)

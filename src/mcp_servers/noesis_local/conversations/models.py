@@ -160,6 +160,10 @@ class AddConversationResponse(BaseModel):
     """Response from add_conversation."""
 
     conversation_id: str = Field(description="UUID identifying the conversation")
+    already_stored: bool = Field(
+        default=False,
+        description="True when the conversation already exists in the graph database",
+    )
 
 
 # ---------------------------------------------------------------------------
