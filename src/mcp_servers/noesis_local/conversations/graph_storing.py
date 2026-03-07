@@ -44,7 +44,7 @@ def store_conversation(graph: Graph, structured: StructuredConversation) -> None
     logger.info("Stored conversation %s in graph", structured.conversation_id)
 
 
-def sync_conversations_from_disk(graph: Graph) -> int:
+def sync_conversations_from_disk(graph: Graph, project_root: Path) -> int:
     """Load structured conversation JSON files from disk and add missing ones to graph.
 
     Scans ``.noesis/conversations/`` for ``*_structured.json`` files and persists
@@ -52,11 +52,12 @@ def sync_conversations_from_disk(graph: Graph) -> int:
 
     Args:
         graph: FalkorDB graph instance.
+        project_root: Project root directory containing ``.noesis/``.
 
     Returns:
         Number of conversations added.
     """
-    conversations_dir = Path.cwd() / ".noesis" / "conversations"
+    conversations_dir = project_root / ".noesis" / "conversations"
     if not conversations_dir.exists():
         return 0
 

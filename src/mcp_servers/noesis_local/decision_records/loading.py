@@ -2,8 +2,9 @@
 
 import json
 import logging
-import re
 from pathlib import Path
+
+from mcp.server.fastmcp import Context
 
 from mcp_servers.noesis_local.conversations.models import CONVERSATION_ID_PATTERN
 
@@ -19,23 +20,26 @@ logger = logging.getLogger(__name__)
 _cache: dict[str, LoadedConversation] = {}
 
 
-async def get_conversation_topics(conversation_id: str) -> GetConversationTopicsResponse:
+async def get_conversation_topics(conversation_id: str, ctx: Context) -> GetConversationTopicsResponse:
     """Load a structured conversation and return an overview of its topics.
 
-    Searches markdown files in the current working directory for a file
-    containing the conversation ID, then loads the corresponding structured
-    JSON from ``.noesis/conversations/<stem>_structured.json``.
+    Searches markdown files in the project root for a file containing the
+    conversation ID, then loads the corresponding structured JSON from
+    ``.noesis/conversations/<stem>_structured.json``.
 
     Args:
         conversation_id: UUID identifying the conversation.
+        ctx: MCP context providing access to the project root.
 
     Returns:
         Conversation title and list of topic overviews.
     """
+    project_root = ctx.request_context.lifespan_context.project_root
+
     if conversation_id in _cache:
         loaded = _cache[conversation_id]
     else:
-        loaded = _load_conversation(conversation_id)
+        loaded = _load_conversation(conversation_id, project_root)
         _cache[conversation_id] = loaded
 
     topics = [
@@ -89,9 +93,9 @@ def reset_cache() -> None:
     _cache.clear()
 
 
-def _load_conversation(conversation_id: str) -> LoadedConversation:
-    source_path = _find_source_file(conversation_id)
-    structured_path = _derive_structured_path(source_path)
+def _load_conversation(conversation_id: str, project_root: Path) -> LoadedConversation:
+    source_path = _find_source_file(conversation_id, project_root)
+    structured_path = _derive_structured_path(source_path, project_root)
     data = json.loads(structured_path.read_text(encoding="utf-8"))
 
     return LoadedConversation(
@@ -101,9 +105,8 @@ def _load_conversation(conversation_id: str) -> LoadedConversation:
     )
 
 
-def _find_source_file(conversation_id: str) -> Path:
-    cwd = Path.cwd()
-    for md_file in cwd.glob("*.md"):
+def _find_source_file(conversation_id: str, project_root: Path) -> Path:
+    for md_file in project_root.glob("*.md"):
         if md_file.parts and md_file.parts[-2] == ".noesis":
             continue
         first_line = md_file.read_text(encoding="utf-8").split("\n", 1)[0]
@@ -116,9 +119,9 @@ def _find_source_file(conversation_id: str) -> Path:
     )
 
 
-def _derive_structured_path(source_path: Path) -> Path:
+def _derive_structured_path(source_path: Path, project_root: Path) -> Path:
     structured_path = (
-        Path.cwd() / ".noesis" / "conversations" / f"{source_path.stem}_structured.json"
+        project_root / ".noesis" / "conversations" / f"{source_path.stem}_structured.json"
     )
     if not structured_path.exists():
         raise FileNotFoundError(

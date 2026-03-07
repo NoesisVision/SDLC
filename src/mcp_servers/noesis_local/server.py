@@ -6,8 +6,8 @@ A Model Context Protocol server for local Noesis operations.
 This server provides tools for interacting with the local Noesis environment.
 """
 
+import argparse
 import logging
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 NOESIS_GRAPH = "noesis"
 
+_project_root: Path | None = None
+
 
 @dataclass
 class GraphContext:
@@ -41,6 +43,7 @@ class GraphContext:
     db: FalkorDB
     graph: Graph
     db_path: Path
+    project_root: Path
     graph_name: str = "noesis"
 
 
@@ -53,10 +56,9 @@ def _ensure_indexes(graph: Graph) -> None:
         logger.debug("Index on Conversation.conversation_id already exists or could not be created")
 
 
-def _initialize_graph_db() -> GraphContext:
+def _initialize_graph_db(project_root: Path) -> GraphContext:
     """Initialize FalkorDB and return a GraphContext."""
-    working_directory = Path(os.getcwd())
-    noesis_dir = working_directory / ".noesis"
+    noesis_dir = project_root / ".noesis"
     db_file = noesis_dir / "graph.db"
 
     try:
@@ -70,7 +72,10 @@ def _initialize_graph_db() -> GraphContext:
         graph = db.select_graph(NOESIS_GRAPH)
         _ensure_indexes(graph)
         logger.info("FalkorDB initialized at %s", db_file)
-        return GraphContext(db=db, graph=graph, db_path=db_file, graph_name=NOESIS_GRAPH)
+        return GraphContext(
+            db=db, graph=graph, db_path=db_file,
+            project_root=project_root, graph_name=NOESIS_GRAPH,
+        )
     except Exception:
         logger.exception("Failed to initialize FalkorDB at %s", db_file)
         raise
@@ -81,12 +86,14 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
     """Manage FalkorDB lifecycle for the MCP server.
 
     Initializes the database on startup, syncs existing conversations from
-    disk, and ensures proper cleanup on shutdown. The database file is created
-    in the working directory inherited from the parent process.
+    disk, and ensures proper cleanup on shutdown. The project root is
+    determined by the ``--project-root`` CLI argument, falling back to the
+    current working directory.
     """
 
-    ctx = _initialize_graph_db()
-    sync_conversations_from_disk(ctx.graph)
+    project_root = _project_root or Path.cwd()
+    ctx = _initialize_graph_db(project_root)
+    sync_conversations_from_disk(ctx.graph, project_root)
 
     try:
         yield ctx
@@ -112,6 +119,19 @@ noesis_server.tool()(set_conversation_metadata)
 noesis_server.tool()(store_decision_record)
 noesis_server.tool()(store_extraction_result)
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Noesis Local MCP Server")
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=None,
+        help="Project root directory (defaults to current working directory)",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    # Run the server using stdio transport
+    _args = _parse_args()
+    if _args.project_root is not None:
+        _project_root = _args.project_root.resolve()
     noesis_server.run(transport="stdio")

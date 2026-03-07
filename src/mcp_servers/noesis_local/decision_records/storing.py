@@ -5,6 +5,8 @@ import logging
 import re
 from pathlib import Path
 
+from mcp.server.fastmcp import Context
+
 from .loading import _cache
 from .models import DecisionRecord, StoreDecisionRecordResponse
 
@@ -12,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 async def store_decision_record(
-    conversation_id: str, topic_index: int, record: str
+    conversation_id: str, topic_index: int, record: str, ctx: Context
 ) -> StoreDecisionRecordResponse:
     """Validate and store a decision record as a markdown file.
 
@@ -23,6 +25,7 @@ async def store_decision_record(
         conversation_id: UUID identifying the conversation.
         topic_index: Zero-based index of the topic.
         record: JSON string with ``context``, ``options``, and ``decision`` keys.
+        ctx: MCP context providing access to the project root.
 
     Returns:
         Status and output path of the written file.
@@ -44,19 +47,20 @@ async def store_decision_record(
     parsed = json.loads(record)
     decision_record = DecisionRecord.model_validate(parsed)
 
+    project_root = ctx.request_context.lifespan_context.project_root
     topic_name = loaded.topics[topic_index]["name"]
-    output_path = _write_record_file(loaded.title, topic_name, decision_record)
+    output_path = _write_record_file(project_root, loaded.title, topic_name, decision_record)
 
     return StoreDecisionRecordResponse(status="success", output_path=str(output_path))
 
 
 def _write_record_file(
-    title: str, topic_name: str, record: DecisionRecord
+    project_root: Path, title: str, topic_name: str, record: DecisionRecord
 ) -> Path:
     title_slug = _slugify(title)
     topic_slug = _slugify(topic_name)
 
-    output_dir = Path.cwd() / ".noesis" / "decision_records" / title_slug
+    output_dir = project_root / ".noesis" / "decision_records" / title_slug
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{topic_slug}.md"
 

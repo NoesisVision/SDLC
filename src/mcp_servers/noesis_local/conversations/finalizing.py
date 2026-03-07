@@ -54,7 +54,8 @@ async def finalize_conversation(
         topics_refined=refined,
     )
 
-    output_dir = Path.cwd() / ".noesis" / "conversations"
+    project_root = ctx.request_context.lifespan_context.project_root
+    output_dir = project_root / ".noesis" / "conversations"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{state.source_path.stem}_structured.json"
     output_path.write_text(

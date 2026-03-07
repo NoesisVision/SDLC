@@ -2,6 +2,8 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from redislite.falkordb_client import FalkorDB
@@ -17,7 +19,7 @@ def shared_graph_context(tmp_path_factory):
 
     db = FalkorDB(str(db_file))
     graph = db.select_graph(NOESIS_GRAPH)
-    ctx = GraphContext(db=db, graph=graph, db_path=db_file, graph_name=NOESIS_GRAPH)
+    ctx = GraphContext(db=db, graph=graph, db_path=db_file, project_root=db_dir, graph_name=NOESIS_GRAPH)
 
     yield ctx
 
@@ -35,6 +37,6 @@ def use_shared_db(request, shared_graph_context, monkeypatch):
 
     @asynccontextmanager
     async def _noop_lifespan(_server) -> AsyncIterator[GraphContext]:
-        yield shared_graph_context
+        yield replace(shared_graph_context, project_root=Path.cwd())
 
     monkeypatch.setattr(noesis_server._mcp_server, "lifespan", _noop_lifespan)

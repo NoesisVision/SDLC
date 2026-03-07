@@ -222,7 +222,7 @@ def test_sync_conversations_from_disk(tmp_path, monkeypatch, graph) -> None:
     json_path = conversations_dir / "synced_meeting_structured.json"
     json_path.write_text(json.dumps(structured_data), encoding="utf-8")
 
-    added = sync_conversations_from_disk(graph)
+    added = sync_conversations_from_disk(graph, tmp_path)
 
     assert added == 1
     assert conversation_exists(graph, "sync-test-001")
@@ -232,5 +232,5 @@ def test_sync_conversations_from_disk(tmp_path, monkeypatch, graph) -> None:
     ).result_set
     assert conversations[0][0] == "Synced Meeting"
 
-    added_again = sync_conversations_from_disk(graph)
+    added_again = sync_conversations_from_disk(graph, tmp_path)
     assert added_again == 0
