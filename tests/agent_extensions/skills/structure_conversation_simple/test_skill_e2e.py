@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 
 _SDLC_ROOT = Path(__file__).resolve().parents[4]
-_VALID_CATEGORIES = {"Issue", "Position", "Argument", "Decision", "Irrelevant"}
+_VALID_CATEGORIES = {"Issue", "Position", "Argument", "Information", "Agreement", "Decision", "Irrelevant"}
 
 _E2E_CONVERSATION = """\
 # Database Selection Meeting
-2025-03-15
+2025-03-15 10:00
 **10:00**
 Jan Kowalski
 We need to decide on the database technology for our new project. Should we use PostgreSQL or MongoDB?

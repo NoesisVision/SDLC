@@ -6,7 +6,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-_VALID_CATEGORIES = {"Issue", "Position", "Argument", "Decision", "Irrelevant"}
+_VALID_CATEGORIES = {"Issue", "Position", "Argument", "Information", "Agreement", "Decision", "Irrelevant"}
 
 
 def validate_extraction(batch_path: Path, extraction_path: Path) -> dict:
@@ -20,26 +20,58 @@ def validate_extraction(batch_path: Path, extraction_path: Path) -> dict:
         Validation result dict with status and optional error details.
     """
     batch_data = json.loads(batch_path.read_text(encoding="utf-8"))
-    expected_turns = batch_data["extraction_turns"]
-    expected_count = batch_data["expected_turns_count"]
+    expected_map = {t["turn_id"]: t for t in batch_data["extraction_turns"]}
 
     raw_text = extraction_path.read_text(encoding="utf-8")
     parsed = _parse_extraction(raw_text)
     if isinstance(parsed, str):
         return {"status": "validation_failed", "error_details": parsed}
 
-    if len(parsed) != expected_count:
-        return {
-            "status": "validation_failed",
-            "error_details": (f"Turn count mismatch: expected {expected_count}, got {len(parsed)}"),
-        }
+    error = _validate_turn_ids(parsed, expected_map)
+    if error:
+        return {"status": "validation_failed", "error_details": error}
 
-    for turn_data, expected_turn in zip(parsed, expected_turns, strict=True):
-        error = _validate_single_turn(turn_data, expected_turn)
+    for turn_data in parsed:
+        turn_id = turn_data["turn_id"]
+        error = _validate_single_turn(turn_data, expected_map[turn_id])
         if error:
             return {"status": "validation_failed", "error_details": error}
 
     return {"status": "success"}
+
+
+def _validate_turn_ids(parsed: list[dict], expected_map: dict) -> str | None:
+    output_ids = []
+    for element in parsed:
+        turn_id = element.get("turn_id")
+        if turn_id is None:
+            return "Validation Failed: Each output element must include a 'turn_id' field."
+        output_ids.append(turn_id)
+
+    if len(output_ids) != len(set(output_ids)):
+        seen = set()
+        for tid in output_ids:
+            if tid in seen:
+                return f"Validation Failed: Duplicate turn_id '{tid}'."
+            seen.add(tid)
+
+    expected_ids = set(expected_map.keys())
+    output_id_set = set(output_ids)
+    missing = sorted(expected_ids - output_id_set)
+    extra = sorted(output_id_set - expected_ids)
+
+    if missing:
+        return (
+            f"Validation Failed: Missing output for turn_ids {missing}. "
+            f"You must return exactly one object per input turn and include the exact 'turn_id'."
+        )
+    if extra:
+        return (
+            f"Validation Failed: Unexpected turn_ids {extra}. "
+            f"Only return turns from extraction_turns."
+        )
+
+    return None
 
 
 def _parse_extraction(raw: str) -> list[dict] | str:
@@ -64,18 +96,20 @@ def _parse_extraction(raw: str) -> list[dict] | str:
 
 
 def _validate_single_turn(turn_data: dict, expected_turn: dict) -> str | None:
-    speaker = expected_turn.get("speaker", "unknown")
-    time = expected_turn.get("time", "unknown")
+    turn_id = expected_turn["turn_id"]
 
     if not isinstance(turn_data, dict):
-        return f"Invalid turn structure for {speaker} at {time}: " f"expected object, got {type(turn_data).__name__}"
+        return (
+            f"Validation Failed in turn_id '{turn_id}': "
+            f"expected object, got {type(turn_data).__name__}"
+        )
 
     raw_idea_units = turn_data.get("idea_units")
     if not isinstance(raw_idea_units, list):
-        return f"Invalid turn structure for {speaker} at {time}: " f"expected 'idea_units' list"
+        return f"Validation Failed in turn_id '{turn_id}': expected 'idea_units' list"
 
     for iu in raw_idea_units:
-        error = _validate_idea_unit(iu, speaker, time)
+        error = _validate_idea_unit(iu, turn_id)
         if error:
             return error
 
@@ -85,41 +119,44 @@ def _validate_single_turn(turn_data: dict, expected_turn: dict) -> str | None:
     output_counts = Counter(output_sentences)
 
     if expected_counts != output_counts:
-        parts = []
-        missing = sorted((expected_counts - output_counts).elements())
-        extra = sorted((output_counts - expected_counts).elements())
-        if missing:
-            parts.append(f"missing sentences: {missing}")
-        if extra:
-            parts.append(f"extra sentences: {extra}")
-        return f"Sentence mismatch for {speaker} at {time}: " + "; ".join(parts)
+        return (
+            f"Validation Failed in turn_id '{turn_id}': "
+            f"The sentences returned do not exactly match the input. "
+            f"Do not alter, fix typos, or combine sentences. Preserve verbatim."
+        )
 
     return None
 
 
-def _validate_idea_unit(iu: dict, speaker: str, time: str) -> str | None:
+def _validate_idea_unit(iu: dict, turn_id: str) -> str | None:
     if not isinstance(iu, dict):
-        return f"Invalid idea unit for {speaker} at {time}: " f"expected object, got {type(iu).__name__}"
+        return (
+            f"Validation Failed in turn_id '{turn_id}': "
+            f"expected object, got {type(iu).__name__}"
+        )
 
     sentences = iu.get("sentences")
     if not isinstance(sentences, list) or not all(isinstance(s, str) for s in sentences):
-        return f"Invalid idea unit for {speaker} at {time}: " f"'sentences' must be a list of strings"
+        return f"Validation Failed in turn_id '{turn_id}': 'sentences' must be a list of strings"
 
     category = iu.get("category")
     if category not in _VALID_CATEGORIES:
         return (
-            f"Invalid category '{category}' for {speaker} at {time}. "
+            f"Invalid category '{category}' in turn_id '{turn_id}'. "
             f"Must be one of: {', '.join(sorted(_VALID_CATEGORIES))}"
         )
 
     topic = iu.get("topic")
     if category == "Irrelevant":
         if topic is not None:
-            return f"Irrelevant idea unit for {speaker} at {time} must have topic as null, got '{topic}'"
+            return (
+                f"Irrelevant idea unit in turn_id '{turn_id}' must have topic as null, "
+                f"got '{topic}'"
+            )
     else:
         if not isinstance(topic, str) or not topic.strip():
             return (
-                f"Non-Irrelevant idea unit for {speaker} at {time} must have "
+                f"Non-Irrelevant idea unit in turn_id '{turn_id}' must have "
                 f"a non-empty string 'topic', got {topic!r}"
             )
 

@@ -16,11 +16,11 @@ The final output is a JSON file matching the `StructuredConversation` schema.
       "statements": [
         {
           "speaker": "Speaker Name",
-          "time": "HH:MM",
+          "time": "YYYY-MM-DD HH:MM",
           "idea_units": [
             {
               "sentences": ["sentence1", "sentence2"],
-              "category": "Issue|Position|Argument|Decision|Irrelevant"
+              "category": "Issue|Position|Argument|Information|Agreement|Decision|Irrelevant"
             }
           ]
         }
@@ -54,7 +54,7 @@ The final output is a JSON file matching the `StructuredConversation` schema.
 | Field | Type | Description |
 |-------|------|-------------|
 | `speaker` | string | Name of the speaker |
-| `time` | string | Time relative to conversation start (HH:MM) |
+| `time` | string | Absolute timestamp (`YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS`). Falls back to relative `HH:MM` if start date is unavailable. |
 | `idea_units` | array | Idea units from this speaker on this topic |
 
 ### Idea Unit
@@ -62,12 +62,14 @@ The final output is a JSON file matching the `StructuredConversation` schema.
 | Field | Type | Description |
 |-------|------|-------------|
 | `sentences` | array[string] | Consecutive sentences forming one coherent idea |
-| `category` | string | One of: Issue, Position, Argument, Decision, Irrelevant |
+| `category` | string | One of: Issue, Position, Argument, Information, Agreement, Decision, Irrelevant |
 
 ## Category Definitions
 
 - **Issue:** question or problem raised for discussion
 - **Position:** proposed solution, opinion, or stance
 - **Argument:** evidence or reasoning for/against a position
+- **Information:** factual description, clarification, historical context, or current-state report
+- **Agreement:** explicit endorsement of or alignment with a previously stated position
 - **Decision:** agreed conclusion or action item
 - **Irrelevant:** filler, greetings, procedural remarks

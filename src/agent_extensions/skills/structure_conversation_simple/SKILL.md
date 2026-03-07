@@ -74,22 +74,22 @@ This groups all non-Irrelevant idea units by their topic labels (assigned during
 
 Read `<work_dir>/topic_groups.json`. It contains `topic_groups` — an array where each entry has `label`, `count`, `categories`, and `representative_texts`.
 
-Your task: merge similar topic groups into final topics. Write the result to `<work_dir>/merged_topics.json`.
+Your task: aggressively merge similar and overlapping topic groups into a cohesive list of final topics. Write the result to `<work_dir>/merged_topics.json`.
 
 **Merge guidelines:**
-- Aim for **5-25 final topics** depending on conversation length and diversity.
-- Merge by **subject overlap**, not by category similarity (e.g., merge "API Authentication" and "OAuth Token Flow" into one topic, but don't merge "API Authentication" and "Database Indexing" just because both contain Arguments).
+- **Strict Limit:** You MUST consolidate the conversation into a maximum of 5 to 8 high-level macro-topics (e.g., "Architecture & Bounded Contexts", "WMS & AWIZ Processes"). Do not exceed 8 topics unless absolutely necessary for a multi-hour, highly disjointed meeting.
+- **Consolidate by Subject, Not Chronology:** If a core domain concept is discussed early in the meeting and then revisited later, group all those source labels under ONE single macro-topic. Do not fragment discussions into "Part 1" and "Part 2".
+- **Shared Domain Entities:** When multiple topics share the same domain entity (e.g., "awiz", "moduł WMS"), test whether moving statements between them would reduce coherence — if not, merge them. When in doubt, prefer fewer, broader topics over many narrow ones that share terminology.
 - Every source label must appear in exactly one final topic's `source_labels`.
 - Generate labels and summaries **in the same language as the representative_texts**.
-- Keep groups that are already distinct as separate topics.
 
 **Output format** for `merged_topics.json`:
 ```json
 {
   "topics": [
     {
-      "label": "Final Topic Name",
-      "summary": "1-2 sentence description of what was discussed",
+      "label": "Macro-Topic Name",
+      "summary": "1-2 sentence comprehensive description of the decisions, issues, and arguments discussed within this topic.",
       "source_labels": ["Original Label A", "Original Label B"]
     }
   ]

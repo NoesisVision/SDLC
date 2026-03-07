@@ -19,7 +19,10 @@ def collect_topic_groups(work_dir: Path) -> dict:
     parsed = json.loads((work_dir / "parsed.json").read_text(encoding="utf-8"))
     turns = parsed["turns"]
 
-    extraction_files = sorted((work_dir / "extractions").glob("batch_*.json"))
+    extraction_files = sorted(
+        (work_dir / "extractions").glob("batch_*.json"),
+        key=lambda p: int(p.stem.split("_")[1]),
+    )
     if not extraction_files:
         _fail("No extraction files found")
 
@@ -47,7 +50,10 @@ def _build_topic_groups(
     for label in sorted(groups.keys()):
         units = groups[label]
         categories = sorted({u["category"] for u in units})
-        representative_texts = [" ".join(u["sentences"]) for u in units[:5]]
+        representative_texts = [
+            f"[{u['speaker']}, {u['time']}] {' '.join(u['sentences'])}"
+            for u in units[:8]
+        ]
         topic_groups.append(
             {
                 "label": label,
@@ -62,17 +68,17 @@ def _build_topic_groups(
 def _flatten_extractions(
     turns: list[dict], extraction_files: list[Path]
 ) -> list[dict]:
+    turn_lookup = {t["turn_id"]: t for t in turns}
+
     all_extraction_turns = []
     for ef in extraction_files:
         batch_result = json.loads(ef.read_text(encoding="utf-8"))
         all_extraction_turns.extend(batch_result)
 
     flat_units = []
-    turn_index = 0
     for extraction_turn in all_extraction_turns:
-        if turn_index >= len(turns):
-            break
-        turn = turns[turn_index]
+        turn_id = extraction_turn["turn_id"]
+        source_turn = turn_lookup[turn_id]
         for iu in extraction_turn.get("idea_units", []):
             category = iu.get("category", "Irrelevant")
             if category == "Irrelevant":
@@ -82,14 +88,13 @@ def _flatten_extractions(
                 continue
             flat_units.append(
                 {
-                    "speaker": turn["speaker"],
-                    "time": turn["time"],
+                    "speaker": source_turn["speaker"],
+                    "time": source_turn["time"],
                     "sentences": iu["sentences"],
                     "category": category,
                     "topic": topic,
                 }
             )
-        turn_index += 1
 
     return flat_units
 

@@ -11,6 +11,7 @@ import json
 import re
 import sys
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pysbd
@@ -77,7 +78,7 @@ def parse_conversation(file_path: Path, title_override: str | None, date_overrid
     date = date_override or date
 
     language = _detect_language(body)
-    turns = _parse_speaker_turns(body, language)
+    turns = _parse_speaker_turns(body, language, date)
     if not turns:
         _fail(f"No recognizable speaker turns found in: {file_path}")
 
@@ -190,7 +191,7 @@ def _detect_language(text: str) -> str:
     return detected if detected in _PYSBD_LANGUAGES else "en"
 
 
-def _parse_speaker_turns(body: str, language: str) -> list[dict]:
+def _parse_speaker_turns(body: str, language: str, start_datetime: str | None) -> list[dict]:
     body = _normalize_turn_headers(body)
     turns: list[dict] = []
 
@@ -207,7 +208,43 @@ def _parse_speaker_turns(body: str, language: str) -> list[dict]:
         if sentences:
             turns.append({"speaker": speaker, "time": time, "sentences": sentences})
 
+    for i, turn in enumerate(turns):
+        turn["turn_id"] = _generate_turn_id(i)
+
+    if start_datetime and _COMPLETE_START_TIME_PATTERN.match(start_datetime) and turns:
+        base_relative_time = turns[0]["time"]
+        for turn in turns:
+            turn["time"] = _calculate_absolute_time(
+                start_datetime, turn["time"], base_relative_time
+            )
+
     return turns
+
+
+def _generate_turn_id(index: int) -> str:
+    return f"turn_{index + 1:03d}"
+
+
+def _calculate_absolute_time(
+    start_datetime: str, relative_time: str, base_relative_time: str
+) -> str:
+    base_dt = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M")
+    has_seconds = len(relative_time.split(":")) == 3
+
+    fmt = "%H:%M:%S" if len(relative_time.split(":")) == 3 else "%H:%M"
+    base_fmt = "%H:%M:%S" if len(base_relative_time.split(":")) == 3 else "%H:%M"
+
+    current = datetime.strptime(relative_time, fmt)
+    base = datetime.strptime(base_relative_time, base_fmt)
+    delta = timedelta(
+        hours=current.hour - base.hour,
+        minutes=current.minute - base.minute,
+        seconds=current.second - base.second,
+    )
+
+    absolute = base_dt + delta
+    output_fmt = "%Y-%m-%d %H:%M:%S" if has_seconds else "%Y-%m-%d %H:%M"
+    return absolute.strftime(output_fmt)
 
 
 def _normalize_turn_headers(text: str) -> str:

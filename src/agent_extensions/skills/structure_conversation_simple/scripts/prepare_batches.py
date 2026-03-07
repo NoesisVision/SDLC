@@ -39,7 +39,7 @@ def prepare_batches(work_dir: Path) -> dict:
             "expected_turns_count": len(extraction_turns),
         }
 
-        batch_path = batches_dir / f"batch_{batch_index}.json"
+        batch_path = batches_dir / f"batch_{batch_index:03d}.json"
         batch_path.write_text(json.dumps(batch_data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     return {"status": "success", "batch_count": len(batch_ranges)}

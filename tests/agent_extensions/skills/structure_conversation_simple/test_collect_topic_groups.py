@@ -22,20 +22,20 @@ def _setup_work_dir(tmp_path, turns, extraction_batches):
     extractions_dir = work_dir / "extractions"
     extractions_dir.mkdir()
     for i, batch in enumerate(extraction_batches):
-        (extractions_dir / f"batch_{i}.json").write_text(json.dumps(batch), encoding="utf-8")
+        (extractions_dir / f"batch_{i:03d}.json").write_text(json.dumps(batch), encoding="utf-8")
 
     return work_dir
 
 
 def test_collect_groups_by_topic(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["We should use Postgres."]},
-        {"speaker": "Bob", "time": "10:01", "sentences": ["I agree with Postgres."]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["We should use Postgres."]},
+        {"turn_id": "turn_002", "speaker": "Bob", "time": "10:01", "sentences": ["I agree with Postgres."]},
     ]
     extraction_batches = [
         [
-            {"idea_units": [{"sentences": ["We should use Postgres."], "category": "Position", "topic": "Database Choice"}]},
-            {"idea_units": [{"sentences": ["I agree with Postgres."], "category": "Argument", "topic": "Database Choice"}]},
+            {"turn_id": "turn_001", "idea_units": [{"sentences": ["We should use Postgres."], "category": "Position", "topic": "Database Choice"}]},
+            {"turn_id": "turn_002", "idea_units": [{"sentences": ["I agree with Postgres."], "category": "Argument", "topic": "Database Choice"}]},
         ]
     ]
     work_dir = _setup_work_dir(tmp_path, turns, extraction_batches)
@@ -51,18 +51,23 @@ def test_collect_groups_by_topic(tmp_path, scripts_dir, run_script):
     assert group["label"] == "Database Choice"
     assert group["count"] == 2
 
+    for text in group["representative_texts"]:
+        assert text.startswith("[")
+        assert "]" in text
+
 
 def test_collect_ignores_irrelevant(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["Hello.", "We should use Postgres."]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello.", "We should use Postgres."]},
     ]
     extraction_batches = [
         [
             {
+                "turn_id": "turn_001",
                 "idea_units": [
                     {"sentences": ["Hello."], "category": "Irrelevant", "topic": None},
                     {"sentences": ["We should use Postgres."], "category": "Position", "topic": "Database Choice"},
-                ]
+                ],
             }
         ]
     ]
@@ -80,13 +85,13 @@ def test_collect_ignores_irrelevant(tmp_path, scripts_dir, run_script):
 
 def test_collect_multiple_topics(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres."]},
-        {"speaker": "Bob", "time": "10:01", "sentences": ["Use Docker."]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres."]},
+        {"turn_id": "turn_002", "speaker": "Bob", "time": "10:01", "sentences": ["Use Docker."]},
     ]
     extraction_batches = [
         [
-            {"idea_units": [{"sentences": ["Use Postgres."], "category": "Position", "topic": "Database Choice"}]},
-            {"idea_units": [{"sentences": ["Use Docker."], "category": "Position", "topic": "Deployment"}]},
+            {"turn_id": "turn_001", "idea_units": [{"sentences": ["Use Postgres."], "category": "Position", "topic": "Database Choice"}]},
+            {"turn_id": "turn_002", "idea_units": [{"sentences": ["Use Docker."], "category": "Position", "topic": "Deployment"}]},
         ]
     ]
     work_dir = _setup_work_dir(tmp_path, turns, extraction_batches)
@@ -103,12 +108,12 @@ def test_collect_multiple_topics(tmp_path, scripts_dir, run_script):
 
 def test_collect_representative_texts_capped(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": f"Speaker{i}", "time": f"10:{i:02d}", "sentences": [f"Statement {i}."]}
+        {"turn_id": f"turn_{i + 1:03d}", "speaker": f"Speaker{i}", "time": f"10:{i:02d}", "sentences": [f"Statement {i}."]}
         for i in range(10)
     ]
     extraction_batches = [
         [
-            {"idea_units": [{"sentences": [f"Statement {i}."], "category": "Position", "topic": "Same Topic"}]}
+            {"turn_id": f"turn_{i + 1:03d}", "idea_units": [{"sentences": [f"Statement {i}."], "category": "Position", "topic": "Same Topic"}]}
             for i in range(10)
         ]
     ]
@@ -120,7 +125,11 @@ def test_collect_representative_texts_capped(tmp_path, scripts_dir, run_script):
     topic_groups = json.loads((work_dir / "topic_groups.json").read_text())
     group = topic_groups["topic_groups"][0]
     assert group["count"] == 10
-    assert len(group["representative_texts"]) == 5
+    assert len(group["representative_texts"]) == 8
+
+    for text in group["representative_texts"]:
+        assert text.startswith("[")
+        assert ", " in text.split("]")[0]
 
 
 def test_collect_no_extractions(tmp_path, scripts_dir, run_script):
@@ -133,7 +142,7 @@ def test_collect_no_extractions(tmp_path, scripts_dir, run_script):
         "language": "en",
         "source_path": "/tmp/test.md",
         "source_stem": "test",
-        "turns": [{"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}],
+        "turns": [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}],
     }
     (work_dir / "parsed.json").write_text(json.dumps(parsed), encoding="utf-8")
     (work_dir / "extractions").mkdir()

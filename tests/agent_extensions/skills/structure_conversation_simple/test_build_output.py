@@ -24,17 +24,17 @@ def _setup_work_dir(tmp_path, turns, extraction_batches, merged_topics):
     extractions_dir = work_dir / "extractions"
     extractions_dir.mkdir()
     for i, batch in enumerate(extraction_batches):
-        (extractions_dir / f"batch_{i}.json").write_text(json.dumps(batch), encoding="utf-8")
+        (extractions_dir / f"batch_{i:03d}.json").write_text(json.dumps(batch), encoding="utf-8")
 
     return work_dir
 
 
 def test_build_basic_output(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres."]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres."]},
     ]
     extraction_batches = [
-        [{"idea_units": [{"sentences": ["Use Postgres."], "category": "Position", "topic": "Database"}]}]
+        [{"turn_id": "turn_001", "idea_units": [{"sentences": ["Use Postgres."], "category": "Position", "topic": "Database"}]}]
     ]
     merged_topics = {
         "topics": [{"label": "Database", "summary": "Discussion about DB choice", "source_labels": ["Database"]}]
@@ -56,13 +56,13 @@ def test_build_basic_output(tmp_path, scripts_dir, run_script):
 
 def test_build_with_topic_merging(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres."]},
-        {"speaker": "Bob", "time": "10:01", "sentences": ["PostgreSQL is great."]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres."]},
+        {"turn_id": "turn_002", "speaker": "Bob", "time": "10:01", "sentences": ["PostgreSQL is great."]},
     ]
     extraction_batches = [
         [
-            {"idea_units": [{"sentences": ["Use Postgres."], "category": "Position", "topic": "DB Choice"}]},
-            {"idea_units": [{"sentences": ["PostgreSQL is great."], "category": "Argument", "topic": "SQL Databases"}]},
+            {"turn_id": "turn_001", "idea_units": [{"sentences": ["Use Postgres."], "category": "Position", "topic": "DB Choice"}]},
+            {"turn_id": "turn_002", "idea_units": [{"sentences": ["PostgreSQL is great."], "category": "Argument", "topic": "SQL Databases"}]},
         ]
     ]
     merged_topics = {
@@ -87,15 +87,16 @@ def test_build_with_topic_merging(tmp_path, scripts_dir, run_script):
 
 def test_build_groups_by_speaker_time(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres.", "It has ACID."]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres.", "It has ACID."]},
     ]
     extraction_batches = [
         [
             {
+                "turn_id": "turn_001",
                 "idea_units": [
                     {"sentences": ["Use Postgres."], "category": "Position", "topic": "Database"},
                     {"sentences": ["It has ACID."], "category": "Argument", "topic": "Database"},
-                ]
+                ],
             }
         ]
     ]
@@ -117,10 +118,10 @@ def test_build_groups_by_speaker_time(tmp_path, scripts_dir, run_script):
 
 def test_build_output_file_location(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]},
     ]
     extraction_batches = [
-        [{"idea_units": [{"sentences": ["Hello."], "category": "Position", "topic": "Greeting"}]}]
+        [{"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "Position", "topic": "Greeting"}]}]
     ]
     merged_topics = {
         "topics": [{"label": "Greeting", "summary": "Greetings", "source_labels": ["Greeting"]}]
@@ -146,14 +147,14 @@ def test_build_missing_merged_topics(tmp_path, scripts_dir, run_script):
         "language": "en",
         "source_path": "/tmp/test.md",
         "source_stem": "test",
-        "turns": [{"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}],
+        "turns": [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}],
     }
     (work_dir / "parsed.json").write_text(json.dumps(parsed), encoding="utf-8")
 
     extractions_dir = work_dir / "extractions"
     extractions_dir.mkdir()
-    (extractions_dir / "batch_0.json").write_text(
-        json.dumps([{"idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]}]),
+    (extractions_dir / "batch_000.json").write_text(
+        json.dumps([{"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]}]),
         encoding="utf-8",
     )
 
@@ -161,3 +162,31 @@ def test_build_missing_merged_topics(tmp_path, scripts_dir, run_script):
 
     assert code == 1
     assert result["status"] == "error"
+
+
+def test_build_ignores_llm_speaker_time(tmp_path, scripts_dir, run_script):
+    turns = [
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Use Postgres."]},
+    ]
+    extraction_batches = [
+        [
+            {
+                "turn_id": "turn_001",
+                "speaker": "WRONG_SPEAKER",
+                "time": "99:99",
+                "idea_units": [{"sentences": ["Use Postgres."], "category": "Position", "topic": "Database"}],
+            }
+        ]
+    ]
+    merged_topics = {
+        "topics": [{"label": "Database", "summary": "DB discussion", "source_labels": ["Database"]}]
+    }
+    work_dir = _setup_work_dir(tmp_path, turns, extraction_batches, merged_topics)
+
+    code, result, _ = run_script(scripts_dir / "build_output.py", [str(work_dir)])
+
+    assert code == 0
+    output = json.loads(open(result["output_path"]).read())
+    statement = output["topics"][0]["statements"][0]
+    assert statement["speaker"] == "Alice"
+    assert statement["time"] == "10:00"

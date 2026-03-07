@@ -27,15 +27,16 @@ def _write_extraction(tmp_path, data, filename="extraction.json"):
 
 def test_validate_success(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["Hello.", "How are you?"]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello.", "How are you?"]},
     ]
     batch_path = _write_batch(tmp_path, turns)
 
     extraction = [
         {
+            "turn_id": "turn_001",
             "idea_units": [
                 {"sentences": ["Hello.", "How are you?"], "category": "Irrelevant", "topic": None},
-            ]
+            ],
         }
     ]
     extraction_path = _write_extraction(tmp_path, extraction)
@@ -48,15 +49,15 @@ def test_validate_success(tmp_path, scripts_dir, run_script):
     assert result["status"] == "success"
 
 
-def test_validate_turn_count_mismatch(tmp_path, scripts_dir, run_script):
+def test_validate_missing_turn_id(tmp_path, scripts_dir, run_script):
     turns = [
-        {"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]},
-        {"speaker": "Bob", "time": "10:01", "sentences": ["Hi."]},
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]},
+        {"turn_id": "turn_002", "speaker": "Bob", "time": "10:01", "sentences": ["Hi."]},
     ]
     batch_path = _write_batch(tmp_path, turns)
 
     extraction = [
-        {"idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]}
+        {"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]},
     ]
     extraction_path = _write_extraction(tmp_path, extraction)
 
@@ -66,15 +67,81 @@ def test_validate_turn_count_mismatch(tmp_path, scripts_dir, run_script):
 
     assert code == 0
     assert result["status"] == "validation_failed"
-    assert "Turn count mismatch" in result["error_details"]
+    assert "Missing output for turn_ids" in result["error_details"]
+    assert "turn_002" in result["error_details"]
 
 
-def test_validate_invalid_category(tmp_path, scripts_dir, run_script):
-    turns = [{"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
+def test_validate_extra_turn_id(tmp_path, scripts_dir, run_script):
+    turns = [
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]},
+    ]
     batch_path = _write_batch(tmp_path, turns)
 
     extraction = [
-        {"idea_units": [{"sentences": ["Hello."], "category": "InvalidCategory", "topic": "Greeting"}]}
+        {"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]},
+        {"turn_id": "turn_099", "idea_units": [{"sentences": ["Fake."], "category": "Irrelevant", "topic": None}]},
+    ]
+    extraction_path = _write_extraction(tmp_path, extraction)
+
+    code, result, _ = run_script(
+        scripts_dir / "validate_extraction.py", [str(batch_path), str(extraction_path)]
+    )
+
+    assert code == 0
+    assert result["status"] == "validation_failed"
+    assert "Unexpected turn_ids" in result["error_details"]
+    assert "turn_099" in result["error_details"]
+
+
+def test_validate_duplicate_turn_id(tmp_path, scripts_dir, run_script):
+    turns = [
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]},
+        {"turn_id": "turn_002", "speaker": "Bob", "time": "10:01", "sentences": ["Hi."]},
+    ]
+    batch_path = _write_batch(tmp_path, turns)
+
+    extraction = [
+        {"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]},
+        {"turn_id": "turn_001", "idea_units": [{"sentences": ["Hi."], "category": "Irrelevant", "topic": None}]},
+    ]
+    extraction_path = _write_extraction(tmp_path, extraction)
+
+    code, result, _ = run_script(
+        scripts_dir / "validate_extraction.py", [str(batch_path), str(extraction_path)]
+    )
+
+    assert code == 0
+    assert result["status"] == "validation_failed"
+    assert "Duplicate turn_id" in result["error_details"]
+    assert "turn_001" in result["error_details"]
+
+
+def test_validate_no_turn_id_in_output(tmp_path, scripts_dir, run_script):
+    turns = [
+        {"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]},
+    ]
+    batch_path = _write_batch(tmp_path, turns)
+
+    extraction = [
+        {"idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]},
+    ]
+    extraction_path = _write_extraction(tmp_path, extraction)
+
+    code, result, _ = run_script(
+        scripts_dir / "validate_extraction.py", [str(batch_path), str(extraction_path)]
+    )
+
+    assert code == 0
+    assert result["status"] == "validation_failed"
+    assert "must include a 'turn_id' field" in result["error_details"]
+
+
+def test_validate_invalid_category(tmp_path, scripts_dir, run_script):
+    turns = [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
+    batch_path = _write_batch(tmp_path, turns)
+
+    extraction = [
+        {"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "InvalidCategory", "topic": "Greeting"}]}
     ]
     extraction_path = _write_extraction(tmp_path, extraction)
 
@@ -87,12 +154,12 @@ def test_validate_invalid_category(tmp_path, scripts_dir, run_script):
     assert "Invalid category" in result["error_details"]
 
 
-def test_validate_missing_sentences(tmp_path, scripts_dir, run_script):
-    turns = [{"speaker": "Alice", "time": "10:00", "sentences": ["Hello.", "Goodbye."]}]
+def test_validate_sentence_mismatch(tmp_path, scripts_dir, run_script):
+    turns = [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello.", "Goodbye."]}]
     batch_path = _write_batch(tmp_path, turns)
 
     extraction = [
-        {"idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]}
+        {"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": None}]}
     ]
     extraction_path = _write_extraction(tmp_path, extraction)
 
@@ -102,33 +169,16 @@ def test_validate_missing_sentences(tmp_path, scripts_dir, run_script):
 
     assert code == 0
     assert result["status"] == "validation_failed"
-    assert "missing sentences" in result["error_details"]
-
-
-def test_validate_extra_sentences(tmp_path, scripts_dir, run_script):
-    turns = [{"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
-    batch_path = _write_batch(tmp_path, turns)
-
-    extraction = [
-        {"idea_units": [{"sentences": ["Hello.", "Extra."], "category": "Irrelevant", "topic": None}]}
-    ]
-    extraction_path = _write_extraction(tmp_path, extraction)
-
-    code, result, _ = run_script(
-        scripts_dir / "validate_extraction.py", [str(batch_path), str(extraction_path)]
-    )
-
-    assert code == 0
-    assert result["status"] == "validation_failed"
-    assert "extra sentences" in result["error_details"]
+    assert "Validation Failed in turn_id 'turn_001'" in result["error_details"]
+    assert "do not exactly match" in result["error_details"].lower()
 
 
 def test_validate_irrelevant_with_topic(tmp_path, scripts_dir, run_script):
-    turns = [{"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
+    turns = [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
     batch_path = _write_batch(tmp_path, turns)
 
     extraction = [
-        {"idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": "Greeting"}]}
+        {"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": "Greeting"}]}
     ]
     extraction_path = _write_extraction(tmp_path, extraction)
 
@@ -142,11 +192,11 @@ def test_validate_irrelevant_with_topic(tmp_path, scripts_dir, run_script):
 
 
 def test_validate_non_irrelevant_without_topic(tmp_path, scripts_dir, run_script):
-    turns = [{"speaker": "Alice", "time": "10:00", "sentences": ["We should use Postgres."]}]
+    turns = [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["We should use Postgres."]}]
     batch_path = _write_batch(tmp_path, turns)
 
     extraction = [
-        {"idea_units": [{"sentences": ["We should use Postgres."], "category": "Position", "topic": None}]}
+        {"turn_id": "turn_001", "idea_units": [{"sentences": ["We should use Postgres."], "category": "Position", "topic": None}]}
     ]
     extraction_path = _write_extraction(tmp_path, extraction)
 
@@ -160,10 +210,10 @@ def test_validate_non_irrelevant_without_topic(tmp_path, scripts_dir, run_script
 
 
 def test_validate_json_with_code_fence(tmp_path, scripts_dir, run_script):
-    turns = [{"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
+    turns = [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
     batch_path = _write_batch(tmp_path, turns)
 
-    extraction_text = '```json\n[{"idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": null}]}]\n```'
+    extraction_text = '```json\n[{"turn_id": "turn_001", "idea_units": [{"sentences": ["Hello."], "category": "Irrelevant", "topic": null}]}]\n```'
     extraction_path = _write_extraction(tmp_path, extraction_text)
 
     code, result, _ = run_script(
@@ -175,7 +225,7 @@ def test_validate_json_with_code_fence(tmp_path, scripts_dir, run_script):
 
 
 def test_validate_invalid_json(tmp_path, scripts_dir, run_script):
-    turns = [{"speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
+    turns = [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["Hello."]}]
     batch_path = _write_batch(tmp_path, turns)
 
     extraction_path = _write_extraction(tmp_path, "this is not json {{{")
@@ -187,3 +237,47 @@ def test_validate_invalid_json(tmp_path, scripts_dir, run_script):
     assert code == 0
     assert result["status"] == "validation_failed"
     assert "JSON parse error" in result["error_details"]
+
+
+def test_validate_information_category(tmp_path, scripts_dir, run_script):
+    turns = [{"turn_id": "turn_001", "speaker": "Alice", "time": "10:00", "sentences": ["The system currently uses MySQL."]}]
+    batch_path = _write_batch(tmp_path, turns)
+
+    extraction = [
+        {
+            "turn_id": "turn_001",
+            "idea_units": [
+                {"sentences": ["The system currently uses MySQL."], "category": "Information", "topic": "Current Stack"},
+            ],
+        }
+    ]
+    extraction_path = _write_extraction(tmp_path, extraction)
+
+    code, result, _ = run_script(
+        scripts_dir / "validate_extraction.py", [str(batch_path), str(extraction_path)]
+    )
+
+    assert code == 0
+    assert result["status"] == "success"
+
+
+def test_validate_agreement_category(tmp_path, scripts_dir, run_script):
+    turns = [{"turn_id": "turn_001", "speaker": "Bob", "time": "10:01", "sentences": ["Yes, I agree completely."]}]
+    batch_path = _write_batch(tmp_path, turns)
+
+    extraction = [
+        {
+            "turn_id": "turn_001",
+            "idea_units": [
+                {"sentences": ["Yes, I agree completely."], "category": "Agreement", "topic": "Database Choice"},
+            ],
+        }
+    ]
+    extraction_path = _write_extraction(tmp_path, extraction)
+
+    code, result, _ = run_script(
+        scripts_dir / "validate_extraction.py", [str(batch_path), str(extraction_path)]
+    )
+
+    assert code == 0
+    assert result["status"] == "success"

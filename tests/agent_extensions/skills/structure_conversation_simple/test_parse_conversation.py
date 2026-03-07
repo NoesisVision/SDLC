@@ -21,6 +21,12 @@ def test_parse_complete_conversation(test_project, scripts_dir, run_script, basi
     assert parsed["date"] == "2025-03-01 14:00"
     assert len(parsed["turns"]) == 4
 
+    for i, turn in enumerate(parsed["turns"]):
+        assert turn["turn_id"] == f"turn_{i + 1:03d}"
+
+    assert parsed["turns"][0]["time"] == "2025-03-01 14:00"
+    assert parsed["turns"][1]["time"] == "2025-03-01 14:02"
+
     updated_text = conv_file.read_text(encoding="utf-8")
     assert updated_text.startswith("<!-- conversation_id:")
 
@@ -110,6 +116,10 @@ def test_parse_date_without_time(test_project, scripts_dir, run_script, conversa
     assert result["status"] == "incomplete"
     assert "date" in result["missing"]
 
+    work_dir = Path(result["work_dir"])
+    parsed = json.loads((work_dir / "parsed.json").read_text())
+    assert parsed["turns"][0]["turn_id"] == "turn_001"
+
 
 def test_parse_date_with_time_override(test_project, scripts_dir, run_script, conversation_date_no_time):
     conv_file = test_project / "date_override.md"
@@ -127,6 +137,7 @@ def test_parse_date_with_time_override(test_project, scripts_dir, run_script, co
     work_dir = Path(result["work_dir"])
     parsed = json.loads((work_dir / "parsed.json").read_text())
     assert parsed["date"] == "2025-04-10 09:30"
+    assert parsed["turns"][0]["turn_id"] == "turn_001"
 
 
 def test_parse_sentence_splitting(test_project, scripts_dir, run_script, basic_conversation):
@@ -143,3 +154,91 @@ def test_parse_sentence_splitting(test_project, scripts_dir, run_script, basic_c
     assert isinstance(first_turn["sentences"], list)
     assert len(first_turn["sentences"]) >= 2
     assert all(isinstance(s, str) for s in first_turn["sentences"])
+
+
+def test_parse_turn_ids_sequential(test_project, scripts_dir, run_script):
+    conversation = """\
+# Multi-Speaker Meeting
+2025-05-01 09:00
+**09:00**
+Speaker1
+First turn content here.
+**09:01**
+Speaker2
+Second turn content here.
+**09:02**
+Speaker3
+Third turn content here.
+**09:03**
+Speaker1
+Fourth turn content here.
+**09:04**
+Speaker2
+Fifth turn content here.
+"""
+    conv_file = test_project / "sequential.md"
+    conv_file.write_text(conversation, encoding="utf-8")
+
+    code, result, _ = run_script(scripts_dir / "parse_conversation.py", [str(conv_file)])
+
+    assert code == 0
+    work_dir = Path(result["work_dir"])
+    parsed = json.loads((work_dir / "parsed.json").read_text())
+
+    assert len(parsed["turns"]) == 5
+    for i, turn in enumerate(parsed["turns"]):
+        assert turn["turn_id"] == f"turn_{i + 1:03d}"
+
+
+def test_parse_absolute_time_calculation(test_project, scripts_dir, run_script):
+    conversation = """\
+# Time Test Meeting
+**10:00**
+Speaker1
+First statement at start.
+**10:02**
+Speaker2
+Statement two minutes in.
+**10:05**
+Speaker1
+Statement five minutes in.
+"""
+    conv_file = test_project / "time_calc.md"
+    conv_file.write_text(conversation, encoding="utf-8")
+
+    code, result, _ = run_script(
+        scripts_dir / "parse_conversation.py",
+        [str(conv_file), "--date", "2025-03-01 14:00"],
+    )
+
+    assert code == 0
+    work_dir = Path(result["work_dir"])
+    parsed = json.loads((work_dir / "parsed.json").read_text())
+
+    assert parsed["turns"][0]["time"] == "2025-03-01 14:00"
+    assert parsed["turns"][1]["time"] == "2025-03-01 14:02"
+    assert parsed["turns"][2]["time"] == "2025-03-01 14:05"
+
+
+def test_parse_time_without_start_date(test_project, scripts_dir, run_script):
+    conversation = """\
+# No Time Meeting
+2025-03-01
+**10:00**
+Speaker1
+Statement at start.
+**10:02**
+Speaker2
+Statement two minutes in.
+"""
+    conv_file = test_project / "no_start_time.md"
+    conv_file.write_text(conversation, encoding="utf-8")
+
+    code, result, _ = run_script(scripts_dir / "parse_conversation.py", [str(conv_file)])
+
+    assert code == 0
+    work_dir = Path(result["work_dir"])
+    parsed = json.loads((work_dir / "parsed.json").read_text())
+
+    assert parsed["turns"][0]["time"] == "10:00"
+    assert parsed["turns"][1]["time"] == "10:02"
