@@ -18,7 +18,7 @@ def test_parse_complete_conversation(test_project, scripts_dir, run_script, basi
     work_dir = Path(result["work_dir"])
     parsed = json.loads((work_dir / "parsed.json").read_text())
     assert parsed["title"] == "Sprint Planning Meeting"
-    assert parsed["date"] == "2025-03-01"
+    assert parsed["date"] == "2025-03-01 14:00"
     assert len(parsed["turns"]) == 4
 
     updated_text = conv_file.read_text(encoding="utf-8")
@@ -53,7 +53,7 @@ def test_parse_with_overrides(test_project, scripts_dir, run_script, conversatio
 
     code, result, _ = run_script(
         scripts_dir / "parse_conversation.py",
-        [str(conv_file), "--title", "Custom Title", "--date", "2025-06-15"],
+        [str(conv_file), "--title", "Custom Title", "--date", "2025-06-15 10:00"],
     )
 
     assert code == 0
@@ -63,7 +63,7 @@ def test_parse_with_overrides(test_project, scripts_dir, run_script, conversatio
     work_dir = Path(result["work_dir"])
     parsed = json.loads((work_dir / "parsed.json").read_text())
     assert parsed["title"] == "Custom Title"
-    assert parsed["date"] == "2025-06-15"
+    assert parsed["date"] == "2025-06-15 10:00"
 
 
 def test_parse_reuses_existing_conversation_id(test_project, scripts_dir, run_script, basic_conversation):
@@ -98,6 +98,35 @@ def test_parse_no_turns(test_project, scripts_dir, run_script, conversation_meta
 
     assert code == 1
     assert result["status"] == "error"
+
+
+def test_parse_date_without_time(test_project, scripts_dir, run_script, conversation_date_no_time):
+    conv_file = test_project / "date_no_time.md"
+    conv_file.write_text(conversation_date_no_time, encoding="utf-8")
+
+    code, result, _ = run_script(scripts_dir / "parse_conversation.py", [str(conv_file)])
+
+    assert code == 0
+    assert result["status"] == "incomplete"
+    assert "date" in result["missing"]
+
+
+def test_parse_date_with_time_override(test_project, scripts_dir, run_script, conversation_date_no_time):
+    conv_file = test_project / "date_override.md"
+    conv_file.write_text(conversation_date_no_time, encoding="utf-8")
+
+    code, result, _ = run_script(
+        scripts_dir / "parse_conversation.py",
+        [str(conv_file), "--date", "2025-04-10 09:30"],
+    )
+
+    assert code == 0
+    assert result["status"] == "success"
+    assert "date" not in result["missing"]
+
+    work_dir = Path(result["work_dir"])
+    parsed = json.loads((work_dir / "parsed.json").read_text())
+    assert parsed["date"] == "2025-04-10 09:30"
 
 
 def test_parse_sentence_splitting(test_project, scripts_dir, run_script, basic_conversation):

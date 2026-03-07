@@ -28,9 +28,9 @@ uv run --script {skill_dir}/scripts/parse_conversation.py <file_path>
 
 Parse the JSON output:
 - If `status` is `"success"` — note `conversation_id` and `work_dir`, proceed to Step 1
-- If `status` is `"incomplete"` — check `missing` array for `"title"` and/or `"date"`, then:
-  1. Use AskUserQuestion to ask the user for missing values
-  2. Re-run with overrides: `uv run --script {skill_dir}/scripts/parse_conversation.py <file_path> --title "..." --date "..."`
+- If `status` is `"incomplete"` — check `missing` array for `"title"` and/or `"date"` (start datetime in `YYYY-MM-DD HH:MM` format), then:
+  1. Use AskUserQuestion to ask the user for missing values (for date, ask for the full start datetime, e.g. `"2025-03-01 14:00"`)
+  2. Re-run with overrides: `uv run --script {skill_dir}/scripts/parse_conversation.py <file_path> --title "..." --date "2025-03-01 14:00"`
   3. Proceed to Step 1
 
 The `work_dir` is a temporary directory at `{projectRoot}/.noesis/tmp/{executionId}`. It will be cleaned up in Step 6.

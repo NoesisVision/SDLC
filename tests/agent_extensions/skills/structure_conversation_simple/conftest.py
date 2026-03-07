@@ -11,7 +11,7 @@ _SCRIPTS_DIR = _SDLC_ROOT / "src" / "agent_extensions" / "skills" / "structure_c
 
 _BASIC_CONVERSATION = """\
 # Sprint Planning Meeting
-2025-03-01
+2025-03-01 14:00
 **10:00**
 Jan Kowalski
 We need to decide on the database technology. Should we use PostgreSQL or MongoDB?
@@ -27,7 +27,7 @@ We also need to discuss the deployment pipeline. Are we using Docker or Kubernet
 """
 
 _CONVERSATION_NO_TITLE = """\
-2025-02-19
+2025-02-19 09:00
 **14:00**
 Speaker1
 Hello world. This is a test conversation.
@@ -42,7 +42,15 @@ Good morning everyone. Let's start the meeting.
 
 _CONVERSATION_METADATA_ONLY = """\
 # Title Only
-2025-01-01
+2025-01-01 10:00
+"""
+
+_CONVERSATION_DATE_NO_TIME = """\
+# Planning Session
+2025-04-10
+**09:00**
+Speaker1
+We should discuss the roadmap for next quarter.
 """
 
 
@@ -104,3 +112,8 @@ def conversation_no_date():
 @pytest.fixture()
 def conversation_metadata_only():
     return _CONVERSATION_METADATA_ONLY
+
+
+@pytest.fixture()
+def conversation_date_no_time():
+    return _CONVERSATION_DATE_NO_TIME

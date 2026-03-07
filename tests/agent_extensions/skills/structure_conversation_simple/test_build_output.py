@@ -12,7 +12,7 @@ def _setup_work_dir(tmp_path, turns, extraction_batches, merged_topics):
     parsed = {
         "conversation_id": "test-id",
         "title": "Test Meeting",
-        "date": "2025-01-01",
+        "date": "2025-01-01 10:00",
         "language": "en",
         "source_path": "/tmp/test.md",
         "source_stem": "test",
@@ -49,7 +49,7 @@ def test_build_basic_output(tmp_path, scripts_dir, run_script):
     output = json.loads(open(result["output_path"]).read())
     assert output["conversation_id"] == "test-id"
     assert output["title"] == "Test Meeting"
-    assert output["date"] == "2025-01-01"
+    assert output["date"] == "2025-01-01 10:00"
     assert len(output["topics"]) == 1
     assert output["topics"][0]["name"] == "Database"
 
@@ -142,7 +142,7 @@ def test_build_missing_merged_topics(tmp_path, scripts_dir, run_script):
     parsed = {
         "conversation_id": "test-id",
         "title": "Test",
-        "date": "2025-01-01",
+        "date": "2025-01-01 10:00",
         "language": "en",
         "source_path": "/tmp/test.md",
         "source_stem": "test",

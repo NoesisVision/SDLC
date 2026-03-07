@@ -38,7 +38,7 @@ The final output is a JSON file matching the `StructuredConversation` schema.
 |-------|------|-------------|
 | `conversation_id` | string | UUID v4 identifying the conversation |
 | `title` | string | Title of the conversation (extracted or user-provided) |
-| `date` | string | Date in `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` format |
+| `date` | string | Start datetime in `YYYY-MM-DD HH:MM` format |
 | `topics` | array | Topics discussed, each containing grouped statements |
 
 ### Topic

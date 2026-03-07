@@ -48,7 +48,8 @@ _TURN_PATTERN = re.compile(
 _BROKEN_TIME_MARKER = re.compile(rf"^\*\*\s*({_TIME})\s*\*\*", re.MULTILINE)
 _SPEAKER_ON_TIMESTAMP_LINE = re.compile(rf"^(\*\*{_TIME}\*\*)[ \t]+(.+)$", re.MULTILINE)
 _TITLE_PATTERN = re.compile(r"^#\s+(.+)$", re.MULTILINE)
-_DATE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2})$", re.MULTILINE)
+_DATE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2}(?: \d{1,2}:\d{2})?)$", re.MULTILINE)
+_COMPLETE_START_TIME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$")
 
 
 def parse_conversation(file_path: Path, title_override: str | None, date_override: str | None) -> dict:
@@ -83,7 +84,7 @@ def parse_conversation(file_path: Path, title_override: str | None, date_overrid
     missing = []
     if not title:
         missing.append("title")
-    if not date:
+    if not _is_complete_start_time(date):
         missing.append("date")
 
     parsed = {
@@ -175,6 +176,11 @@ def _extract_metadata(text: str) -> tuple[str | None, str | None, str]:
     return title, date, body.strip()
 
 
+def _is_complete_start_time(date: str | None) -> bool:
+    """Return True only if the date string includes both date and time components."""
+    return date is not None and _COMPLETE_START_TIME_PATTERN.match(date) is not None
+
+
 def _detect_language(text: str) -> str:
     sample = text[:_LANGUAGE_SAMPLE_SIZE]
     try:
@@ -241,7 +247,7 @@ def _main() -> None:
     parser = argparse.ArgumentParser(description="Parse a conversation transcript")
     parser.add_argument("file_path", type=Path, help="Path to conversation markdown")
     parser.add_argument("--title", type=str, default=None, help="Override title")
-    parser.add_argument("--date", type=str, default=None, help="Override date")
+    parser.add_argument("--date", type=str, default=None, help="Override start time (YYYY-MM-DD HH:MM)")
     args = parser.parse_args()
 
     if not args.file_path.exists():
