@@ -1,18 +1,15 @@
 """Registry for conversation files and their in-memory processing state."""
 
 import logging
-import re
 import uuid
 from pathlib import Path
 
 from mcp.server.fastmcp import Context
 
-from .models import AddConversationResponse, ConversationState
 from .graph_storing import conversation_exists
+from .models import CONVERSATION_ID_PATTERN, AddConversationResponse, ConversationState
 
 logger = logging.getLogger(__name__)
-
-CONVERSATION_ID_PATTERN = re.compile(r"^<!--\s*conversation_id:\s*([\w-]+)\s*-->")
 
 _store: dict[str, ConversationState] = {}
 

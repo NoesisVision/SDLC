@@ -5,7 +5,7 @@ import logging
 import re
 from pathlib import Path
 
-from mcp_servers.noesis_local.conversations.registry import CONVERSATION_ID_PATTERN
+from mcp_servers.noesis_local.conversations.models import CONVERSATION_ID_PATTERN
 
 from .models import (
     GetConversationTopicsResponse,

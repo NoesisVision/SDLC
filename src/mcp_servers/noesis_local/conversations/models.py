@@ -1,5 +1,6 @@
 """Data structures for the conversation structuring pipeline."""
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -7,6 +8,8 @@ from typing import NamedTuple
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
+
+CONVERSATION_ID_PATTERN = re.compile(r"^<!--\s*conversation_id:\s*([\w-]+)\s*-->")
 
 
 # ---------------------------------------------------------------------------

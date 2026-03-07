@@ -6,8 +6,8 @@ import re
 import pysbd
 from langdetect import LangDetectException, detect
 
-from .models import CleanResponse, ConversationStatus, SetMetadataResponse, SpeakerTurn
-from .registry import CONVERSATION_ID_PATTERN, get_conversation
+from .models import CONVERSATION_ID_PATTERN, CleanResponse, ConversationStatus, SetMetadataResponse, SpeakerTurn
+from .registry import get_conversation
 
 logger = logging.getLogger(__name__)
 

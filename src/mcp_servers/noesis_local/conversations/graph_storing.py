@@ -6,8 +6,7 @@ from pathlib import Path
 
 from redislite.falkordb_client import Graph
 
-from .models import IdeaUnit, StructuredConversation, Topic, TopicStatement
-from .registry import CONVERSATION_ID_PATTERN
+from .models import CONVERSATION_ID_PATTERN, IdeaUnit, StructuredConversation, Topic, TopicStatement
 
 logger = logging.getLogger(__name__)
 
