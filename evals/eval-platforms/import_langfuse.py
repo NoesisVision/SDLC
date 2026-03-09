@@ -1,13 +1,13 @@
-"""Langfuse LLM-as-a-judge evaluator.
+"""Langfuse ATIF trajectory importer.
 
-Imports ATIF trajectory data as Langfuse traces with generations and spans,
-runs LLM-as-a-judge evaluation, and sends scores back.
+Imports ATIF trajectory data as Langfuse traces with generations and spans.
+Evaluation (LLM-as-a-judge) is configured in Langfuse UI via Evaluators.
 
 Uses Langfuse REST API directly (httpx) to avoid Pydantic v1 compatibility
 issues with Python 3.14+.
 
 Usage:
-    uv run evals/ddd-architectural-challenges/judge_langfuse.py --trial-dir trials/ddd-threshold-discount__dXn2tT2
+    uv run evals/eval-platforms/import_langfuse.py --trial-dir evals/ddd-architectural-challenges/trials/ddd-threshold-discount__dXn2tT2
 """
 
 import argparse
@@ -19,14 +19,9 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
-from judge_common import (
-    JudgeScores,
+from atif_parser import (
     TrajectoryStep,
     TrialData,
-    build_judge_prompt,
-    call_judge,
-    compute_total_tokens_from_steps,
-    count_tool_calls,
     extract_final_code,
     load_trial_data,
 )
@@ -36,7 +31,7 @@ load_dotenv()
 
 def main() -> None:
     args = _parse_args()
-    trial_path = _resolve_trial_path(args.trial_dir)
+    trial_path = Path(args.trial_dir)
 
     print(f"Loading trial data from {trial_path}")
     trial = load_trial_data(trial_path)
@@ -44,13 +39,6 @@ def main() -> None:
     print("Creating Langfuse trace...")
     client = _create_client()
     trace_id = _create_langfuse_trace(client, trial)
-
-    print("Running LLM-as-a-judge...")
-    scores = _run_judge(trial)
-    _print_scores(scores)
-
-    print("Sending scores to Langfuse...")
-    _send_scores(client, trace_id, scores)
 
     print(f"Done! Trace ID: {trace_id}")
 
@@ -92,46 +80,6 @@ def _create_langfuse_trace(client: httpx.Client, trial: TrialData) -> str:
     _batch_ingest(client, events)
 
     return trace_id
-
-
-def _run_judge(trial: TrialData) -> JudgeScores:
-    """Run LLM-as-a-judge on the trial data."""
-    final_code = extract_final_code(trial.steps)
-    tool_call_count = count_tool_calls(trial.steps)
-    total_tokens = compute_total_tokens_from_steps(trial.steps)
-
-    prompt = build_judge_prompt(
-        task_instruction=trial.task_instruction,
-        final_code=final_code,
-        reward=trial.reward,
-        tool_call_count=tool_call_count,
-        total_tokens=total_tokens or trial.total_input_tokens + trial.total_output_tokens,
-        duration_sec=trial.duration_sec,
-    )
-
-    return call_judge(prompt)
-
-
-def _send_scores(client: httpx.Client, trace_id: str, scores: JudgeScores) -> None:
-    """Send judge scores to Langfuse as trace-level scores."""
-    score_defs = [
-        ("ddd_quality", scores.ddd_quality, scores.ddd_quality_reason),
-        ("trajectory_efficiency", scores.trajectory_efficiency, scores.trajectory_efficiency_reason),
-        ("cost_efficiency", scores.cost_efficiency, scores.cost_efficiency_reason),
-    ]
-    for name, value, comment in score_defs:
-        response = client.post(
-            "/api/public/scores",
-            json={
-                "traceId": trace_id,
-                "name": name,
-                "value": value,
-                "comment": comment,
-            },
-        )
-        response.raise_for_status()
-
-    print(f"  Scores sent to trace {trace_id}")
 
 
 # --- Private helpers ---
@@ -224,22 +172,8 @@ def _batch_ingest(client: httpx.Client, events: list[dict]) -> None:
     print(f"  Ingested {len(events)} events to Langfuse")
 
 
-def _print_scores(scores: JudgeScores) -> None:
-    """Print judge scores to stdout."""
-    print(f"  DDD Quality:           {scores.ddd_quality}/5 - {scores.ddd_quality_reason}")
-    print(f"  Trajectory Efficiency: {scores.trajectory_efficiency}/5 - {scores.trajectory_efficiency_reason}")
-    print(f"  Cost Efficiency:       {scores.cost_efficiency}/5 - {scores.cost_efficiency_reason}")
-
-
-def _resolve_trial_path(trial_dir: str) -> Path:
-    trial_path = Path(trial_dir)
-    if not trial_path.is_absolute():
-        trial_path = Path(__file__).parent / trial_dir
-    return trial_path
-
-
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Langfuse LLM-as-a-judge evaluator")
+    parser = argparse.ArgumentParser(description="Import ATIF trajectories to Langfuse")
     parser.add_argument(
         "--trial-dir",
         required=True,
