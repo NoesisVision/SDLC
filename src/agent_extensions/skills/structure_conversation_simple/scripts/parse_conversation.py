@@ -231,20 +231,20 @@ def _calculate_absolute_time(
     base_dt = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M")
     has_seconds = len(relative_time.split(":")) == 3
 
-    fmt = "%H:%M:%S" if len(relative_time.split(":")) == 3 else "%H:%M"
-    base_fmt = "%H:%M:%S" if len(base_relative_time.split(":")) == 3 else "%H:%M"
-
-    current = datetime.strptime(relative_time, fmt)
-    base = datetime.strptime(base_relative_time, base_fmt)
-    delta = timedelta(
-        hours=current.hour - base.hour,
-        minutes=current.minute - base.minute,
-        seconds=current.second - base.second,
-    )
+    current_td = _parse_relative_time(relative_time)
+    base_td = _parse_relative_time(base_relative_time)
+    delta = current_td - base_td
 
     absolute = base_dt + delta
     output_fmt = "%Y-%m-%d %H:%M:%S" if has_seconds else "%Y-%m-%d %H:%M"
     return absolute.strftime(output_fmt)
+
+
+def _parse_relative_time(time_str: str) -> timedelta:
+    parts = time_str.split(":")
+    if len(parts) == 3:
+        return timedelta(hours=int(parts[0]), minutes=int(parts[1]), seconds=int(parts[2]))
+    return timedelta(hours=int(parts[0]), minutes=int(parts[1]))
 
 
 def _normalize_turn_headers(text: str) -> str:
