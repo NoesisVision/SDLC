@@ -35,8 +35,6 @@ Parse the JSON output:
   1. Use AskUserQuestion to ask the user for missing values (for date, ask for the full start datetime, e.g. `"2025-03-01 14:00"`)
   2. Re-run this step with overrides: `uv run {skill_dir}/scripts/parse_conversation.py {file_path} --title "..." --date "..."`
 
-The script writes `{originalFileName}_cleaned.json` next to the original file (persistent output).
-
 ### Step 1: Prepare Batches
 
 Run:
@@ -62,23 +60,22 @@ This file accumulates topics incrementally during extraction — the working for
 
 ### Step 3: Extract Topics (Sequential Subagents)
 
-For each batch index `N` (from `0` to `{batch_count}-1`), launch a `topics_extractor` subagent **SEQUENTIALLY**.
+For each batch index `n` (from `0` to `{batch_count}-1`), launch a `topics_extractor` subagent **SEQUENTIALLY**.
 You MUST wait for each subagent to complete before launching the next one. This is required because each subagent reads and writes to the shared structured output file.
+If a subagent reports failure, ask the user what to do.
 
 For each batch, launch a Task subagent with:
 - **subagent_type:** `topics_extractor`
 - **prompt:**
   ```
-  Process batch file at "{work_dir}/batches/batch_<NNN>.json".
+  Process batch file at "{work_dir}/batches/batch_{n}.json".
+  Skill directory: "{skill_dir}"
   Work directory: "{work_dir}"
   Structured path: "{structured_path}"
-  Batch index: {N}
-  Skill directory: "{skill_dir}"
+  Batch index: {n}  
   ```
 
-Wait for each subagent to complete before launching the next. If a subagent reports failure, ask the user what to do.
-
-After all subagents complete, present a summary to the user: list each topic's name and short description, and include the `structured_path`.
+After all subagents complete, present a summary to the user: list each topic's name and short description, and include the `{structured_path}`.
 
 ### Step 4: Write Decision Records (Parallel Subagents)
 
@@ -93,11 +90,11 @@ For each topic_id, launch a `decision_record_file_writer` subagent in parallel (
 - **subagent_type:** `decision_record_file_writer`
 - **prompt:**
   ```
-  Analyze topic "<topic_id>" for software design decisions.
-  Structured path: "<structured_path>"
-  Decisions directory: "<decisions_dir>"
-  Work directory: "<work_dir>"
-  Skill directory: "<skill_dir>"
+  Analyze topic "{topic_id}" for software design decisions.
+  Skill directory: "{skill_dir}"
+  Work directory: "{work_dir}"
+  Structured path: "{structured_path}"
+  Decisions directory: "{decisions_dir}"  
   ```
 
 Wait for all subagents to complete. Present summary: decisions written, topics with/without decisions, and the `decisions_dir` path.
