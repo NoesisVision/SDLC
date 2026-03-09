@@ -2,6 +2,7 @@
   "agents": [
     {
       "import_path": "evals.claude_custom_agents:ConfigurableClaude",
+      "name": "configurable-claude-code",
       "kwargs": {
         "sandbox_files": {
           "/app/CLAUDE.md": "evals/ddd-architectural-challenges/variants/with-mcp/CLAUDE.md",

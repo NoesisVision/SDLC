@@ -87,10 +87,19 @@ echo ""
 # Prerequisites
 # ---------------------------------------------------------------------------
 
-if ! command -v harbor &> /dev/null; then
-    echo "ERROR: Harbor CLI is not installed."
-    echo "  pip install harbor-ai"
+if ! uv run python -c "import harbor" &> /dev/null; then
+    echo "ERROR: Harbor is not installed in the project venv."
+    echo "  uv pip install harbor-ai"
     exit 1
+fi
+
+# Load eval-platforms .env if present (OPIK_API_KEY, OPIK_WORKSPACE, etc.)
+ENV_FILE="${SCRIPT_DIR}/../eval-platforms/.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
 fi
 
 # Ensure authentication — prefer existing env vars, fall back to Keychain
@@ -105,7 +114,7 @@ echo "Running benchmark..."
 echo ""
 
 # ---------------------------------------------------------------------------
-# Build merged config: variant harbor_config.json + dataset/jobs metadata
+# Build merged config: variant har bor_config.json + dataset/jobs metadata
 # ---------------------------------------------------------------------------
 
 CONFIG_FILE=$(mktemp /tmp/harbor-run-XXXXXX.json)
@@ -148,9 +157,9 @@ PYEOF
 if [ "$WITH_OPIK" = true ]; then
     echo "Opik tracking enabled"
     echo ""
-    opik harbor run --config "$CONFIG_FILE"
+    uv run opik harbor run --config "$CONFIG_FILE"
 else
-    harbor run --config "$CONFIG_FILE"
+    uv run harbor run --config "$CONFIG_FILE"
 fi
 
 echo ""
