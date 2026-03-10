@@ -16,11 +16,12 @@
 # Usage:
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh [variant] [model] [timeout]
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik with-mcp
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-arch-eval with-mcp
 #
 # Examples:
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh with-mcp
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh baseline claude-sonnet-4-6 900
-#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik with-mcp
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-arch-eval with-mcp
 
 set -e
 
@@ -33,6 +34,7 @@ cd "$REPO_ROOT"
 # ---------------------------------------------------------------------------
 
 WITH_OPIK=false
+WITH_ARCH_EVAL=false
 VARIANT="with-mcp"
 MODEL="claude-sonnet-4-6"
 TIMEOUT_SEC="720"
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --with-opik)
             WITH_OPIK=true
+            shift
+            ;;
+        --with-arch-eval)
+            WITH_ARCH_EVAL=true
             shift
             ;;
         --model)
@@ -80,6 +86,7 @@ echo "Variant: $VARIANT"
 echo "Model: $MODEL"
 echo "Agent timeout: ${TIMEOUT_SEC}s"
 [ "$WITH_OPIK" = true ] && echo "Opik: enabled"
+[ "$WITH_ARCH_EVAL" = true ] && echo "Arch eval: enabled"
 echo "=========================================="
 echo ""
 
@@ -148,6 +155,7 @@ config = {
             "registry": {"path": f"{script_dir}/local-registry.json"},
         }
     ],
+    "artifacts": [{"source": "/app/Sources", "destination": "workspace"}],
 }
 
 with open(output_path, "w") as f:
@@ -167,6 +175,28 @@ echo "=========================================="
 echo "Benchmark execution completed"
 echo "=========================================="
 echo ""
+
+# ---------------------------------------------------------------------------
+# Post-hoc architecture evaluation
+# ---------------------------------------------------------------------------
+
+if [ "$WITH_ARCH_EVAL" = true ]; then
+    echo "Running architecture evaluation..."
+    echo ""
+    LATEST_JOB=$(ls -td "${SCRIPT_DIR}/jobs/"* 2>/dev/null | head -1)
+    if [ -n "$LATEST_JOB" ]; then
+        OPIK_FLAG=""
+        [ "$WITH_OPIK" = true ] && OPIK_FLAG="--with-opik"
+        # Unset CLAUDECODE to allow Claude Code SDK to launch a new session
+        unset CLAUDECODE
+        uv run python evals/eval-platforms/evaluate_architecture.py \
+            --job-dir "$LATEST_JOB" $OPIK_FLAG
+    else
+        echo "WARN: No job directory found for architecture evaluation"
+    fi
+    echo ""
+fi
+
 echo "To view results, run:"
 echo "  harbor view ${SCRIPT_DIR}/jobs/<job-name>"
 echo ""

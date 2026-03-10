@@ -53,6 +53,9 @@ promptfoo-results.html
 # Claude Code
 .claude/worktrees/
 
-#Harbor
+# Harbor
 jobs
-trialsevals/eval-platforms/.env
+trials
+
+# Secrets
+.env

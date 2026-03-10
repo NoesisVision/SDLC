@@ -25,6 +25,7 @@ dependencies = [
     "python-dotenv",
     "opik",
     "harbor",
+    "claude-code-sdk",
 ]
 
 [project.optional-dependencies]
