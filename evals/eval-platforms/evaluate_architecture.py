@@ -184,10 +184,10 @@ def _collect_trial_dirs(args: argparse.Namespace) -> list[Path]:
 
 
 def _resolve_agent_name(trial_dir: Path) -> str:
-    trajectory_path = trial_dir / "agent" / "trajectory.json"
-    if trajectory_path.exists():
-        trajectory = _load_json(trajectory_path)
-        return trajectory.get("agent", {}).get("name", "")
+    config_path = trial_dir / "config.json"
+    if config_path.exists():
+        config = _load_json(config_path)
+        return config.get("agent", {}).get("name", "")
     return ""
 
 
@@ -403,25 +403,26 @@ def _upload_to_opik(evaluation: ArchitectureEvaluation) -> None:
 
 
 def _find_opik_trace(client: "opik.Opik", trial_name: str, agent_name: str) -> str | None:
-    """Find an existing Opik trace for this trial."""
-    # opik harbor run creates traces named "{agent_name}/{trial_name}"
-    search_names = []
-    if agent_name:
-        search_names.append(f"{agent_name}/{trial_name}")
-    search_names.append(trial_name)
+    """Find an existing Opik trace for this trial.
 
-    for name in search_names:
-        try:
-            traces = client.search_traces(
-                project_name=DEFAULT_PROJECT,
-                filter_string=f'name = "{name}"',
-                max_results=1,
-            )
-            if traces:
-                print(f"  Found Opik trace: {name} ({traces[0].id})")
-                return traces[0].id
-        except Exception as e:
-            print(f"  WARN: Opik search failed for '{name}': {e}")
+    Uses wait_for_at_least to handle eventual consistency — the Harbor
+    trace may not be immediately visible after opik harbor run finishes.
+    """
+    search_name = f"{agent_name}/{trial_name}" if agent_name else trial_name
+
+    try:
+        traces = client.search_traces(
+            project_name=DEFAULT_PROJECT,
+            filter_string=f'name = "{search_name}"',
+            max_results=1,
+            wait_for_at_least=1,
+            wait_for_timeout=30,
+        )
+        if traces:
+            print(f"  Found Opik trace: {search_name} ({traces[0].id})")
+            return traces[0].id
+    except Exception as e:
+        print(f"  WARN: Opik search timed out for '{search_name}': {e}")
 
     return None
 
