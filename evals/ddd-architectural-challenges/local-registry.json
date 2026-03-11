@@ -8,6 +8,10 @@
       {
         "name": "ddd-threshold-discount",
         "path": "./evals/ddd-architectural-challenges/tasks/ddd-threshold-discount"
+      },
+      {
+        "name": "ddd-weather-discount",
+        "path": "./evals/ddd-architectural-challenges/tasks/ddd-weather-discount"
       }
     ],
     "metadata": {

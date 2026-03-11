@@ -1,148 +1,85 @@
-# DDD Architectural Challenges - Private Benchmark
+# DDD Architectural Challenges Benchmark
 
-A Harbor-compatible benchmark for evaluating AI coding agents' ability to work with complex Domain-Driven Design (DDD) architectures.
+Harbor benchmark evaluating AI agents' ability to extend complex DDD codebases.
 
-## Overview
+## Tasks
 
-This benchmark tests whether an AI agent can:
-- Understand and navigate a complex DDD/Hexagonal Architecture codebase
-- Implement new features that require external API integration
-- Identify when architectural refactoring is needed for extensibility
-- Follow DDD tactical patterns appropriately
-- Write comprehensive tests
+| Task | Difficulty | Focus |
+|------|-----------|-------|
+| `ddd-threshold-discount` | Intermediate (30 min) | Value Objects, Discriminated Union pattern |
+| `ddd-weather-discount` | Advanced (90 min) | External API integration, Hexagonal Architecture, Refactoring |
+
+Both tasks use the [DDD-starter-dotnet](https://github.com/itlibrium/DDD-starter-dotnet) codebase (.NET 8, C#, xUnit).
 
 ## Structure
 
 ```
-my-private-bench/
-├── local-registry.json          # Harbor registry configuration
-├── dataset.json                 # Dataset metadata
-├── run-benchmark.sh             # Convenience script to run the benchmark
-└── tasks/
-    └── ddd-weather-discount/    # Weather-based discount challenge
-        ├── task.json            # Task metadata
-        ├── instruction.md       # Instructions for the AI agent
-        ├── environment/
-        │   └── Dockerfile       # Environment setup
-        └── eval/
-            └── eval.sh          # Evaluation script
+evals/ddd-architectural-challenges/
+├── local-registry.json              # Harbor registry (both tasks)
+├── run-benchmark.sh                 # Benchmark runner
+├── tasks/
+│   ├── ddd-threshold-discount/      # Intermediate challenge
+│   │   ├── instruction.md
+│   │   ├── architecture_criteria.md
+│   │   ├── environment/Dockerfile
+│   │   └── tests/test.sh
+│   └── ddd-weather-discount/        # Advanced challenge
+│       ├── instruction.md
+│       ├── architecture_criteria.md
+│       ├── environment/Dockerfile
+│       └── tests/test.sh
+├── variants/
+│   ├── baseline/                    # No MCP tools
+│   └── with-mcp/                   # With Sourcebot MCP
+└── jobs/                            # Trial results (gitignored)
 ```
 
-## Task: Weather-Based Discount
-
-**Difficulty**: Advanced
-**Estimated Time**: 90 minutes
-**Source**: [DDD-starter-dotnet](https://github.com/itlibrium/DDD-starter-dotnet)
-
-### Challenge
-
-Implement a weather-based discount feature that:
-- Uses the Open-Meteo API to check weather conditions
-- Applies 10% discount when precipitation > 0
-- **Must be designed for extensibility** - many similar external-API-dependent discounts will follow
-- Fits harmoniously into the existing DDD architecture
-
-### Key Evaluation Criteria
-
-1. **Compilation**: `dotnet build` succeeds
-2. **Tests**: `dotnet test` passes (agent must write tests)
-3. **Implementation**: Weather API integration is present
-4. **Architecture**: Solution respects DDD/Hexagonal Architecture principles
-5. **Extensibility**: Design makes adding similar features easy
-
-### What Makes This Challenging
-
-- The existing codebase has a **hardcoded discount chain** that needs refactoring
-- Agent must identify this limitation without explicit hints
-- Requires understanding of:
-  - DDD tactical patterns (Policies, Domain Services, Value Objects)
-  - Hexagonal Architecture (Ports & Adapters)
-  - When to refactor vs. extend
-  - Async external API integration in domain layer
-
-## Running the Benchmark
-
-### Prerequisites
+## Running
 
 ```bash
-# Install Harbor CLI (adjust based on actual Harbor installation)
-pip install harbor-cli
-# or
-cargo install harbor
+# All tasks (default)
+./evals/ddd-architectural-challenges/run-benchmark.sh with-mcp
+
+# Single task
+./evals/ddd-architectural-challenges/run-benchmark.sh --tasks ddd-threshold-discount with-mcp
+
+# Multiple specific tasks
+./evals/ddd-architectural-challenges/run-benchmark.sh --tasks ddd-threshold-discount,ddd-weather-discount with-mcp
+
+# With Opik tracking + architecture evaluation
+./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-arch-eval --tasks ddd-threshold-discount with-mcp
+
+# Custom model and timeout
+./evals/ddd-architectural-challenges/run-benchmark.sh --model claude-opus-4-6 --timeout 1200 --tasks ddd-weather-discount with-mcp
 ```
 
-### Quick Start
+### Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--tasks <list>` | Comma-separated task names to run | all tasks |
+| `--with-opik` | Enable Opik experiment tracking | off |
+| `--with-arch-eval` | Run post-hoc architecture evaluation via Claude Code SDK | off |
+| `--model <model>` | Model for the agent | `claude-sonnet-4-6` |
+| `--timeout <seconds>` | Agent timeout per task | `720` |
+
+### Variants
+
+- **`with-mcp`** — Agent gets Sourcebot MCP server for codebase search
+- **`baseline`** — Agent works without MCP tools
+
+## Architecture Evaluation
+
+When `--with-arch-eval` is enabled, each trial is evaluated by Claude Code SDK against task-specific criteria in `architecture_criteria.md`. Scores (0-25 per dimension, 100 total) are:
+
+- Saved to `architecture_eval.json` in the trial directory
+- Uploaded as feedback scores to Opik (when `--with-opik` is also enabled)
+
+## Prerequisites
+
+Both `harbor-ai` and `opik` must be in the same venv. Use `uv run` for all commands:
 
 ```bash
-# Make the script executable (if not already)
-chmod +x run-benchmark.sh
-
-# Run the benchmark
-./run-benchmark.sh
+uv run harbor run --config config.json       # correct
+uv run opik harbor run --config config.json   # correct (with Opik)
 ```
-
-### Manual Execution
-
-```bash
-# Run Harbor with local registry
-harbor run \
-  --registry-path ./my-private-bench/local-registry.json \
-  --dataset ddd-architectural-challenges \
-  --task ddd-weather-discount \
-  --verbose
-```
-
-## Environment
-
-- **Base Image**: `mcr.microsoft.com/dotnet/sdk:8.0`
-- **Language**: C#
-- **Framework**: .NET 8
-- **Architecture**: Hexagonal Architecture / Clean Architecture
-- **Testing**: xUnit, FluentAssertions, BDD-toolkit
-
-## Evaluation Process
-
-The evaluation script (`eval.sh`) performs the following checks:
-
-1. **Build Verification**: Ensures the solution compiles
-2. **Test Execution**: Runs all tests and verifies they pass
-3. **API Integration Check**: Searches for Open-Meteo API URL in source code
-4. **Feature Verification**: Confirms weather-related implementation exists
-
-Exit code `0` = Success
-Exit code `1` = Failure (with detailed error message)
-
-## Design Philosophy
-
-This benchmark intentionally:
-- **Does NOT provide implementation hints** - agent must discover architectural needs
-- **Requires both implementation and refactoring** - tests real-world scenarios
-- **Emphasizes extensibility over quick fixes** - evaluates design thinking
-- **Uses real, non-trivial codebase** - no toy examples
-
-## Expected Agent Behavior
-
-A successful agent should:
-1. Explore the existing codebase structure
-2. Identify the `OfferModifiers` factory pattern
-3. Recognize the hardcoded chain as an extensibility bottleneck
-4. Design a configurable/pluggable modifier system
-5. Implement the weather discount as one instance of that system
-6. Write comprehensive tests (unit + integration)
-7. Handle errors gracefully (API failures)
-
-## Future Enhancements
-
-Potential additions to this benchmark suite:
-- Stock market-based discount
-- Air quality-based discount
-- Multi-discount coordination (what if multiple external conditions apply?)
-- Performance optimization challenge (caching, rate limiting)
-
-## License
-
-This benchmark is based on the [DDD-starter-dotnet](https://github.com/itlibrium/DDD-starter-dotnet) project, which is licensed under the MIT License.
-
-## Contributing
-
-This is a private benchmark for internal evaluation. Adjust Harbor CLI commands based on your specific Harbor installation and version.

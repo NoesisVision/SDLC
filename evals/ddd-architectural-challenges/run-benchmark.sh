@@ -17,11 +17,13 @@
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh [variant] [model] [timeout]
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik with-mcp
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-arch-eval with-mcp
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh --tasks ddd-weather-discount with-mcp
 #
 # Examples:
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh with-mcp
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh baseline claude-sonnet-4-6 900
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-arch-eval with-mcp
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh --tasks ddd-threshold-discount,ddd-weather-discount with-mcp
 
 set -e
 
@@ -35,6 +37,7 @@ cd "$REPO_ROOT"
 
 WITH_OPIK=false
 WITH_ARCH_EVAL=false
+TASKS_FILTER=""
 VARIANT="with-mcp"
 MODEL="claude-sonnet-4-6"
 TIMEOUT_SEC="720"
@@ -48,6 +51,10 @@ while [[ $# -gt 0 ]]; do
         --with-arch-eval)
             WITH_ARCH_EVAL=true
             shift
+            ;;
+        --tasks)
+            TASKS_FILTER="$2"
+            shift 2
             ;;
         --model)
             MODEL="$2"
@@ -85,6 +92,7 @@ echo "Harbor Benchmark Runner"
 echo "Variant: $VARIANT"
 echo "Model: $MODEL"
 echo "Agent timeout: ${TIMEOUT_SEC}s"
+[ -n "$TASKS_FILTER" ] && echo "Tasks: $TASKS_FILTER"
 [ "$WITH_OPIK" = true ] && echo "Opik: enabled"
 [ "$WITH_ARCH_EVAL" = true ] && echo "Arch eval: enabled"
 echo "=========================================="
@@ -125,18 +133,20 @@ echo ""
 # ---------------------------------------------------------------------------
 
 CONFIG_FILE=$(mktemp /tmp/harbor-run-XXXXXX.json)
-trap 'rm -f "$CONFIG_FILE"' EXIT
+trap 'rm -f "$CONFIG_FILE" /tmp/harbor-registry-*.json' EXIT
 
 # Merge variant's agent config with the dataset/jobs boilerplate using python
-python3 - "$VARIANT_DIR/harbor_config.json" "$CONFIG_FILE" "$SCRIPT_DIR" "$MODEL" "$TIMEOUT_SEC" << 'PYEOF'
+python3 - "$VARIANT_DIR/harbor_config.json" "$CONFIG_FILE" "$SCRIPT_DIR" "$MODEL" "$TIMEOUT_SEC" "$TASKS_FILTER" << 'PYEOF'
 import json
 import sys
+import tempfile
 
 variant_config_path = sys.argv[1]
 output_path = sys.argv[2]
 script_dir = sys.argv[3]
 model = sys.argv[4]
 timeout_sec = float(sys.argv[5])
+tasks_filter = sys.argv[6]
 
 with open(variant_config_path) as f:
     variant = json.load(f)
@@ -145,6 +155,21 @@ for agent in variant.get("agents", []):
     agent.setdefault("model_name", model)
     agent.setdefault("override_timeout_sec", timeout_sec)
 
+registry_path = f"{script_dir}/local-registry.json"
+
+if tasks_filter:
+    allowed_tasks = {t.strip() for t in tasks_filter.split(",")}
+    with open(registry_path) as f:
+        registry = json.load(f)
+    for dataset in registry:
+        dataset["tasks"] = [
+            t for t in dataset.get("tasks", []) if t["name"] in allowed_tasks
+        ]
+    fd, filtered_path = tempfile.mkstemp(suffix=".json", prefix="harbor-registry-")
+    with open(fd, "w") as f:
+        json.dump(registry, f, indent=2)
+    registry_path = filtered_path
+
 config = {
     "jobs_dir": f"{script_dir}/jobs",
     "n_attempts": 1,
@@ -152,7 +177,7 @@ config = {
     "datasets": [
         {
             "name": "ddd-architectural-challenges",
-            "registry": {"path": f"{script_dir}/local-registry.json"},
+            "registry": {"path": registry_path},
         }
     ],
     "artifacts": [{"source": "/app/Sources", "destination": "workspace"}],
