@@ -13,6 +13,7 @@
 6. Check and adjust (if needed) code structure on EVERY modification. 
 7. Mimic `src` structure in `tests`.
 8. Use **snake_case** for directory and file name.
+9. All code, comments, documentation, and commit messages must be in **English**.
 
 ## TypeScript
 

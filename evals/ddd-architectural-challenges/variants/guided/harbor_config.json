@@ -2,10 +2,10 @@
   "agents": [
     {
       "import_path": "evals.claude_custom_agents:ConfigurableClaude",
-      "name": "baseline",
+      "name": "guided",
       "kwargs": {
         "sandbox_files": {
-          "/app/CLAUDE.md": "evals/ddd-architectural-challenges/variants/baseline/CLAUDE.md"
+          "/app/CLAUDE.md": "evals/ddd-architectural-challenges/variants/guided/CLAUDE.md"
         }
       }
     }

@@ -91,6 +91,7 @@ class ArchitectureEvaluation:
     normalized_score: float = 0.0
     summary: str = ""
     harbor_reward: float = 0.0
+    duration_sec: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +131,10 @@ async def evaluate_trial(trial_dir: Path) -> ArchitectureEvaluation | None:
     trial_name = result_json.get("trial_name", trial_dir.name)
     agent_name = _resolve_agent_name(trial_dir)
     harbor_reward = result_json.get("verifier_result", {}).get("rewards", {}).get("reward", 0.0)
+    duration_sec = _compute_duration_sec(result_json)
+
+    dimensions_path = task_dir.parent.parent / "architecture_dimensions.json"
+    expected_dimensions = _load_expected_dimensions(dimensions_path)
 
     criteria_path = task_dir / "architecture_criteria.md"
     if not criteria_path.exists():
@@ -140,13 +145,13 @@ async def evaluate_trial(trial_dir: Path) -> ArchitectureEvaluation | None:
     criteria = criteria_path.read_text()
     instruction = instruction_path.read_text() if instruction_path.exists() else ""
 
-    prompt = _build_evaluator_prompt(instruction, criteria)
+    prompt = _build_evaluator_prompt(instruction, criteria, expected_dimensions)
     print(f"  Task: {task_name}")
     print(f"  Workspace: {workspace_path}")
     print("  Running Claude Code evaluation...")
 
     raw_response = await _run_claude_code_evaluation(prompt, workspace_path)
-    evaluation = _parse_evaluation_response(raw_response)
+    evaluation = _parse_evaluation_response(raw_response, expected_dimensions)
 
     if not evaluation:
         print("  ERROR: Failed to parse evaluation response")
@@ -156,6 +161,7 @@ async def evaluate_trial(trial_dir: Path) -> ArchitectureEvaluation | None:
     evaluation.trial_name = trial_name
     evaluation.agent_name = agent_name
     evaluation.harbor_reward = harbor_reward
+    evaluation.duration_sec = duration_sec
     evaluation.evaluator_model = "claude-code-sdk"
     evaluation.timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -206,12 +212,38 @@ def _resolve_task_name(result: dict) -> str:
     return result.get("task_name", "")
 
 
+def _compute_duration_sec(result: dict) -> float:
+    """Compute trial duration from started_at/finished_at in result.json."""
+    started = result.get("started_at", "")
+    finished = result.get("finished_at", "")
+    if not started or not finished:
+        return 0.0
+    start_dt = datetime.fromisoformat(started)
+    end_dt = datetime.fromisoformat(finished)
+    return (end_dt - start_dt).total_seconds()
+
+
+def _load_expected_dimensions(dimensions_path: Path) -> list[dict] | None:
+    """Load dimension definitions from architecture_dimensions.json."""
+    if not dimensions_path.exists():
+        return None
+    data = _load_json(dimensions_path)
+    return data.get("dimensions", [])
+
+
 # ---------------------------------------------------------------------------
 # Prompt construction
 # ---------------------------------------------------------------------------
 
 
-def _build_evaluator_prompt(instruction: str, criteria: str) -> str:
+def _build_evaluator_prompt(
+    instruction: str,
+    criteria: str,
+    expected_dimensions: list[dict] | None,
+) -> str:
+    """Build the evaluation prompt with optional dimension constraints."""
+    dimension_constraint = _format_dimension_constraint(expected_dimensions)
+
     return f"""You are an expert software architect evaluating AI-generated C# code for DDD and Hexagonal Architecture quality.
 
 ## Your task
@@ -233,7 +265,7 @@ Score the code on the following dimensions. Each dimension is 0–25 points. Fol
 ## How to evaluate
 
 1. Use `Glob` to understand the project structure (find all .cs files).
-2. Use `Read` to examine the key files: the new discount type, the Discount union, tests, and any infrastructure code.
+2. Use `Read` to examine the key domain types, architectural boundaries, infrastructure code, and tests.
 3. Use `Grep` to search for specific patterns (IEquatable, readonly struct, interface implementations, etc.).
 4. For each dimension, find concrete evidence in the code before assigning a score.
 
@@ -256,9 +288,17 @@ After your analysis, output a single JSON block with your evaluation. The JSON M
 IMPORTANT:
 - Be precise — reference specific files and patterns you found.
 - Do NOT inflate scores. If evidence is missing, score lower.
-- The dimension names must be snake_case and match the criteria headings.
-- Output exactly 4 dimensions.
+{dimension_constraint}- Output exactly {len(expected_dimensions) if expected_dimensions else 4} dimensions.
 """
+
+
+def _format_dimension_constraint(expected_dimensions: list[dict] | None) -> str:
+    """Format dimension names as an explicit constraint for the prompt."""
+    if not expected_dimensions:
+        return "- The dimension names must be snake_case and match the criteria headings.\n"
+    names = [d["name"] for d in expected_dimensions]
+    names_list = ", ".join(f"`{n}`" for n in names)
+    return f"- Output EXACTLY these dimension names in this order: {names_list}.\n"
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +347,11 @@ def _build_auth_env() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def _parse_evaluation_response(raw: str) -> ArchitectureEvaluation | None:
+def _parse_evaluation_response(
+    raw: str,
+    expected_dimensions: list[dict] | None,
+) -> ArchitectureEvaluation | None:
+    """Parse Claude's JSON response and validate dimension names."""
     json_blocks = re.findall(r"```json\s*\n(.*?)\n```", raw, re.DOTALL)
     if not json_blocks:
         return None
@@ -327,6 +371,8 @@ def _parse_evaluation_response(raw: str) -> ArchitectureEvaluation | None:
         for d in data.get("dimensions", [])
     ]
 
+    _validate_dimensions(dimensions, expected_dimensions)
+
     total = sum(d.score for d in dimensions)
 
     return ArchitectureEvaluation(
@@ -340,6 +386,19 @@ def _parse_evaluation_response(raw: str) -> ArchitectureEvaluation | None:
         normalized_score=round(total / 100.0, 4),
         summary=data.get("summary", ""),
     )
+
+
+def _validate_dimensions(
+    actual: list[DimensionScore],
+    expected: list[dict] | None,
+) -> None:
+    """Warn if returned dimension names don't match expected ones."""
+    if not expected:
+        return
+    expected_names = [d["name"] for d in expected]
+    actual_names = [d.name for d in actual]
+    if actual_names != expected_names:
+        print(f"  WARN: Dimension mismatch — expected {expected_names}, got {actual_names}")
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +453,20 @@ def _upload_to_opik(evaluation: ArchitectureEvaluation) -> None:
             "name": "arch_total",
             "value": evaluation.normalized_score,
             "reason": evaluation.summary,
+        }
+    )
+    scores.append(
+        {
+            "id": trace_id,
+            "name": "reward",
+            "value": evaluation.harbor_reward,
+        }
+    )
+    scores.append(
+        {
+            "id": trace_id,
+            "name": "duration_sec",
+            "value": evaluation.duration_sec,
         }
     )
 
