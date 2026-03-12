@@ -6,7 +6,6 @@
 import argparse
 import json
 import shutil
-import sys
 from pathlib import Path
 
 
@@ -36,7 +35,6 @@ def _main() -> None:
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"status": "error", "error": str(e)}))
-        sys.exit(1)
 
 
 if __name__ == "__main__":

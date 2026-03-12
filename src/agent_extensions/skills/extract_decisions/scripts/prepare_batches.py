@@ -7,17 +7,12 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from models import Batch, CleanedConversation, SpeakerTurn
 
 _TARGET_TOKENS_PER_BATCH = 5000
 _CHARS_PER_TOKEN = 4
-
-
-class ScriptError(Exception):
-    pass
 
 
 def prepare_batches(work_dir: Path, cleaned_path: Path) -> dict:
@@ -31,11 +26,11 @@ def prepare_batches(work_dir: Path, cleaned_path: Path) -> dict:
         Status dict with batch_count.
     """
     if not cleaned_path.exists():
-        raise ScriptError(f"Cleaned file not found: {cleaned_path}")
+        raise Exception(f"Cleaned file not found: {cleaned_path}")
 
     cleaned = CleanedConversation.model_validate_json(cleaned_path.read_text(encoding="utf-8"))
     if not cleaned.turns:
-        raise ScriptError("No turns to batch")
+        raise Exception("No turns to batch")
 
     batches = _split_into_batches(cleaned.turns)
     batches_dir = work_dir / "batches"
@@ -98,12 +93,11 @@ def _main() -> None:
 
     try:
         if not args.work_dir.exists():
-            raise ScriptError(f"Working directory not found: {args.work_dir}")
+            raise Exception(f"Working directory not found: {args.work_dir}")
         result = prepare_batches(args.work_dir, args.cleaned_path)
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"status": "error", "error": str(e)}))
-        sys.exit(1)
 
 
 if __name__ == "__main__":

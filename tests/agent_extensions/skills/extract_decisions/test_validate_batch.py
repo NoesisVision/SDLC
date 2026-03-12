@@ -100,8 +100,8 @@ def test_success_all_turns_assigned(work_dir, tmp_path):
             {
                 "topic_id": "topic_001",
                 "name": "Database",
-                "short_description": "DB choice",
-                "long_description": "Choosing a database",
+                "summary": "DB choice",
+                "description": "Choosing a database",
                 "idea_units": [
                     _make_idea_unit("turn_001", "Alice", "2025-03-01 14:00", ["We need Postgres.", "It has ACID."]),
                     _make_idea_unit("turn_002", "Bob", "2025-03-01 14:02", ["I agree."], "Agreement"),
@@ -137,8 +137,8 @@ def test_fabricated_sentence_detected(work_dir, tmp_path):
             {
                 "topic_id": "topic_001",
                 "name": "Database",
-                "short_description": "DB choice",
-                "long_description": "Choosing a database",
+                "summary": "DB choice",
+                "description": "Choosing a database",
                 "idea_units": [
                     _make_idea_unit("turn_001", "Alice", "2025-03-01 14:00", ["We need MySQL."]),
                 ],
@@ -174,8 +174,8 @@ def test_speaker_mismatch_detected(work_dir, tmp_path):
             {
                 "topic_id": "topic_001",
                 "name": "Database",
-                "short_description": "DB choice",
-                "long_description": "Choosing a database",
+                "summary": "DB choice",
+                "description": "Choosing a database",
                 "idea_units": [
                     _make_idea_unit("turn_001", "Bob", "2025-03-01 14:00", ["We need Postgres."]),
                 ],
@@ -211,8 +211,8 @@ def test_time_mismatch_detected(work_dir, tmp_path):
             {
                 "topic_id": "topic_001",
                 "name": "Database",
-                "short_description": "DB choice",
-                "long_description": "Choosing a database",
+                "summary": "DB choice",
+                "description": "Choosing a database",
                 "idea_units": [
                     _make_idea_unit("turn_001", "Alice", "2025-03-01 15:00", ["We need Postgres."]),
                 ],
@@ -253,8 +253,8 @@ def test_subset_ok_irrelevant_sentences_discarded(work_dir, tmp_path):
             {
                 "topic_id": "topic_001",
                 "name": "Database",
-                "short_description": "DB choice",
-                "long_description": "Choosing a database",
+                "summary": "DB choice",
+                "description": "Choosing a database",
                 "idea_units": [
                     _make_idea_unit("turn_001", "Alice", "2025-03-01 14:00", ["We need Postgres.", "It has ACID."]),
                 ],
@@ -289,8 +289,8 @@ def test_duplicate_sentence_exceeding_source_count(work_dir, tmp_path):
             {
                 "topic_id": "topic_001",
                 "name": "Database",
-                "short_description": "DB choice",
-                "long_description": "Choosing a database",
+                "summary": "DB choice",
+                "description": "Choosing a database",
                 "idea_units": [
                     _make_idea_unit("turn_001", "Alice", "2025-03-01 14:00", ["We need Postgres."]),
                 ],
@@ -298,8 +298,8 @@ def test_duplicate_sentence_exceeding_source_count(work_dir, tmp_path):
             {
                 "topic_id": "topic_002",
                 "name": "Infrastructure",
-                "short_description": "Infra",
-                "long_description": "Infrastructure setup",
+                "summary": "Infra",
+                "description": "Infrastructure setup",
                 "idea_units": [
                     _make_idea_unit("turn_001", "Alice", "2025-03-01 14:00", ["We need Postgres."]),
                 ],

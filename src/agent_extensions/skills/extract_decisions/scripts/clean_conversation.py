@@ -10,25 +10,16 @@
 import argparse
 import json
 import re
-import sys
-import uuid
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import pysbd
 from langdetect import LangDetectException, detect
-from models import CleanedConversation, SpeakerTurn
+from models import CleanedConversation, SpeakerTurn, CONVERSATION_ID_PATTERN
 
 _PYSBD_LANGUAGES = set(pysbd.languages.LANGUAGE_CODES.keys())
 _SEGMENTER_CACHE: dict[str, pysbd.Segmenter] = {}
 _LANGUAGE_SAMPLE_SIZE = 1000
 
-
-class ScriptError(Exception):
-    pass
-
-
-_CONVERSATION_ID_PATTERN = re.compile(r"^<!--\s*conversation_id:\s*([\w-]+)\s*-->")
 
 _INVISIBLE_CHARS = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff\u2028\u2029]")
 _MULTI_SPACES = re.compile(r" {2,}")
@@ -60,24 +51,30 @@ _DATE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2}(?: \d{1,2}:\d{2})?)$", re.MULTI
 _COMPLETE_START_TIME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$")
 
 
-def parse_conversation(file_path: Path, title_override: str | None, date_override: str | None) -> dict:
-    """Parse a conversation markdown file into structured turn data.
+def parse_conversation(
+    file_path: Path,
+    conversation_id: str,
+    cleaned_path: Path,
+    title_override: str | None,
+    date_override: str | None,
+) -> dict:
+    """Parse a conversation markdown file, write cleaned output file.
 
     Args:
         file_path: Path to the conversation markdown file.
+        conversation_id: Unique identifier for the conversation.
+        cleaned_path: Path where the cleaned JSON output will be written.
         title_override: Optional title to use instead of extracted one.
         date_override: Optional date to use instead of extracted one.
 
     Returns:
-        Status dict with conversation_id, work_dir, and any missing metadata.
+        Status dict: 'success' after writing files, or 'incomplete' with missing fields.
     """
     raw_text = file_path.read_text(encoding="utf-8")
-    conversation_id, raw_text = _ensure_conversation_id(file_path, raw_text)
-    work_dir = _create_work_dir(file_path, conversation_id)
 
     text_without_id = _strip_conversation_id_line(raw_text)
     if not text_without_id.strip():
-        raise ScriptError(f"File is empty: {file_path}")
+        raise Exception(f"File is empty: {file_path}")
 
     normalized = _normalize_encoding(text_without_id)
     title, date, body = _extract_metadata(normalized)
@@ -85,78 +82,35 @@ def parse_conversation(file_path: Path, title_override: str | None, date_overrid
     date = date_override or date
 
     language = _detect_language(body)
-    turns = _parse_speaker_turns(body, language, date)
+    turns = _parse_speaker_turns(body, language)
     if not turns:
-        raise ScriptError(f"No recognizable speaker turns found in: {file_path}")
+        raise Exception(f"No recognizable speaker turns found in: {file_path}")
 
-    missing = []
+    missing: list[str] = []
     if not title:
         missing.append("title")
     if not _is_complete_start_time(date):
         missing.append("date")
 
+    if missing:
+        return {"status": "incomplete", "missing": missing}
+
     cleaned = CleanedConversation(
         conversation_id=conversation_id,
         title=title,
         date=date,
-        language=language,
         source_path=str(file_path.resolve()),
         turns=turns,
     )
 
-    cleaned_path = _write_cleaned_json(file_path, cleaned)
+    _write_cleaned_json(cleaned_path, cleaned)
 
-    structured_path = file_path.parent / f"{file_path.stem}_structured.json"
-
-    status = "success" if not missing else "incomplete"
-    return {
-        "status": status,
-        "conversation_id": conversation_id,
-        "work_dir": str(work_dir),
-        "cleaned_path": str(cleaned_path),
-        "structured_path": str(structured_path.resolve()),
-        "missing": missing,
-    }
-
-
-def _create_work_dir(file_path: Path, conversation_id: str) -> Path:
-    project_root = _find_project_root(file_path)
-    work_dir = project_root / ".noesis" / "tmp" / conversation_id
-    work_dir.mkdir(parents=True, exist_ok=True)
-    return work_dir
-
-
-def _ensure_conversation_id(file_path: Path, raw_text: str) -> tuple[str, str]:
-    first_line, _, _ = raw_text.partition("\n")
-    match = _CONVERSATION_ID_PATTERN.match(first_line)
-    if match:
-        return match.group(1), raw_text
-
-    conversation_id = str(uuid.uuid4())
-    id_line = f"<!-- conversation_id: {conversation_id} -->\n"
-    updated_text = id_line + raw_text
-    file_path.write_text(updated_text, encoding="utf-8")
-    return conversation_id, updated_text
-
-
-def _find_project_root(start: Path) -> Path:
-    current = start.resolve().parent
-    while current != current.parent:
-        if (current / ".git").exists():
-            return current
-        current = current.parent
-    return start.resolve().parent
-
-
-def _write_cleaned_json(file_path: Path, cleaned: CleanedConversation) -> Path:
-    cleaned_path = file_path.parent / f"{file_path.stem}_cleaned.json"
-    cleaned_path.write_text(json.dumps(cleaned.model_dump(), indent=2, ensure_ascii=False), encoding="utf-8")
-    return cleaned_path
+    return {"status": "success"}
 
 
 def _strip_conversation_id_line(text: str) -> str:
     first_line, _, rest = text.partition("\n")
-    if _CONVERSATION_ID_PATTERN.match(first_line):
+    if CONVERSATION_ID_PATTERN.match(first_line):
         return rest
     return text
 
@@ -195,7 +149,6 @@ def _extract_metadata(text: str) -> tuple[str | None, str | None, str]:
 
 
 def _is_complete_start_time(date: str | None) -> bool:
-    """Return True only if the date string includes both date and time components."""
     return date is not None and _COMPLETE_START_TIME_PATTERN.match(date) is not None
 
 
@@ -212,7 +165,7 @@ def _detect_language(text: str) -> str:
     return detected if detected in _PYSBD_LANGUAGES else "en"
 
 
-def _parse_speaker_turns(body: str, language: str, start_datetime: str | None) -> list[SpeakerTurn]:
+def _parse_speaker_turns(body: str, language: str) -> list[SpeakerTurn]:
     body = _normalize_turn_headers(body)
     turns: list[SpeakerTurn] = []
 
@@ -227,15 +180,10 @@ def _parse_speaker_turns(body: str, language: str, start_datetime: str | None) -
 
         sentences = _split_sentences(cleaned, language)
         if sentences:
-            turns.append(SpeakerTurn(speaker=speaker, time=time, sentences=sentences))
+            turns.append(SpeakerTurn(speaker=speaker, time=_normalize_time(time), sentences=sentences))
 
     for i, turn in enumerate(turns):
         turn.turn_id = _generate_turn_id(i)
-
-    if start_datetime and _COMPLETE_START_TIME_PATTERN.match(start_datetime) and turns:
-        base_relative_time = turns[0].time
-        for turn in turns:
-            turn.time = _calculate_absolute_time(start_datetime, turn.time, base_relative_time)
 
     return turns
 
@@ -244,24 +192,11 @@ def _generate_turn_id(index: int) -> str:
     return f"turn_{index + 1:03d}"
 
 
-def _calculate_absolute_time(start_datetime: str, relative_time: str, base_relative_time: str) -> str:
-    base_dt = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M")
-    has_seconds = len(relative_time.split(":")) == 3
-
-    current_td = _parse_relative_time(relative_time)
-    base_td = _parse_relative_time(base_relative_time)
-    delta = current_td - base_td
-
-    absolute = base_dt + delta
-    output_fmt = "%Y-%m-%d %H:%M:%S" if has_seconds else "%Y-%m-%d %H:%M"
-    return absolute.strftime(output_fmt)
-
-
-def _parse_relative_time(time_str: str) -> timedelta:
+def _normalize_time(time_str: str) -> str:
     parts = time_str.split(":")
-    if len(parts) == 3:
-        return timedelta(hours=int(parts[0]), minutes=int(parts[1]), seconds=int(parts[2]))
-    return timedelta(hours=int(parts[0]), minutes=int(parts[1]))
+    if len(parts) == 2:
+        return f"00:{int(parts[0]):02d}:{int(parts[1]):02d}"
+    return f"{int(parts[0]):02d}:{int(parts[1]):02d}:{int(parts[2]):02d}"
 
 
 def _normalize_turn_headers(text: str) -> str:
@@ -292,21 +227,32 @@ def _get_segmenter(language: str) -> pysbd.Segmenter:
     return _SEGMENTER_CACHE[language]
 
 
+def _write_cleaned_json(cleaned_path: Path, cleaned: CleanedConversation) -> None:
+    cleaned_path.write_text(
+        json.dumps(cleaned.model_dump(), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
 def _main() -> None:
     parser = argparse.ArgumentParser(description="Parse a conversation transcript")
     parser.add_argument("file_path", type=Path, help="Path to conversation markdown")
+    parser.add_argument("conversation_id", type=str, help="Unique conversation identifier")
+    parser.add_argument("cleaned_path", type=Path, help="Output path for cleaned JSON")
     parser.add_argument("--title", type=str, default=None, help="Override title")
     parser.add_argument("--date", type=str, default=None, help="Override start time (YYYY-MM-DD HH:MM)")
     args = parser.parse_args()
 
     try:
         if not args.file_path.exists():
-            raise ScriptError(f"File not found: {args.file_path}")
-        result = parse_conversation(args.file_path, args.title, args.date)
+            raise Exception(f"File not found: {args.file_path}")
+        result = parse_conversation(
+            args.file_path, args.conversation_id, args.cleaned_path,
+            args.title, args.date,
+        )
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"status": "error", "error": str(e)}))
-        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ _SCRIPTS_DIR = (
 )
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from load_topic_data import ScriptError, load_topic_data  # noqa: E402
+from load_topic_data import load_topic_data  # noqa: E402
 from models import IdeaUnit, StructuredConversation, Topic  # noqa: E402
 
 
@@ -53,8 +53,8 @@ def test_loads_existing_topic(tmp_path):
             {
                 "topic_id": "topic_001",
                 "name": "Database",
-                "short_description": "DB choice",
-                "long_description": "Choosing a database",
+                "summary": "DB choice",
+                "description": "Choosing a database",
                 "idea_units": idea_units,
             }
         ],
@@ -65,8 +65,8 @@ def test_loads_existing_topic(tmp_path):
     assert result["status"] == "success"
     assert result["topic"]["topic_id"] == "topic_001"
     assert result["topic"]["name"] == "Database"
-    assert result["topic"]["short_description"] == "DB choice"
-    assert result["topic"]["long_description"] == "Choosing a database"
+    assert result["topic"]["summary"] == "DB choice"
+    assert result["topic"]["description"] == "Choosing a database"
     assert len(result["topic"]["idea_units"]) == 2
     assert result["topic"]["idea_units"][0]["category"] == "Decision"
 
@@ -79,21 +79,21 @@ def test_topic_not_found(tmp_path):
             {
                 "topic_id": "topic_001",
                 "name": "Database",
-                "short_description": "DB choice",
-                "long_description": "Choosing a database",
+                "summary": "DB choice",
+                "description": "Choosing a database",
                 "idea_units": [],
             }
         ],
     )
 
-    with pytest.raises(ScriptError, match="Topic not found"):
+    with pytest.raises(Exception, match="Topic not found"):
         load_topic_data(structured_path, "topic_999")
 
 
 def test_file_not_found(tmp_path):
     missing_path = tmp_path / "nonexistent.json"
 
-    with pytest.raises(ScriptError, match="not found"):
+    with pytest.raises(Exception, match="not found"):
         load_topic_data(missing_path, "topic_001")
 
 
@@ -110,8 +110,8 @@ def test_idea_units_included_in_output(tmp_path):
             {
                 "topic_id": "topic_002",
                 "name": "API Design",
-                "short_description": "API approach",
-                "long_description": "Choosing API design approach",
+                "summary": "API approach",
+                "description": "Choosing API design approach",
                 "idea_units": idea_units,
             }
         ],

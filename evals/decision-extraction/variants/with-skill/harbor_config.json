@@ -16,7 +16,7 @@
           "/app/skills/extract_decisions/scripts/init_decision_records.py": "src/agent_extensions/skills/extract_decisions/scripts/init_decision_records.py",
           "/app/skills/extract_decisions/scripts/load_topics.py": "src/agent_extensions/skills/extract_decisions/scripts/load_topics.py",
           "/app/skills/extract_decisions/scripts/load_topic_data.py": "src/agent_extensions/skills/extract_decisions/scripts/load_topic_data.py",
-          "/app/skills/extract_decisions/scripts/save_batch_results.py": "src/agent_extensions/skills/extract_decisions/scripts/save_batch_results.py",
+          "/app/skills/extract_decisions/scripts/merge_batch_results.py": "src/agent_extensions/skills/extract_decisions/scripts/merge_batch_results.py",
           "/app/skills/extract_decisions/scripts/save_decision_record.py": "src/agent_extensions/skills/extract_decisions/scripts/save_decision_record.py",
           "/app/skills/extract_decisions/scripts/validate_batch.py": "src/agent_extensions/skills/extract_decisions/scripts/validate_batch.py",
           "/app/skills/extract_decisions/scripts/cleanup.py": "src/agent_extensions/skills/extract_decisions/scripts/cleanup.py",

@@ -7,7 +7,6 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from models import (
@@ -21,11 +20,7 @@ from models import (
 from pydantic import ValidationError
 
 
-class ScriptError(Exception):
-    pass
-
-
-def save_batch_results(structured_path: Path, input_file: Path) -> dict:
+def merge_batch_results(structured_path: Path, input_file: Path) -> dict:
     """Apply all batch extraction results to the structured file in one read-write cycle.
 
     Args:
@@ -36,14 +31,14 @@ def save_batch_results(structured_path: Path, input_file: Path) -> dict:
         Status dict with created/updated topic IDs.
     """
     if not structured_path.exists():
-        raise ScriptError(f"Structured output file not found: {structured_path}")
+        raise Exception(f"Structured output file not found: {structured_path}")
     if not input_file.exists():
-        raise ScriptError(f"Input file not found: {input_file}")
+        raise Exception(f"Input file not found: {input_file}")
 
     try:
         batch_input = BatchResultsInput.model_validate_json(input_file.read_text(encoding="utf-8"))
     except ValidationError as e:
-        raise ScriptError(f"Invalid batch results: {e}") from e
+        raise Exception(f"Invalid batch results: {e}") from e
 
     structured = StructuredConversation.model_validate_json(structured_path.read_text(encoding="utf-8"))
 
@@ -54,10 +49,7 @@ def save_batch_results(structured_path: Path, input_file: Path) -> dict:
     structured_path.write_text(json.dumps(structured.model_dump(), indent=2, ensure_ascii=False), encoding="utf-8")
 
     return {
-        "status": "success",
-        "created_topic_ids": list(created_ids.values()),
-        "updated_topic_count": len(batch_input.updated_topics),
-        "idea_unit_groups": len(batch_input.idea_units),
+        "status": "success"
     }
 
 
@@ -71,7 +63,7 @@ def _apply_idea_units(
         topic_id = _resolve_topic_id(group.topic_id, created_ids)
         topic = topics_by_id.get(topic_id)
         if not topic:
-            raise ScriptError(f"Topic not found for idea units: {topic_id}")
+            raise Exception(f"Topic not found for idea units: {topic_id}")
         topic.idea_units.extend(group.units)
 
 
@@ -84,8 +76,8 @@ def _apply_new_topics(structured: StructuredConversation, new_topics: list[NewTo
             Topic(
                 topic_id=topic_id,
                 name=new_topic.name,
-                short_description=new_topic.short_description,
-                long_description=new_topic.long_description,
+                summary=new_topic.summary,
+                description=new_topic.description,
                 idea_units=[],
             )
         )
@@ -99,10 +91,10 @@ def _apply_updated_topics(structured: StructuredConversation, updated_topics: li
     for update in updated_topics:
         topic = topics_by_id.get(update.topic_id)
         if not topic:
-            raise ScriptError(f"Topic not found for update: {update.topic_id}")
+            raise Exception(f"Topic not found for update: {update.topic_id}")
         topic.name = update.name
-        topic.short_description = update.short_description
-        topic.long_description = update.long_description
+        topic.summary = update.summary
+        topic.description = update.description
 
 
 def _resolve_topic_id(topic_id: str, created_ids: dict[str, str]) -> str:
@@ -116,11 +108,10 @@ def _main() -> None:
     args = parser.parse_args()
 
     try:
-        result = save_batch_results(args.structured_path, args.input_file)
+        result = merge_batch_results(args.structured_path, args.input_file)
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"status": "error", "error": str(e)}))
-        sys.exit(1)
 
 
 if __name__ == "__main__":

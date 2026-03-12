@@ -7,15 +7,10 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from models import DecisionRecord
 from pydantic import ValidationError
-
-
-class ScriptError(Exception):
-    pass
 
 
 def save_decision_record(output_dir: Path, topic_id: str, input_file: Path) -> dict:
@@ -30,15 +25,15 @@ def save_decision_record(output_dir: Path, topic_id: str, input_file: Path) -> d
         Status dict with the saved file path and decision index.
     """
     if not output_dir.exists():
-        raise ScriptError(f"Output directory not found: {output_dir}")
+        raise Exception(f"Output directory not found: {output_dir}")
 
     if not input_file.exists():
-        raise ScriptError(f"Input file not found: {input_file}")
+        raise Exception(f"Input file not found: {input_file}")
 
     try:
         record = DecisionRecord.model_validate_json(input_file.read_text(encoding="utf-8"))
     except ValidationError as e:
-        raise ScriptError(f"Invalid decision record: {e}") from e
+        raise Exception(f"Invalid decision record: {e}") from e
 
     decision_index = _next_decision_index(output_dir, topic_id)
     filename = f"{topic_id}_decision_{decision_index:03d}.json"
@@ -74,7 +69,6 @@ def _main() -> None:
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"status": "error", "error": str(e)}))
-        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ _SCRIPTS_DIR = (
 )
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from save_decision_record import ScriptError, save_decision_record  # noqa: E402
+from save_decision_record import save_decision_record  # noqa: E402
 
 
 def _valid_record():
@@ -82,7 +82,7 @@ def test_missing_required_field(tmp_path):
     del record["context"]
     input_file = _write_input(tmp_path, record)
 
-    with pytest.raises(ScriptError):
+    with pytest.raises(Exception):
         save_decision_record(output_dir, "topic_001", input_file)
 
 
@@ -94,7 +94,7 @@ def test_invalid_design_concern(tmp_path):
     record["design_concerns"] = ["Technology", "InvalidConcern"]
     input_file = _write_input(tmp_path, record)
 
-    with pytest.raises(ScriptError):
+    with pytest.raises(Exception):
         save_decision_record(output_dir, "topic_001", input_file)
 
 
@@ -118,7 +118,7 @@ def test_missing_decision_field(tmp_path):
     del record["decision"]["rationale"]
     input_file = _write_input(tmp_path, record)
 
-    with pytest.raises(ScriptError):
+    with pytest.raises(Exception):
         save_decision_record(output_dir, "topic_001", input_file)
 
 

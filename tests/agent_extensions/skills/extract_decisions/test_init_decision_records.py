@@ -11,7 +11,7 @@ _SCRIPTS_DIR = (
 )
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from init_decision_records import ScriptError, init_decision_records  # noqa: E402
+from init_decision_records import init_decision_records  # noqa: E402
 from models import StructuredConversation, Topic  # noqa: E402
 
 
@@ -30,8 +30,8 @@ def test_creates_directory_and_returns_topic_ids(tmp_path):
     _write_structured(
         structured_path,
         [
-            {"topic_id": "topic_001", "name": "A", "short_description": "", "long_description": "", "idea_units": []},
-            {"topic_id": "topic_002", "name": "B", "short_description": "", "long_description": "", "idea_units": []},
+            {"topic_id": "topic_001", "name": "A", "summary": "", "description": "", "idea_units": []},
+            {"topic_id": "topic_002", "name": "B", "summary": "", "description": "", "idea_units": []},
         ],
     )
 
@@ -60,7 +60,7 @@ def test_idempotent_directory_creation(tmp_path):
     _write_structured(
         structured_path,
         [
-            {"topic_id": "topic_001", "name": "A", "short_description": "", "long_description": "", "idea_units": []},
+            {"topic_id": "topic_001", "name": "A", "summary": "", "description": "", "idea_units": []},
         ],
     )
 
@@ -74,7 +74,7 @@ def test_idempotent_directory_creation(tmp_path):
 def test_file_not_found(tmp_path):
     missing_path = tmp_path / "nonexistent_structured.json"
 
-    with pytest.raises(ScriptError, match="not found"):
+    with pytest.raises(Exception, match="not found"):
         init_decision_records(missing_path)
 
 

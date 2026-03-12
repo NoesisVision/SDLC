@@ -7,14 +7,9 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from models import StructuredConversation
-
-
-class ScriptError(Exception):
-    pass
 
 
 def load_topics(structured_path: Path, detail_ids: list[str] | None = None) -> dict:
@@ -28,7 +23,7 @@ def load_topics(structured_path: Path, detail_ids: list[str] | None = None) -> d
         Dict with topic summaries and optionally detailed topics.
     """
     if not structured_path.exists():
-        raise ScriptError(f"Structured output file not found: {structured_path}")
+        raise Exception(f"Structured output file not found: {structured_path}")
 
     structured = StructuredConversation.model_validate_json(structured_path.read_text(encoding="utf-8"))
 
@@ -36,7 +31,7 @@ def load_topics(structured_path: Path, detail_ids: list[str] | None = None) -> d
         {
             "topic_id": topic.topic_id,
             "name": topic.name,
-            "short_description": topic.short_description,
+            "summary": topic.summary,
         }
         for topic in structured.topics
     ]
@@ -53,8 +48,8 @@ def load_topics(structured_path: Path, detail_ids: list[str] | None = None) -> d
                     {
                         "topic_id": topic.topic_id,
                         "name": topic.name,
-                        "short_description": topic.short_description,
-                        "long_description": topic.long_description,
+                        "summary": topic.summary,
+                        "description": topic.description,
                         "idea_unit_count": len(topic.idea_units),
                     }
                 )
@@ -86,7 +81,6 @@ def _main() -> None:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({"status": "error", "error": str(e)}))
-        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -89,8 +89,8 @@ class Topic(BaseModel):
 
     topic_id: str = Field(description="Unique topic identifier")
     name: str = Field(description="Short topic name, 2-5 words")
-    short_description: str = Field(description="Dense summary, max 50 tokens")
-    long_description: str = Field(description="Comprehensive description, max 500 tokens")
+    summary: str = Field(description="Dense summary, max 50 tokens")
+    description: str = Field(description="Comprehensive description, max 500 tokens")
     idea_units: list[IdeaUnit] = Field(default_factory=list)
 
 
@@ -140,8 +140,8 @@ class NewTopicInput(BaseModel):
     """Input for creating a new topic."""
 
     name: str = Field(description="Short topic name")
-    short_description: str = Field(description="Dense summary, max 50 tokens")
-    long_description: str = Field(description="Comprehensive description, max 500 tokens")
+    summary: str = Field(description="Dense summary, max 50 tokens")
+    description: str = Field(description="Comprehensive description, max 500 tokens")
     placeholder_id: str | None = Field(
         default=None, description="Temporary ID used by the agent before real ID assignment"
     )
@@ -152,8 +152,8 @@ class UpdatedTopicInput(BaseModel):
 
     topic_id: str = Field(description="ID of the topic to update")
     name: str = Field(description="Updated short topic name")
-    short_description: str = Field(description="Updated dense summary")
-    long_description: str = Field(description="Updated comprehensive description")
+    summary: str = Field(description="Updated dense summary")
+    description: str = Field(description="Updated comprehensive description")
 
 
 class IdeaUnitGroup(BaseModel):
@@ -169,6 +169,10 @@ class BatchResultsInput(BaseModel):
     new_topics: list[NewTopicInput] = Field(default_factory=list)
     updated_topics: list[UpdatedTopicInput] = Field(default_factory=list)
     idea_units: list[IdeaUnitGroup] = Field(default_factory=list)
+    discarded_units: list[IdeaUnit] = Field(
+        default_factory=list,
+        description="Idea units categorized as Irrelevant, not assigned to any topic",
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -13,8 +13,8 @@ The final output is a JSON file placed next to the original conversation file wi
     {
       "topic_id": "topic_001",
       "name": "2-5 word topic name",
-      "short_description": "Dense summary, max 50 tokens",
-      "long_description": "Comprehensive description, max 500 tokens",
+      "summary": "Dense summary, max 50 tokens",
+      "description": "Comprehensive description, max 500 tokens",
       "idea_units": [
         {
           "turn_id": "turn_001",
@@ -46,8 +46,8 @@ The final output is a JSON file placed next to the original conversation file wi
 |-------|------|-------------|
 | `topic_id` | string | Unique identifier (e.g. `topic_001`) |
 | `name` | string | Short topic name (2-5 words), in conversation language |
-| `short_description` | string | Dense summary, max 50 tokens, in conversation language |
-| `long_description` | string | Comprehensive description, max 500 tokens, in conversation language |
+| `summary` | string | Dense summary, max 50 tokens, in conversation language |
+| `description` | string | Comprehensive description, max 500 tokens, in conversation language |
 | `idea_units` | array | Idea units assigned to this topic, ordered chronologically |
 
 ### Idea Unit

@@ -49,8 +49,8 @@ Valid `design_concerns`: `BusinessRule`, `DomainModel`, `QualityAttribute`, `Tec
     {
       "topic_id": "topic_001",
       "name": "2-5 word topic name",
-      "short_description": "Dense summary, max 50 tokens",
-      "long_description": "Comprehensive description, max 500 tokens",
+      "summary": "Dense summary, max 50 tokens",
+      "description": "Comprehensive description, max 500 tokens",
       "idea_units": [
         {
           "turn_id": "turn_001",

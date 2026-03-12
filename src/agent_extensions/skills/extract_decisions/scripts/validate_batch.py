@@ -7,7 +7,6 @@
 
 import argparse
 import json
-import sys
 from collections import Counter
 from pathlib import Path
 
@@ -19,10 +18,6 @@ from models import (
     SpeakerTurn,
     StructuredConversation,
 )
-
-
-class ScriptError(Exception):
-    pass
 
 
 def validate_batch(work_dir: Path, structured_path: Path, batch_index: int) -> dict:
@@ -38,14 +33,14 @@ def validate_batch(work_dir: Path, structured_path: Path, batch_index: int) -> d
     """
     batch_path = work_dir / "batches" / f"batch_{batch_index:03d}.json"
     if not batch_path.exists():
-        raise ScriptError(f"Batch file not found: {batch_path}")
+        raise Exception(f"Batch file not found: {batch_path}")
 
     result_path = work_dir / "results" / f"batch_{batch_index:03d}.json"
     if not result_path.exists():
-        raise ScriptError(f"Batch result manifest not found: {result_path}")
+        raise Exception(f"Batch result manifest not found: {result_path}")
 
     if not structured_path.exists():
-        raise ScriptError(f"Structured output file not found: {structured_path}")
+        raise Exception(f"Structured output file not found: {structured_path}")
 
     batch = Batch.model_validate_json(batch_path.read_text(encoding="utf-8"))
     manifest = BatchResultManifest.model_validate_json(result_path.read_text(encoding="utf-8"))
@@ -165,12 +160,11 @@ def _main() -> None:
 
     try:
         if not args.work_dir.exists():
-            raise ScriptError(f"Working directory not found: {args.work_dir}")
+            raise Exception(f"Working directory not found: {args.work_dir}")
         result = validate_batch(args.work_dir, args.structured_path, args.batch_index)
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"status": "error", "error": str(e)}))
-        sys.exit(1)
 
 
 if __name__ == "__main__":

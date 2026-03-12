@@ -7,14 +7,9 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from models import StructuredConversation
-
-
-class ScriptError(Exception):
-    pass
 
 
 def init_decision_records(structured_path: Path) -> dict:
@@ -27,7 +22,7 @@ def init_decision_records(structured_path: Path) -> dict:
         Dict with decisions_dir path and list of topic_ids.
     """
     if not structured_path.exists():
-        raise ScriptError(f"Structured output file not found: {structured_path}")
+        raise Exception(f"Structured output file not found: {structured_path}")
 
     structured = StructuredConversation.model_validate_json(structured_path.read_text(encoding="utf-8"))
     topic_ids = [topic.topic_id for topic in structured.topics]
@@ -57,7 +52,6 @@ def _main() -> None:
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"status": "error", "error": str(e)}))
-        sys.exit(1)
 
 
 if __name__ == "__main__":
