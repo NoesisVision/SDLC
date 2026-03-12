@@ -108,8 +108,4 @@ Run:
 uv run {skill_dir}/scripts/cleanup.py <work_dir>
 ```
 
-This removes the temporary working directory. The `_cleaned.json` and `_structured.json` files next to the original are preserved.
-
-## Reference Files
-
-- `references/output_format.md` — Final JSON output schema documentation, including decision record format.
+This removes the temporary working directory. The `_cleaned.json` and `_structured.json` files next to the original MUST be preserved.
