@@ -16,13 +16,13 @@
 # Usage:
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh [variant] [model] [timeout]
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik with-mcp
-#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-arch-eval with-mcp
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-assessment with-mcp
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh --tasks ddd-weather-discount with-mcp
 #
 # Examples:
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh with-mcp
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh baseline claude-sonnet-4-6 900
-#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-arch-eval with-mcp
+#   ./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-assessment with-mcp
 #   ./evals/ddd-architectural-challenges/run-benchmark.sh --tasks ddd-threshold-discount,ddd-weather-discount with-mcp
 
 set -e
@@ -36,7 +36,7 @@ cd "$REPO_ROOT"
 # ---------------------------------------------------------------------------
 
 WITH_OPIK=false
-WITH_ARCH_EVAL=false
+WITH_ASSESSMENT=false
 TASKS_FILTER=""
 VARIANT="with-mcp"
 MODEL="claude-sonnet-4-6"
@@ -48,8 +48,8 @@ while [[ $# -gt 0 ]]; do
             WITH_OPIK=true
             shift
             ;;
-        --with-arch-eval)
-            WITH_ARCH_EVAL=true
+        --with-assessment)
+            WITH_ASSESSMENT=true
             shift
             ;;
         --tasks)
@@ -94,7 +94,7 @@ echo "Model: $MODEL"
 echo "Agent timeout: ${TIMEOUT_SEC}s"
 [ -n "$TASKS_FILTER" ] && echo "Tasks: $TASKS_FILTER"
 [ "$WITH_OPIK" = true ] && echo "Opik: enabled"
-[ "$WITH_ARCH_EVAL" = true ] && echo "Arch eval: enabled"
+[ "$WITH_ASSESSMENT" = true ] && echo "Assessment eval: enabled"
 echo "=========================================="
 echo ""
 
@@ -202,11 +202,11 @@ echo "=========================================="
 echo ""
 
 # ---------------------------------------------------------------------------
-# Post-hoc architecture evaluation
+# Post-hoc assessment evaluation
 # ---------------------------------------------------------------------------
 
-if [ "$WITH_ARCH_EVAL" = true ]; then
-    echo "Running architecture evaluation..."
+if [ "$WITH_ASSESSMENT" = true ]; then
+    echo "Running assessment evaluation..."
     echo ""
     LATEST_JOB=$(ls -td "${SCRIPT_DIR}/jobs/"* 2>/dev/null | head -1)
     if [ -n "$LATEST_JOB" ]; then
@@ -214,10 +214,10 @@ if [ "$WITH_ARCH_EVAL" = true ]; then
         [ "$WITH_OPIK" = true ] && OPIK_FLAG="--with-opik"
         # Unset CLAUDECODE to allow Claude Code SDK to launch a new session
         unset CLAUDECODE
-        uv run python evals/eval-platforms/evaluate_architecture.py \
+        uv run python evals/eval-platforms/evaluate_assessment.py \
             --job-dir "$LATEST_JOB" $OPIK_FLAG
     else
-        echo "WARN: No job directory found for architecture evaluation"
+        echo "WARN: No job directory found for assessment evaluation"
     fi
     echo ""
 fi

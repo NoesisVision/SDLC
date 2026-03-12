@@ -1,13 +1,13 @@
-"""Post-hoc architecture evaluation using Claude Code SDK.
+"""Post-hoc assessment evaluation using Claude Code SDK.
 
-Analyzes AI-generated code from Harbor trials for DDD/Hexagonal Architecture
-quality. Scores are written locally and optionally uploaded to Opik as
-feedback scores on existing traces.
+Analyzes AI-generated artifacts from Harbor trials against assessment criteria
+and optional ground truth. Scores are written locally and optionally uploaded
+to Opik as feedback scores on existing traces.
 
 Usage:
-    uv run python evals/eval-platforms/evaluate_architecture.py \
+    uv run python evals/eval-platforms/evaluate_assessment.py \
         --trial-dir evals/<benchmark>/jobs/<ts>/<trial>
-    uv run python evals/eval-platforms/evaluate_architecture.py \
+    uv run python evals/eval-platforms/evaluate_assessment.py \
         --job-dir evals/<benchmark>/jobs/<ts> --with-opik
 """
 
@@ -63,7 +63,6 @@ def _patched_parse_message(data: dict) -> object:
 _sdk_client.parse_message = _patched_parse_message
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_PROJECT = "ddd-architectural-challenges"
 
 
 # ---------------------------------------------------------------------------
@@ -111,41 +110,49 @@ def main() -> None:
         print(f"\n{'='*60}")
         print(f"Evaluating: {trial_dir.name}")
         print(f"{'='*60}")
-        evaluation = asyncio.run(evaluate_trial(trial_dir))
+        evaluation, project_name = asyncio.run(evaluate_trial(trial_dir))
         if evaluation:
             _write_evaluation_result(trial_dir, evaluation)
             if args.with_opik:
-                _upload_to_opik(evaluation)
+                _upload_to_opik(evaluation, project_name)
 
 
-async def evaluate_trial(trial_dir: Path) -> ArchitectureEvaluation | None:
-    """Orchestrate architecture evaluation for a single trial."""
+async def evaluate_trial(
+    trial_dir: Path,
+) -> tuple[ArchitectureEvaluation | None, str]:
+    """Orchestrate assessment evaluation for a single trial."""
     workspace_path = trial_dir / "artifacts" / "workspace"
     if not workspace_path.exists():
         print(f"  SKIP: No artifacts/workspace/ in {trial_dir.name}")
-        return None
+        return None, ""
 
     result_json = _load_json(trial_dir / "result.json")
     task_name = _resolve_task_name(result_json)
     task_dir = _resolve_task_dir(result_json)
+    project_name = result_json.get("source", "ddd-architectural-challenges")
     trial_name = result_json.get("trial_name", trial_dir.name)
     agent_name = _resolve_agent_name(trial_dir)
     harbor_reward = result_json.get("verifier_result", {}).get("rewards", {}).get("reward", 0.0)
     duration_sec = _compute_duration_sec(result_json)
 
-    dimensions_path = task_dir.parent.parent / "architecture_dimensions.json"
+    dimensions_path = task_dir.parent.parent / "assessment_dimensions.json"
     expected_dimensions = _load_expected_dimensions(dimensions_path)
 
-    criteria_path = task_dir / "architecture_criteria.md"
+    criteria_path = task_dir / "assessment_criteria.md"
     if not criteria_path.exists():
-        print(f"  SKIP: No architecture_criteria.md for task '{task_name}'")
-        return None
+        print(f"  SKIP: No assessment_criteria.md for task '{task_name}'")
+        return None, project_name
 
     instruction_path = task_dir / "instruction.md"
     criteria = criteria_path.read_text()
     instruction = instruction_path.read_text() if instruction_path.exists() else ""
 
-    prompt = _build_evaluator_prompt(instruction, criteria, expected_dimensions)
+    ground_truth_path = task_dir / "ground_truth_decisions.json"
+    ground_truth = ground_truth_path.read_text() if ground_truth_path.exists() else ""
+
+    prompt = _build_evaluator_prompt(
+        instruction, criteria, expected_dimensions, ground_truth,
+    )
     print(f"  Task: {task_name}")
     print(f"  Workspace: {workspace_path}")
     print("  Running Claude Code evaluation...")
@@ -155,7 +162,7 @@ async def evaluate_trial(trial_dir: Path) -> ArchitectureEvaluation | None:
 
     if not evaluation:
         print("  ERROR: Failed to parse evaluation response")
-        return None
+        return None, project_name
 
     evaluation.task_name = task_name
     evaluation.trial_name = trial_name
@@ -169,7 +176,7 @@ async def evaluate_trial(trial_dir: Path) -> ArchitectureEvaluation | None:
     for dim in evaluation.dimensions:
         print(f"    {dim.name}: {dim.score}/{dim.max_score}")
 
-    return evaluation
+    return evaluation, project_name
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +231,7 @@ def _compute_duration_sec(result: dict) -> float:
 
 
 def _load_expected_dimensions(dimensions_path: Path) -> list[dict] | None:
-    """Load dimension definitions from architecture_dimensions.json."""
+    """Load dimension definitions from assessment_dimensions.json."""
     if not dimensions_path.exists():
         return None
     data = _load_json(dimensions_path)
@@ -240,15 +247,17 @@ def _build_evaluator_prompt(
     instruction: str,
     criteria: str,
     expected_dimensions: list[dict] | None,
+    ground_truth: str = "",
 ) -> str:
-    """Build the evaluation prompt with optional dimension constraints."""
+    """Build the evaluation prompt with optional dimension constraints and ground truth."""
     dimension_constraint = _format_dimension_constraint(expected_dimensions)
+    ground_truth_section = _format_ground_truth_section(ground_truth)
 
-    return f"""You are an expert software architect evaluating AI-generated C# code for DDD and Hexagonal Architecture quality.
+    return f"""You are an expert evaluator assessing AI-generated artifacts against defined criteria.
 
 ## Your task
 
-Analyze the codebase in the current working directory. This code was generated by an AI agent that was given the following task instruction:
+Analyze the artifacts in the current working directory. These were generated by an AI agent that was given the following task instruction:
 
 <task_instruction>
 {instruction}
@@ -256,18 +265,18 @@ Analyze the codebase in the current working directory. This code was generated b
 
 ## Evaluation criteria
 
-Score the code on the following dimensions. Each dimension is 0–25 points. Follow the rubric EXACTLY — assign the score that matches the description, not higher.
+Score the output on the following dimensions. Each dimension is 0–25 points. Follow the rubric EXACTLY — assign the score that matches the description, not higher.
 
 <criteria>
 {criteria}
 </criteria>
-
+{ground_truth_section}
 ## How to evaluate
 
-1. Use `Glob` to understand the project structure (find all .cs files).
-2. Use `Read` to examine the key domain types, architectural boundaries, infrastructure code, and tests.
-3. Use `Grep` to search for specific patterns (IEquatable, readonly struct, interface implementations, etc.).
-4. For each dimension, find concrete evidence in the code before assigning a score.
+1. Use `Glob` to discover all output files in the workspace.
+2. Use `Read` to examine the content of each output file.
+3. Use `Grep` to search for specific patterns or keywords.
+4. For each dimension, find concrete evidence before assigning a score.
 
 ## Output format
 
@@ -276,7 +285,7 @@ After your analysis, output a single JSON block with your evaluation. The JSON M
 ```json
 {{
   "dimensions": [
-    {{"name": "<dimension_snake_case>", "score": <0-25>, "max_score": 25, "reasoning": "<1-3 sentences with specific file/line references>"}},
+    {{"name": "<dimension_snake_case>", "score": <0-25>, "max_score": 25, "reasoning": "<1-3 sentences with specific evidence references>"}},
     ...
   ],
   "total_score": <sum of all dimension scores>,
@@ -286,7 +295,7 @@ After your analysis, output a single JSON block with your evaluation. The JSON M
 ```
 
 IMPORTANT:
-- Be precise — reference specific files and patterns you found.
+- Be precise — reference specific files and content you found.
 - Do NOT inflate scores. If evidence is missing, score lower.
 {dimension_constraint}- Output exactly {len(expected_dimensions) if expected_dimensions else 4} dimensions.
 """
@@ -299,6 +308,21 @@ def _format_dimension_constraint(expected_dimensions: list[dict] | None) -> str:
     names = [d["name"] for d in expected_dimensions]
     names_list = ", ".join(f"`{n}`" for n in names)
     return f"- Output EXACTLY these dimension names in this order: {names_list}.\n"
+
+
+def _format_ground_truth_section(ground_truth: str) -> str:
+    """Format ground truth as an additional prompt section if available."""
+    if not ground_truth:
+        return ""
+    return f"""
+## Ground truth reference
+
+Use the following ground truth to evaluate completeness and accuracy. The agent's output should capture these decisions — missing or incorrect decisions should lower the score.
+
+<ground_truth>
+{ground_truth}
+</ground_truth>
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +431,7 @@ def _validate_dimensions(
 
 
 def _write_evaluation_result(trial_dir: Path, evaluation: ArchitectureEvaluation) -> None:
-    output_path = trial_dir / "architecture_eval.json"
+    output_path = trial_dir / "assessment_eval.json"
     with open(output_path, "w") as f:
         json.dump(asdict(evaluation), f, indent=2)
     print(f"  Written: {output_path}")
@@ -418,7 +442,7 @@ def _write_evaluation_result(trial_dir: Path, evaluation: ArchitectureEvaluation
 # ---------------------------------------------------------------------------
 
 
-def _upload_to_opik(evaluation: ArchitectureEvaluation) -> None:
+def _upload_to_opik(evaluation: ArchitectureEvaluation, project_name: str) -> None:
     try:
         import opik
     except ImportError:
@@ -426,13 +450,13 @@ def _upload_to_opik(evaluation: ArchitectureEvaluation) -> None:
         return
 
     client = opik.Opik()
-    trace_id = _find_opik_trace(client, evaluation.trial_name, evaluation.agent_name)
+    trace_id = _find_opik_trace(client, evaluation.trial_name, evaluation.agent_name, project_name)
 
     if not trace_id:
         print(f"  Creating new trace for {evaluation.trial_name}")
         new_trace = client.trace(
-            name=f"{evaluation.trial_name}__arch-eval",
-            project_name=DEFAULT_PROJECT,
+            name=f"{evaluation.trial_name}__assessment-eval",
+            project_name=project_name,
             input={"task_name": evaluation.task_name},
             output={"summary": evaluation.summary},
         )
@@ -470,12 +494,17 @@ def _upload_to_opik(evaluation: ArchitectureEvaluation) -> None:
         }
     )
 
-    client.log_traces_feedback_scores(scores, project_name=DEFAULT_PROJECT)
+    client.log_traces_feedback_scores(scores, project_name=project_name)
     client.flush()
     print(f"  Uploaded {len(scores)} feedback scores to Opik (trace {trace_id})")
 
 
-def _find_opik_trace(client: "opik.Opik", trial_name: str, agent_name: str) -> str | None:
+def _find_opik_trace(
+    client: "opik.Opik",
+    trial_name: str,
+    agent_name: str,
+    project_name: str,
+) -> str | None:
     """Find an existing Opik trace for this trial.
 
     Uses wait_for_at_least to handle eventual consistency — the Harbor
@@ -485,7 +514,7 @@ def _find_opik_trace(client: "opik.Opik", trial_name: str, agent_name: str) -> s
 
     try:
         traces = client.search_traces(
-            project_name=DEFAULT_PROJECT,
+            project_name=project_name,
             filter_string=f'name = "{search_name}"',
             max_results=1,
             wait_for_at_least=1,

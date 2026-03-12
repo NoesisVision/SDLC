@@ -10,7 +10,7 @@ Do not write custom code until necessary
 ```
 evals/
 ├── eval-platforms/          # Reusable framework: parsers, importers, evaluators
-│   ├── evaluate_architecture.py   # Architecture evaluator (Claude Code SDK + Opik)
+│   ├── evaluate_assessment.py     # Assessment evaluator (Claude Code SDK + Opik)
 │   ├── atif_parser.py             # ATIF trajectory parser
 │   ├── import_opik.py             # Opik importer (deprecated)
 │   └── patches/                   # Vendor patches
@@ -18,7 +18,7 @@ evals/
     ├── run-benchmark.sh           # Benchmark runner
     ├── tasks/<task>/
     │   ├── instruction.md         # What the agent must do
-    │   └── architecture_criteria.md  # Evaluation rubric (per task)
+    │   └── assessment_criteria.md # Evaluation rubric (per task)
     └── variants/                  # Agent configurations
 ```
 
@@ -68,7 +68,7 @@ Remove when opik changelog mentions harbor token/metrics fix.
 ## Runtime monkeypatches (no action needed after reinstall)
 
 **claude-code-sdk unknown message types** (claude-code-sdk 0.0.25):
-In `eval-platforms/evaluate_architecture.py`. SDK crashes on `rate_limit_event` messages.
+In `eval-platforms/evaluate_assessment.py`. SDK crashes on `rate_limit_event` messages.
 Monkeypatch replaces `parse_message` to ignore unknown types.
 Remove when: `grep "Unknown message type" .venv/.../message_parser.py`
 shows `logger.debug` instead of `raise MessageParseError`.
