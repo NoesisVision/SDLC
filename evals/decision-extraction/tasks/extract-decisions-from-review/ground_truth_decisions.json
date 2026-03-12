@@ -1,0 +1,72 @@
+{
+  "decisions": [
+    {
+      "topic_id": "topic_001",
+      "topic_name": "Order Aggregate Persistence (Write Side)",
+      "context": "The team discussed which persistence strategy to adopt for the Order aggregate write side, given that the ddd-starter-dotnet repository contains four implementations: EF Core (OrderSqlRepository.EF.cs), Raw SQL, Marten Document Store (OrderSqlRepository.Document.cs), and Event Sourcing (OrderSqlRepository.EventsSourcing.cs).",
+      "decision": {
+        "description": "Adopt Marten Document Store (JSONB) for Order aggregate persistence on the write side",
+        "rationale": "JSONB is flexible for storing rich aggregates as single documents, Marten is already in the stack, and it is simpler than Event Sourcing while avoiding ORM impedance mismatch. Event Sourcing is overkill at the current scale.",
+        "consequences": "The team gets a pragmatic persistence solution that fits the rich domain model. However, they lose the full audit trail that Event Sourcing provides. May need to revisit if compliance/audit requirements grow."
+      },
+      "alternative_options": [
+        {
+          "description": "Event Sourcing with full event store",
+          "rejection_rationale": "Too complex at current scale — event versioning, snapshots, and projections add significant overhead. The team doesn't need the audit trail capabilities enough to justify the complexity."
+        },
+        {
+          "description": "EF Core ORM",
+          "rejection_rationale": "ORM impedance mismatch with the rich domain model. EF works well for simple CRUD but creates friction with complex aggregates and value objects."
+        },
+        {
+          "description": "Raw SQL",
+          "rejection_rationale": "Too low-level for the aggregate persistence needs. High maintenance burden without the benefits of a document store or ORM."
+        }
+      ],
+      "design_concerns": ["Technology", "DomainModel"]
+    },
+    {
+      "topic_id": "topic_002",
+      "topic_name": "Read Side Query Strategy (CQRS)",
+      "context": "As part of the persistence discussion, the team considered what to use for the read/query side, complementing the Marten choice for the write side. This follows a CQRS pattern where read and write models are separated.",
+      "decision": {
+        "description": "Keep EF Core for read side queries, creating a CQRS split with Marten on the write side",
+        "rationale": "EF Core is mature, the team is familiar with it, and LINQ makes complex queries easy to write. It complements Marten on the write side without requiring the team to learn Marten's query capabilities.",
+        "consequences": "Two persistence technologies in the same bounded context, which increases operational complexity. However, each is used where it excels — Marten for aggregate storage, EF for queries."
+      },
+      "alternative_options": [
+        {
+          "description": "Use Marten for both read and write sides",
+          "rejection_rationale": "Marten's LINQ provider is less mature than EF Core's. The team is more comfortable with EF for complex queries."
+        },
+        {
+          "description": "Event Sourcing projections for read models",
+          "rejection_rationale": "Unnecessary complexity since Event Sourcing was already rejected for the write side."
+        }
+      ],
+      "design_concerns": ["Technology"]
+    },
+    {
+      "topic_id": "topic_003",
+      "topic_name": "Sales-RiskManagement Integration Pattern",
+      "context": "PlaceOrderHandler in the Sales bounded context calls RiskManagementIntegration.GetMaxOrderTotalCostFor() synchronously to check risk limits before placing an order. The team debated whether to keep this synchronous integration or switch to asynchronous domain events.",
+      "decision": {
+        "description": "Keep synchronous integration between Sales and RiskManagement bounded contexts",
+        "rationale": "The current scale does not justify the complexity of async patterns. Synchronous calls are simpler, easier to debug, and the team is familiar with them. YAGNI — the async complexity should only be introduced when traffic actually demands it.",
+        "consequences": "Sales remains coupled to RiskManagement at runtime. If RiskManagement is down, order placement fails. This is an accepted trade-off at current scale but should be revisited when traffic grows."
+      },
+      "alternative_options": [
+        {
+          "description": "Async domain events with a process manager",
+          "rejection_rationale": "Adds significant complexity (outbox pattern, eventual consistency, error handling) without clear benefit at current traffic levels. The outbox infrastructure exists in TechnicalStuff but the overhead is not justified."
+        },
+        {
+          "description": "Saga pattern for distributed transaction",
+          "rejection_rationale": "Even more complex than async events. Overkill for a two-service interaction at current scale."
+        }
+      ],
+      "design_concerns": ["QualityAttribute", "Infrastructure", "DomainModel"],
+      "notes": "Team conflict: Linh advocated strongly for async based on experience with high-traffic systems. Tomasz defended sync with YAGNI argument. James mediated and sided with sync, agreeing to revisit when scale demands it."
+    }
+  ]
+}

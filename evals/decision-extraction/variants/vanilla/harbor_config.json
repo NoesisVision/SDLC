@@ -1,0 +1,14 @@
+{
+  "agents": [
+    {
+      "import_path": "evals.claude_custom_agents:ConfigurableClaude",
+      "name": "vanilla",
+      "kwargs": {
+        "sandbox_files": {
+          "/app/CLAUDE.md": "evals/decision-extraction/variants/vanilla/CLAUDE.md",
+          "/app/transcript.md": "evals/decision-extraction/tasks/extract-decisions-from-review/transcript.md"
+        }
+      }
+    }
+  ]
+}
