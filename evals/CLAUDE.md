@@ -45,8 +45,10 @@ nasde eval evals/decision-extraction/jobs/<timestamp> -C evals/decision-extracti
 
 # Prerequisites
 
-nasde-toolkit must be installed. From the nasde-toolkit repo:
+nasde-toolkit must be installed:
 
 ```bash
-uv tool install .
+uv tool install git+ssh://git@github.com/NoesisVision/nasde-toolkit.git
 ```
+
+To verify: `nasde --version`
