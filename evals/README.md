@@ -1,105 +1,60 @@
 # Evals
 
-System ewaluacji agentów AI używający [Harbor](https://github.com/harbor-ai/harbor) do uruchamiania triali i [Opik](https://github.com/comet-ml/opik) do śledzenia metryk.
+Benchmark for the `extract_decisions` skill — extracts software design decisions from team conversation transcripts.
 
-## Struktura
+Uses [nasde-toolkit](../nasde-toolkit/) for benchmark orchestration (Harbor + LLM-as-a-Judge assessment + Opik tracking).
 
-```
-evals/
-├── eval-platforms/                   # Reusable framework (niezależny od benchmarku)
-│   ├── evaluate_architecture.py      # Ewaluator architektury (Claude Code SDK + Opik)
-│   ├── atif_parser.py                # Parser trajektorii ATIF
-│   ├── import_opik.py                # (deprecated) Import do Opik
-│   ├── .env                          # OPIK_API_KEY, OPIK_WORKSPACE
-│   └── patches/                      # Patche vendor bibliotek
-├── ddd-architectural-challenges/     # Benchmark: DDD/Hexagonal Architecture
-│   ├── run-benchmark.sh              # Uruchamia benchmark (Harbor + opcjonalnie Opik/arch eval)
-│   ├── tasks/                        # Definicje zadań
-│   │   ├── ddd-threshold-discount/
-│   │   │   ├── instruction.md
-│   │   │   └── architecture_criteria.md   # Kryteria oceny architektury
-│   │   └── ddd-weather-discount/
-│   │       ├── instruction.md
-│   │       └── architecture_criteria.md
-│   ├── variants/                     # Konfiguracje agentów
-│   └── jobs/                         # Wyniki triali (gitignored)
-└── export_oauth_token.sh             # Eksport tokena z macOS Keychain
-```
-
-## Vendor patches — podejścia i decyzje
-
-W tym projekcie stosujemy dwa podejścia do łatania bugów w zależnościach. Wybór zależy od charakteru buga.
-
-### Podejście 1: Plik `.patch` (modyfikacja pliku na dysku)
-
-**Jak działa:** `patch` modyfikuje plik źródłowy biblioteki w `.venv/`. Po aplikacji plik jest zmieniony na stałe — do czasu reinstalacji.
-
-**Kiedy stosujemy:** Gdy bug wymaga złożonych zmian w klasie (np. dodanie nowych metod, zmiana `__init__` i `__setattr__` jednocześnie), których nie da się łatwo podmienić z zewnątrz.
-
-**Wady:** Trzeba re-aplikować po każdym `uv sync` / `uv pip install`.
-
-**Przykład:** `opik_harbor_deferred_metrics.patch` — opik 1.10.26 tworzy spany w `Step.__init__`, ale Harbor przypisuje metryki po konstrukcji. Patch dodaje nową funkcję `_create_span_for_step()`, zmienia `__init__` i dodaje `__setattr__` hook. Nie da się tego zrobić runtime monkeypatchem bo wymaga precyzyjnego patchowania kilku powiązanych miejsc w klasie.
+## Quick start
 
 ```bash
-# Aplikacja po reinstalacji opik:
-./evals/eval-platforms/patches/apply_opik_patches.sh
+# Install nasde-toolkit (once)
+uv tool install path/to/nasde-toolkit
 
-# Weryfikacja:
-./evals/eval-platforms/patches/apply_opik_patches.sh --check
+# Run benchmark with default variant
+nasde run -C evals/decision-extraction
+
+# Run with Opik tracking
+nasde run --variant with-skill --with-opik -C evals/decision-extraction
+
+# Re-evaluate existing results
+nasde eval evals/decision-extraction/jobs/<timestamp> -C evals/decision-extraction --with-opik
 ```
 
-### Podejście 2: Runtime monkeypatch (podmiana w pamięci)
+## Variants
 
-**Jak działa:** Nasz kod Pythona podmienia funkcję/metodę biblioteki przy starcie programu. Plik na dysku się nie zmienia.
+| Variant | Description |
+|---------|-------------|
+| `vanilla` | Baseline — agent extracts decisions without the skill |
+| `with-skill` | Agent uses `extract_decisions` skill with subagent workflow |
 
-**Kiedy stosujemy:** Gdy bug dotyczy jednej pure function, a nasz kod jest jedynym konsumentem. Monkeypatch jest self-contained — nie wymaga osobnego kroku po reinstalacji.
+## Assessment dimensions
 
-**Wady:** Zależy od wewnętrznej struktury importów biblioteki (trzeba wiedzieć, w którym module podmienić referencję).
+| Dimension | Max score | Description |
+|-----------|-----------|-------------|
+| Completeness | 25 | Finding all major decisions with full detail |
+| Accuracy | 25 | Correct decisions with faithful rationale and speaker attribution |
+| Structure Quality | 25 | Well-formed JSON with clear context, rationale, consequences |
+| Context Relevance | 25 | Correct codebase references and technical context |
 
-**Przykład:** `eval-platforms/evaluate_architecture.py` — claude-code-sdk 0.0.25 rzuca `MessageParseError` na nieznane typy wiadomości (np. `rate_limit_event`), co crashuje cały async stream. Monkeypatch podmienia `parse_message` w module `client` (nie `message_parser` — bo `client.py` importuje funkcję jako local name). Ewaluator jest jedynym konsumentem SDK, więc monkeypatch jest lokalny i bezpieczny.
+## Opik verification
 
-### Podsumowanie
+After runs with `--with-opik`, verify results via REST API (credentials in `.env`):
 
-| Cecha | Plik `.patch` | Runtime monkeypatch |
-|-------|---------------|---------------------|
-| Przetrwa `uv sync` | Nie — wymaga re-aplikacji | Tak — jest w naszym kodzie |
-| Złożoność zmian | Dowolna (diff na pliku) | Tylko zamiana funkcji/metod |
-| Ryzyko | Zapomnienie re-aplikacji | Zmiana wewnętrznej struktury importów |
-| Przykład | opik `Step.__init__`+`__setattr__` | claude-code-sdk `parse_message` |
+```python
+python3 -c "
+import urllib.request, json
 
-## Uruchamianie benchmarku
-
-```bash
-# Tylko benchmark (Harbor)
-./evals/ddd-architectural-challenges/run-benchmark.sh with-mcp
-
-# Benchmark + Opik tracking
-./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik with-mcp
-
-# Benchmark + Opik + ewaluacja architektury
-./evals/ddd-architectural-challenges/run-benchmark.sh --with-opik --with-arch-eval with-mcp
-
-# Standalone ewaluacja architektury na istniejącym trialu
-uv run python evals/eval-platforms/evaluate_architecture.py \
-    --trial-dir evals/ddd-architectural-challenges/jobs/<ts>/<trial> --with-opik
+req = urllib.request.Request(
+    'https://www.comet.com/opik/api/v1/private/traces?project_name=decision-extraction&limit=1',
+    headers={
+        'authorization': '<OPIK_API_KEY>',
+        'Comet-Workspace': '<OPIK_WORKSPACE>',
+    },
+)
+resp = json.loads(urllib.request.urlopen(req).read())
+trace = resp['content'][0]
+print(f'Trace: {trace[\"name\"]}')
+for s in sorted(trace.get('feedback_scores', []), key=lambda x: x['name']):
+    print(f'  {s[\"name\"]}: {s[\"value\"]}')
+"
 ```
-
-## Weryfikacja wyników w Opik (REST API)
-
-```bash
-# Lista traces z feedback scores
-curl -s \
-    -H "authorization: $OPIK_API_KEY" \
-    -H "Comet-Workspace: $OPIK_WORKSPACE" \
-    "https://www.comet.com/opik/api/v1/private/traces?project_name=ddd-architectural-challenges&limit=5" \
-    | python3 -m json.tool
-
-# Konkretny trace
-curl -s \
-    -H "authorization: $OPIK_API_KEY" \
-    -H "Comet-Workspace: $OPIK_WORKSPACE" \
-    "https://www.comet.com/opik/api/v1/private/traces/<trace-id>?project_name=ddd-architectural-challenges" \
-    | python3 -m json.tool
-```
-
-Header autoryzacji to `authorization: <OPIK_API_KEY>` (nie `Comet-Api-Key`).

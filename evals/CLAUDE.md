@@ -1,74 +1,52 @@
 # Approach
 
-Always check documentation before implementing anything!! Make attempts to find solutions which are confirmed and recommended in documentation instead of following tempting ideas to extend capabilities by custom code!
-Hacky integration ideas using custom scripts are STRONGLY DISCOURAGED.
-
-Do not write custom code until necessary
+Use the **nasde-toolkit** CLI for all benchmark operations. Do NOT write custom
+evaluation code — nasde handles Harbor orchestration, assessment evaluation,
+and Opik integration.
 
 # Directory structure
 
 ```
 evals/
-├── eval-platforms/          # Reusable framework: parsers, importers, evaluators
-│   ├── evaluate_assessment.py     # Assessment evaluator (Claude Code SDK + Opik)
-│   ├── atif_parser.py             # ATIF trajectory parser
-│   ├── import_opik.py             # Opik importer (deprecated)
-│   └── patches/                   # Vendor patches
-└── <benchmark-name>/        # Benchmark-specific: tasks, variants, runner
-    ├── run-benchmark.sh           # Benchmark runner
-    ├── tasks/<task>/
-    │   ├── instruction.md         # What the agent must do
-    │   └── assessment_criteria.md # Evaluation rubric (per task)
-    └── variants/                  # Agent configurations
+└── decision-extraction/        # Benchmark: architectural decision extraction
+    ├── nasde.toml              # Project config (nasde-toolkit format)
+    ├── assessment_dimensions.json
+    ├── .env                    # Opik credentials (gitignored)
+    ├── tasks/
+    │   └── extract-decisions-from-review/
+    │       ├── task.json       # Task metadata
+    │       ├── task.toml       # Agent/verifier timeouts
+    │       ├── instruction.md
+    │       ├── assessment_criteria.md
+    │       ├── ground_truth_decisions.json
+    │       ├── transcript.md
+    │       ├── environment/Dockerfile
+    │       └── tests/test.sh
+    └── variants/
+        ├── vanilla/            # Baseline (no skill)
+        └── with-skill/         # Uses extract_decisions skill
 ```
 
-**Rule:** Code that could work with any benchmark goes in `eval-platforms/`.
-Task definitions, evaluation criteria, and benchmark runners go in the
-benchmark directory. The evaluator discovers task paths from `result.json`
-(`task_id.path`), not from hardcoded paths.
-
-# Environment setup
-
-Both `harbor-ai` and `opik` must be installed in the **same** Python virtual environment
-so that `opik harbor run` can import the Harbor module.
-
-The project uses `uv` with a single `.venv` at the repo root. All CLI tools
-(harbor, opik) must be invoked via `uv run` — never via globally-installed
-`uv tool` shims, which run in isolated venvs and cannot see each other's packages.
+# Running benchmarks
 
 ```bash
-# Correct — uses project .venv where both packages coexist:
-uv run opik harbor run --config config.json
-uv run harbor run --config config.json
+# All tasks, default variant (vanilla)
+nasde run -C evals/decision-extraction
 
-# Wrong — isolated uv tool venvs, opik cannot import harbor:
-opik harbor run --config config.json
+# Specific variant with Opik tracking
+nasde run --variant with-skill --with-opik -C evals/decision-extraction
+
+# Skip assessment evaluation
+nasde run --variant vanilla --without-eval -C evals/decision-extraction
+
+# Re-evaluate existing results
+nasde eval evals/decision-extraction/jobs/<timestamp> -C evals/decision-extraction --with-opik
 ```
 
-# Vendor patches
+# Prerequisites
 
-Two patching approaches are used in this project. See `evals/README.md` for
-detailed trade-off analysis.
-
-## File patches (re-apply after `uv sync`)
-
-After reinstalling opik (`uv pip install opik` or `uv sync`), re-apply patches:
+nasde-toolkit must be installed. From the nasde-toolkit repo:
 
 ```bash
-./evals/eval-platforms/patches/apply_opik_patches.sh          # apply
-./evals/eval-platforms/patches/apply_opik_patches.sh --check   # verify
+uv tool install .
 ```
-
-**opik_harbor_deferred_metrics.patch** (opik 1.10.26):
-Fixes token usage being None in Opik spans. Root cause: Harbor's claude_code
-agent assigns `step.metrics` after `Step.__init__`, but Opik reads metrics
-during `__init__`. Patch defers span creation to `__setattr__` hook.
-Remove when opik changelog mentions harbor token/metrics fix.
-
-## Runtime monkeypatches (no action needed after reinstall)
-
-**claude-code-sdk unknown message types** (claude-code-sdk 0.0.25):
-In `eval-platforms/evaluate_assessment.py`. SDK crashes on `rate_limit_event` messages.
-Monkeypatch replaces `parse_message` to ignore unknown types.
-Remove when: `grep "Unknown message type" .venv/.../message_parser.py`
-shows `logger.debug` instead of `raise MessageParseError`.

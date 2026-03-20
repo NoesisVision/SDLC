@@ -1,12 +1,12 @@
 {
   "agents": [
     {
-      "import_path": "evals.claude_custom_agents:ConfigurableClaude",
+      "import_path": "nasde_toolkit.agents.configurable_claude:ConfigurableClaude",
       "name": "vanilla",
       "kwargs": {
         "sandbox_files": {
-          "/app/CLAUDE.md": "evals/decision-extraction/variants/vanilla/CLAUDE.md",
-          "/app/transcript.md": "evals/decision-extraction/tasks/extract-decisions-from-review/transcript.md"
+          "/app/CLAUDE.md": "variants/vanilla/CLAUDE.md",
+          "/app/transcript.md": "tasks/extract-decisions-from-review/transcript.md"
         }
       }
     }
