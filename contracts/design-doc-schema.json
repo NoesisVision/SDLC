@@ -1,189 +1,545 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "design-doc-schema.json",
-  "title": "Design Doc Schema",
-  "description": "Schema for rules, use cases, domain concepts, scenarios, and quality attributes",
-  "type": "object",
-  "properties": {
-    "rules": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/Rule" }
-    },
-    "useCases": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/UseCase" }
-    },
-    "domainConcepts": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/DomainConcept" }
-    },
-    "scenarios": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/Scenario" }
-    },
-    "qualityAttributes": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/QualityAttribute" }
-    }
-  },
   "$defs": {
-    "Rule": {
-      "type": "object",
+    "Actor": {
       "properties": {
         "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "Behaviour": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "input": {
+          "description": "List of BuildingBlock ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Input",
+          "type": "array"
+        },
+        "output": {
+          "description": "List of BuildingBlock ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Output",
+          "type": "array"
+        },
+        "rules": {
+          "description": "List of Rule ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Rules",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ],
+      "title": "Behaviour",
+      "type": "object"
+    },
+    "BoundedContext": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "modules": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainModule"
+          },
+          "title": "Modules",
+          "type": "array"
+        },
+        "buildingBlocks": {
+          "description": "List of BuildingBlock ids not in any module",
+          "items": {
+            "type": "string"
+          },
+          "title": "Buildingblocks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "title": "BoundedContext",
+      "type": "object"
+    },
+    "BuildingBlock": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/BuildingBlockType"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Property"
+          },
+          "default": [],
+          "title": "Properties"
+        },
+        "behaviours": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Behaviour"
+          },
+          "title": "Behaviours",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "description"
+      ],
+      "title": "BuildingBlock",
+      "type": "object"
+    },
+    "BuildingBlockType": {
+      "enum": [
+        "aggregate",
+        "entity",
+        "value_object",
+        "domain_event",
+        "domain_command",
+        "domain_query",
+        "domain_service",
+        "application_service",
+        "repository",
+        "factory",
+        "external_integration"
+      ],
+      "title": "BuildingBlockType",
+      "type": "string"
+    },
+    "BusinessGoal": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "title": "BusinessGoal",
+      "type": "object"
+    },
+    "DomainConcept": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "title": "DomainConcept",
+      "type": "object"
+    },
+    "DomainModule": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "buildingBlocks": {
+          "description": "List of BuildingBlock ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Buildingblocks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "title": "DomainModule",
+      "type": "object"
+    },
+    "Property": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "title": "Property",
+      "type": "object"
+    },
+    "QualityAttribute": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/QualityAttributeType"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "description"
+      ],
+      "title": "QualityAttribute",
+      "type": "object"
+    },
+    "QualityAttributeType": {
+      "enum": [
+        "performance",
+        "availability",
+        "security",
+        "other"
+      ],
+      "title": "QualityAttributeType",
+      "type": "string"
+    },
+    "Rule": {
+      "properties": {
+        "id": {
+          "title": "Id",
           "type": "string"
         },
         "ruleType": {
-          "type": "string",
-          "enum": ["Consistency", "Structure", "Computation", "State change"]
+          "$ref": "#/$defs/RuleType"
         },
-        "state": {
-          "type": "string",
-          "enum": ["Confirmed", "Assumed"]
-        },
-        "ruleDescription": {
+        "description": {
+          "title": "Description",
           "type": "string"
         }
       },
-      "required": ["id", "type", "state", "description"]
+      "required": [
+        "id",
+        "ruleType",
+        "description"
+      ],
+      "title": "Rule",
+      "type": "object"
     },
-    "UseCase": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "UCDescription": {
-          "type": "string"
-        },
-        "UCType": {
-          "type": "string",
-          "enum": ["Command", "Event", "Query"]
-        },
-        "state": {
-          "type": "string",
-          "enum": ["Confirmed", "Assumed"]
-        },
-        "input": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/DomainConceptRef" }
-        },
-        "rules": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/RuleRef" }
-        },
-        "output": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/DomainConceptRef" }
-        },
-        "sideEffects": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "scenarios": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/ScenarioRef" }
-        },
-        "qualities": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/QualityAttributeRef" }
-        }
-      },
-      "required": ["id", "name", "type", "state"]
-    },
-    "DomainConcept": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "definition": {
-          "type": "string"
-        }
-      },
-      "required": ["id", "name", "definition"]
+    "RuleType": {
+      "enum": [
+        "Consistency",
+        "Structure",
+        "Computation",
+        "State change"
+      ],
+      "title": "RuleType",
+      "type": "string"
     },
     "Scenario": {
-      "type": "object",
       "properties": {
         "name": {
+          "title": "Name",
           "type": "string"
         },
-        "ScenarioDescription": {
+        "description": {
+          "title": "Description",
           "type": "string"
         },
-        "content": {
+        "given": {
+          "title": "Given",
+          "type": "string"
+        },
+        "when": {
+          "title": "When",
+          "type": "string"
+        },
+        "then": {
+          "title": "Then",
           "type": "string"
         }
       },
-      "required": ["name", "description", "content"]
+      "required": [
+        "name",
+        "description",
+        "given",
+        "when",
+        "then"
+      ],
+      "title": "Scenario",
+      "type": "object"
     },
-    "QualityAttribute": {
-      "type": "object",
+    "UseCase": {
       "properties": {
         "id": {
+          "title": "Id",
           "type": "string"
         },
         "name": {
+          "title": "Name",
           "type": "string"
         },
-        "QAType": {
-          "type": "string",
-          "enum": ["performance", "availability", "CAPEX", "OPEX", "security", "other"]
-        },
-        "QADescription": {
+        "actor": {
+          "description": "Reference to an Actor id",
+          "title": "Actor",
           "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/UseCaseType"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "businessGoal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reference to a BusinessGoal id",
+          "title": "Businessgoal"
+        },
+        "input": {
+          "description": "List of BuildingBlock ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Input",
+          "type": "array"
+        },
+        "output": {
+          "description": "List of BuildingBlock ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Output",
+          "type": "array"
+        },
+        "usedBuildingBlocks": {
+          "description": "List of BuildingBlock ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Usedbuildingblocks",
+          "type": "array"
+        },
+        "rules": {
+          "description": "List of Rule ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Rules",
+          "type": "array"
+        },
+        "scenarios": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Scenario"
+          },
+          "title": "Scenarios",
+          "type": "array"
+        },
+        "qualities": {
+          "description": "List of QualityAttribute ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Qualities",
+          "type": "array"
         }
       },
-      "required": ["id", "name", "type", "description"]
+      "required": [
+        "id",
+        "name",
+        "actor",
+        "type"
+      ],
+      "title": "UseCase",
+      "type": "object"
     },
-    "DomainConceptRef": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Reference to a DomainConcept id"
-        }
-      },
-      "required": ["id"]
-    },
-    "RuleRef": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Reference to a Rule id"
-        }
-      },
-      "required": ["id"]
-    },
-    "ScenarioRef": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Reference to a Scenario name"
-        }
-      },
-      "required": ["name"]
-    },
-    "QualityAttributeRef": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Reference to a QualityAttribute id"
-        }
-      },
-      "required": ["id"]
+    "UseCaseType": {
+      "enum": [
+        "Command",
+        "Event",
+        "Query"
+      ],
+      "title": "UseCaseType",
+      "type": "string"
     }
-  }
+  },
+  "properties": {
+    "actors": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Actor"
+      },
+      "title": "Actors",
+      "type": "array"
+    },
+    "businessGoals": {
+      "items": {
+        "$ref": "#/$defs/BusinessGoal"
+      },
+      "title": "Businessgoals",
+      "type": "array"
+    },
+    "domainConcepts": {
+      "items": {
+        "$ref": "#/$defs/DomainConcept"
+      },
+      "title": "Domainconcepts",
+      "type": "array"
+    },
+    "rules": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Rule"
+      },
+      "title": "Rules",
+      "type": "array"
+    },
+    "qualityAttributes": {
+      "items": {
+        "$ref": "#/$defs/QualityAttribute"
+      },
+      "title": "Qualityattributes",
+      "type": "array"
+    },
+    "boundedContexts": {
+      "items": {
+        "$ref": "#/$defs/BoundedContext"
+      },
+      "title": "Boundedcontexts",
+      "type": "array"
+    },
+    "buildingBlocks": {
+      "items": {
+        "$ref": "#/$defs/BuildingBlock"
+      },
+      "title": "Buildingblocks",
+      "type": "array"
+    },
+    "useCases": {
+      "items": {
+        "$ref": "#/$defs/UseCase"
+      },
+      "title": "Usecases",
+      "type": "array"
+    },
+    "scenarios": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Scenario"
+      },
+      "title": "Scenarios",
+      "type": "array"
+    }
+  },
+  "title": "DesignDoc",
+  "type": "object"
 }
