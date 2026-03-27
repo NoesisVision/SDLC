@@ -47,7 +47,7 @@ class Behaviour(BaseModel):
     description: str
     input: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
     output: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
-    rules: list[str] = Field(default_factory=list, description="List of Rule ids")
+    rules: list[Rule] = []
 
 
 class Rule(BaseModel):
@@ -98,6 +98,8 @@ class BuildingBlock(BaseModel):
     description: str
     properties: list[Property] = []
     behaviours: list[Behaviour] = []
+    rules: list[Rule] = []
+    scenarios: list[Scenario] = []
 
 
 class DomainModule(BaseModel):
@@ -106,9 +108,8 @@ class DomainModule(BaseModel):
     id: str
     name: str
     description: str
-    building_blocks: list[str] = Field(
-        default_factory=list, alias="buildingBlocks", description="List of BuildingBlock ids"
-    )
+    building_blocks: list[BuildingBlock] = Field(default_factory=list, alias="buildingBlocks",
+                                                 description="List of BuildingBlocks")
 
 
 class BoundedContext(BaseModel):
@@ -117,12 +118,11 @@ class BoundedContext(BaseModel):
     id: str
     name: str
     description: str
+    domain_concepts: list[DomainConcept] = Field(default_factory=list, alias="domainConcepts")
     modules: list[DomainModule] = []
-    building_blocks: list[str] = Field(
-        default_factory=list,
-        alias="buildingBlocks",
-        description="List of BuildingBlock ids not in any module",
-    )
+    building_blocks: list[BuildingBlock] = Field(default_factory=list, alias="buildingBlocks",
+                                                 description="List of BuildingBlocks not in any module")
+    use_cases: list[UseCase] = Field(default_factory=list, alias="useCases")
 
 
 class UseCase(BaseModel):
@@ -141,9 +141,9 @@ class UseCase(BaseModel):
     used_building_blocks: list[str] = Field(
         default_factory=list, alias="usedBuildingBlocks", description="List of BuildingBlock ids"
     )
-    rules: list[str] = Field(default_factory=list, description="List of Rule ids")
+    rules: list[Rule] = []
     scenarios: list[Scenario] = []
-    qualities: list[str] = Field(default_factory=list, description="List of QualityAttribute ids")
+    quality_attributes: list[str] = Field(default_factory=list, description="List of QualityAttribute ids")
 
 
 class DesignDoc(BaseModel):
@@ -151,16 +151,5 @@ class DesignDoc(BaseModel):
 
     actors: list[Actor] = []
     business_goals: list[BusinessGoal] = Field(default_factory=list, alias="businessGoals")
-    domain_concepts: list[DomainConcept] = Field(default_factory=list, alias="domainConcepts")
-    rules: list[Rule] = []
-    quality_attributes: list[QualityAttribute] = Field(
-        default_factory=list, alias="qualityAttributes"
-    )
-    bounded_contexts: list[BoundedContext] = Field(
-        default_factory=list, alias="boundedContexts"
-    )
-    building_blocks: list[BuildingBlock] = Field(
-        default_factory=list, alias="buildingBlocks"
-    )
-    use_cases: list[UseCase] = Field(default_factory=list, alias="useCases")
-    scenarios: list[Scenario] = []
+    quality_attributes: list[QualityAttribute] = Field(default_factory=list, alias="qualityAttributes")
+    bounded_contexts: list[BoundedContext] = Field(default_factory=list, alias="boundedContexts")
