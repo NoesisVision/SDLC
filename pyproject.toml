@@ -23,6 +23,10 @@ dependencies = [
     "pysbd>=0.3.4",
     "langdetect>=1.0.9",
     "pydantic>=2.0.0",
+    "python-dotenv",
+    "opik",
+    "harbor",
+    "claude-code-sdk",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +53,10 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+markers = [
+    "real_db: test uses real FalkorDB lifecycle (not shared instance)",
+    "e2e: end-to-end tests using Claude CLI (slow, uses LLM)",
+]
 addopts = [
     "-v",
     "--strict-markers",

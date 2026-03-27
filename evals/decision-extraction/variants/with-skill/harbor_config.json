@@ -1,0 +1,29 @@
+{
+  "agents": [
+    {
+      "import_path": "nasde_toolkit.agents.configurable_claude:ConfigurableClaude",
+      "name": "with-skill",
+      "kwargs": {
+        "sandbox_files": {
+          "/app/CLAUDE.md": "variants/with-skill/CLAUDE.md",
+          "/app/transcript.md": "tasks/extract-decisions-from-review/transcript.md",
+          "/app/skills/extract_decisions/SKILL.md": "../../src/agent_extensions/skills/extract_decisions/SKILL.md",
+          "/app/skills/extract_decisions/references/output_format.md": "../../src/agent_extensions/skills/extract_decisions/references/output_format.md",
+          "/app/skills/extract_decisions/scripts/parse_conversation.py": "../../src/agent_extensions/skills/extract_decisions/scripts/parse_conversation.py",
+          "/app/skills/extract_decisions/scripts/models.py": "../../src/agent_extensions/skills/extract_decisions/scripts/models.py",
+          "/app/skills/extract_decisions/scripts/prepare_batches.py": "../../src/agent_extensions/skills/extract_decisions/scripts/prepare_batches.py",
+          "/app/skills/extract_decisions/scripts/init_topics.py": "../../src/agent_extensions/skills/extract_decisions/scripts/init_topics.py",
+          "/app/skills/extract_decisions/scripts/init_decision_records.py": "../../src/agent_extensions/skills/extract_decisions/scripts/init_decision_records.py",
+          "/app/skills/extract_decisions/scripts/load_topics.py": "../../src/agent_extensions/skills/extract_decisions/scripts/load_topics.py",
+          "/app/skills/extract_decisions/scripts/load_topic_data.py": "../../src/agent_extensions/skills/extract_decisions/scripts/load_topic_data.py",
+          "/app/skills/extract_decisions/scripts/merge_batch_results.py": "../../src/agent_extensions/skills/extract_decisions/scripts/merge_batch_results.py",
+          "/app/skills/extract_decisions/scripts/save_decision_record.py": "../../src/agent_extensions/skills/extract_decisions/scripts/save_decision_record.py",
+          "/app/skills/extract_decisions/scripts/validate_batch.py": "../../src/agent_extensions/skills/extract_decisions/scripts/validate_batch.py",
+          "/app/skills/extract_decisions/scripts/cleanup.py": "../../src/agent_extensions/skills/extract_decisions/scripts/cleanup.py",
+          "/app/agents/topics_extractor.md": "../../src/agent_extensions/agents/topics_extractor.md",
+          "/app/agents/decision_record_file_writer.md": "../../src/agent_extensions/agents/decision_record_file_writer.md"
+        }
+      }
+    }
+  ]
+}

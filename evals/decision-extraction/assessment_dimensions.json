@@ -1,0 +1,28 @@
+{
+  "dimensions": [
+    {
+      "name": "completeness",
+      "title": "Completeness",
+      "max_score": 25,
+      "description": "Did the agent find all major decisions present in the transcript?"
+    },
+    {
+      "name": "accuracy",
+      "title": "Accuracy",
+      "max_score": 25,
+      "description": "Are the identified decisions correct and faithful to what was discussed?"
+    },
+    {
+      "name": "structure_quality",
+      "title": "Structure Quality",
+      "max_score": 25,
+      "description": "Are decision records well-formed with clear context, rationale, consequences, and alternatives?"
+    },
+    {
+      "name": "context_relevance",
+      "title": "Context Relevance",
+      "max_score": 25,
+      "description": "Does the output correctly relate decisions to the actual codebase architecture?"
+    }
+  ]
+}

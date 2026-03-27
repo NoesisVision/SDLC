@@ -1,0 +1,23 @@
+{
+  "name": "extract-decisions-from-review",
+  "description": "Extract software design decisions from a team architecture review transcript",
+  "difficulty": "advanced",
+  "estimated_time_minutes": 15,
+  "tags": ["decision-extraction", "conversation-analysis", "DDD"],
+  "environment": {
+    "type": "docker",
+    "dockerfile": "./environment/Dockerfile"
+  },
+  "instruction": "./instruction.md",
+  "evaluation": {
+    "type": "script",
+    "script": "./tests/test.sh",
+    "timeout_seconds": 600
+  },
+  "metadata": {
+    "domain": "Software Architecture",
+    "source_repository": "https://github.com/itlibrium/DDD-starter-dotnet",
+    "transcript_language": "English",
+    "expected_decision_count": "3"
+  }
+}
