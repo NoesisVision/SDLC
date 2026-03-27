@@ -1,0 +1,52 @@
+{
+  "eval_id": 3,
+  "eval_name": "transfers-records-modern",
+  "prompt": "Implement Transfers module in Java 21 records project with command/handler pattern",
+  "assertions": [
+    {
+      "name": "correct_package_placement",
+      "description": "Classes placed in dev.app.banking.transfers package",
+      "type": "structural"
+    },
+    {
+      "name": "command_handler_pattern",
+      "description": "InitiateTransferCommand implements Command<TransferId>, InitiateTransferHandler implements CommandHandler<InitiateTransferCommand, TransferId>",
+      "type": "structural"
+    },
+    {
+      "name": "records_for_value_objects",
+      "description": "TransferId is a record (like AccountId), not a class",
+      "type": "style"
+    },
+    {
+      "name": "sealed_event_interface",
+      "description": "Transfer has sealed interface Event permits TransferInitiated, TransferCompleted (like Account.Event pattern)",
+      "type": "style"
+    },
+    {
+      "name": "accountid_reused_not_recreated",
+      "description": "Uses import from dev.app.banking.accounts.AccountId, does not create new AccountId",
+      "type": "correctness"
+    },
+    {
+      "name": "amount_reused_not_recreated",
+      "description": "Uses import from dev.app.banking.accounts.Amount, does not create new Amount",
+      "type": "correctness"
+    },
+    {
+      "name": "all_building_blocks_present",
+      "description": "All 8 building blocks from DesignDoc have corresponding Java classes",
+      "type": "completeness"
+    },
+    {
+      "name": "same_account_validation",
+      "description": "Transfer.initiate() validates source != destination (rule-2)",
+      "type": "correctness"
+    },
+    {
+      "name": "modern_java_features",
+      "description": "Uses var declarations, record types, and event records consistent with Java 21 style",
+      "type": "style"
+    }
+  ]
+}

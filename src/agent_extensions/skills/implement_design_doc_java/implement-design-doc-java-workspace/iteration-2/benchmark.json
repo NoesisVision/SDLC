@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "skill_name": "implement-design-doc-java",
+    "skill_path": "src/agent_extensions/skills/implement_design_doc_java",
+    "executor_model": "claude-opus-4-6",
+    "timestamp": "2026-03-27T15:30:00Z",
+    "evals_run": ["shipping-lombok-spring", "pricing-plain-java", "transfers-records-modern"],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {"eval_name": "shipping-lombok-spring", "config": "with_skill", "pass_rate": 1.0, "passed": 9, "total": 9, "time_seconds": 104.1, "total_tokens": 35925},
+    {"eval_name": "shipping-lombok-spring", "config": "without_skill", "pass_rate": 1.0, "passed": 9, "total": 9, "time_seconds": 86.5, "total_tokens": 29941},
+    {"eval_name": "pricing-plain-java", "config": "with_skill", "pass_rate": 1.0, "passed": 9, "total": 9, "time_seconds": 114.1, "total_tokens": 34407},
+    {"eval_name": "pricing-plain-java", "config": "without_skill", "pass_rate": 0.778, "passed": 7, "total": 9, "time_seconds": 95.6, "total_tokens": 28442, "failed_assertions": ["money_reused_not_recreated", "package_private_internals"]},
+    {"eval_name": "transfers-records-modern", "config": "with_skill", "pass_rate": 1.0, "passed": 9, "total": 9, "time_seconds": 69.5, "total_tokens": 28123},
+    {"eval_name": "transfers-records-modern", "config": "without_skill", "pass_rate": 1.0, "passed": 9, "total": 9, "time_seconds": 65.3, "total_tokens": 21884}
+  ],
+  "run_summary": {
+    "with_skill": {
+      "mean_pass_rate": 1.0,
+      "stddev_pass_rate": 0.0,
+      "mean_time_seconds": 95.9,
+      "mean_tokens": 32818
+    },
+    "without_skill": {
+      "mean_pass_rate": 0.926,
+      "stddev_pass_rate": 0.105,
+      "mean_time_seconds": 82.5,
+      "mean_tokens": 26756
+    },
+    "delta": {
+      "pass_rate": "+0.074 (100% vs 92.6%)",
+      "time_seconds": "+13.4s (95.9s vs 82.5s)",
+      "tokens": "+6062 (32818 vs 26756)"
+    }
+  },
+  "notes": [
+    "With-skill achieves 100% pass rate (27/27 assertions) vs 92.6% without skill (25/27).",
+    "Improvement from iteration 1: with_skill went from 88.9% to 100% (+11.1pp).",
+    "Key wins: money_reused_not_recreated (skill now correctly imports existing Money instead of creating duplicate) and package_private_internals (skill correctly makes PriceEntry package-private).",
+    "sealed_event_interface fixed: skill now correctly replicates the sealed Event pattern from Account.java.",
+    "Without-skill still fails on money reuse and package-private encapsulation for pricing — these are the skill's discriminating assertions.",
+    "Shipping and transfers pass 100% for both configs — may need harder test cases to differentiate."
+  ]
+}

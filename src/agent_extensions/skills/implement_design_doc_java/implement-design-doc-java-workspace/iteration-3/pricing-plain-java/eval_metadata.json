@@ -1,0 +1,52 @@
+{
+  "eval_id": 2,
+  "eval_name": "pricing-plain-java",
+  "prompt": "Implement Pricing module in plain Java+Vavr project with service-per-use-case pattern",
+  "assertions": [
+    {
+      "name": "correct_package_placement",
+      "description": "Classes placed in pl.shop.catalog.pricing package",
+      "type": "structural"
+    },
+    {
+      "name": "service_per_use_case_pattern",
+      "description": "Separate service classes per use case (ApplyDiscount, ActivatePriceList) like PublishProductService/ArchiveProductService",
+      "type": "structural"
+    },
+    {
+      "name": "vavr_either_returns",
+      "description": "Aggregate behavior methods return Either<String, Event> like Product.publish()/archive()",
+      "type": "style"
+    },
+    {
+      "name": "no_lombok_used",
+      "description": "No Lombok imports or annotations; manual equals/hashCode/constructors",
+      "type": "style"
+    },
+    {
+      "name": "money_reused_not_recreated",
+      "description": "Uses import from pl.shop.catalog.Money, does not create new Money class",
+      "type": "correctness"
+    },
+    {
+      "name": "productid_reused_not_recreated",
+      "description": "Uses import from pl.shop.catalog.ProductId, does not create new ProductId class",
+      "type": "correctness"
+    },
+    {
+      "name": "all_building_blocks_present",
+      "description": "All 8 building blocks from DesignDoc have corresponding Java classes",
+      "type": "completeness"
+    },
+    {
+      "name": "discount_percentage_validation",
+      "description": "Discount constructor validates percentage between 0 and 100 (rule-3)",
+      "type": "correctness"
+    },
+    {
+      "name": "package_private_internals",
+      "description": "PriceEntry entity is package-private (not public), following Product/Enrollment pattern",
+      "type": "style"
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "metadata": {
+    "skill_name": "implement-design-doc-java",
+    "skill_path": "src/agent_extensions/skills/implement_design_doc_java",
+    "executor_model": "claude-opus-4-6",
+    "analyzer_model": "claude-opus-4-6",
+    "timestamp": "2026-03-27T15:10:00Z",
+    "evals_run": ["shipping-lombok-spring", "pricing-plain-java", "transfers-records-modern"],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_name": "shipping-lombok-spring",
+      "config": "with_skill",
+      "pass_rate": 0.889,
+      "passed": 8,
+      "total": 9,
+      "time_seconds": 89.4,
+      "total_tokens": 34131,
+      "failed_assertions": ["business_rules_enforced"],
+      "expectations": [
+        {"text": "correct_package_placement", "passed": true, "evidence": "domain pkg: True, application pkg: True"},
+        {"text": "facade_pattern_followed", "passed": true, "evidence": "facade files: ['ShippingFacade.java'], public: True"},
+        {"text": "spring_configuration_present", "passed": true, "evidence": "config files: ['ShippingConfiguration.java'], @Bean+@Configuration: True"},
+        {"text": "lombok_value_for_vos", "passed": true, "evidence": "3/3 VOs use @Value"},
+        {"text": "domain_event_interface_reused", "passed": true, "evidence": "imports existing DomainEvent: True, creates new: False"},
+        {"text": "pending_events_pattern", "passed": true, "evidence": "pendingEvents: True, flushEvents: True"},
+        {"text": "all_building_blocks_present", "passed": true, "evidence": "found 8/8"},
+        {"text": "business_rules_enforced", "passed": false, "evidence": "tracking check: False, status check: True"},
+        {"text": "orderid_reused_not_recreated", "passed": true, "evidence": "imports OrderId: True, creates new: False"}
+      ]
+    },
+    {
+      "eval_name": "shipping-lombok-spring",
+      "config": "without_skill",
+      "pass_rate": 0.889,
+      "passed": 8,
+      "total": 9,
+      "time_seconds": 91.8,
+      "total_tokens": 30138,
+      "failed_assertions": ["business_rules_enforced"],
+      "expectations": [
+        {"text": "correct_package_placement", "passed": true, "evidence": "domain pkg: True, application pkg: True"},
+        {"text": "facade_pattern_followed", "passed": true, "evidence": "facade files: ['ShippingFacade.java'], public: True"},
+        {"text": "spring_configuration_present", "passed": true, "evidence": "config files: ['ShippingConfiguration.java'], @Bean+@Configuration: True"},
+        {"text": "lombok_value_for_vos", "passed": true, "evidence": "3/3 VOs use @Value"},
+        {"text": "domain_event_interface_reused", "passed": true, "evidence": "imports existing DomainEvent: True, creates new: False"},
+        {"text": "pending_events_pattern", "passed": true, "evidence": "pendingEvents: True, flushEvents: True"},
+        {"text": "all_building_blocks_present", "passed": true, "evidence": "found 8/8"},
+        {"text": "business_rules_enforced", "passed": false, "evidence": "tracking check: False, status check: True"},
+        {"text": "orderid_reused_not_recreated", "passed": true, "evidence": "imports OrderId: True, creates new: False"}
+      ]
+    },
+    {
+      "eval_name": "pricing-plain-java",
+      "config": "with_skill",
+      "pass_rate": 0.889,
+      "passed": 8,
+      "total": 9,
+      "time_seconds": 130.8,
+      "total_tokens": 33833,
+      "failed_assertions": ["money_reused_not_recreated"],
+      "expectations": [
+        {"text": "correct_package_placement", "passed": true, "evidence": "pricing package: True"},
+        {"text": "service_per_use_case_pattern", "passed": true, "evidence": "service files: ['ApplyDiscountService.java', 'PricingService.java']"},
+        {"text": "vavr_either_returns", "passed": true, "evidence": "Either returns: True, Vavr import: True"},
+        {"text": "no_lombok_used", "passed": true, "evidence": "lombok imports found: False"},
+        {"text": "money_reused_not_recreated", "passed": false, "evidence": "imports Money: False, creates new: True"},
+        {"text": "productid_reused_not_recreated", "passed": true, "evidence": "imports ProductId: True, creates new: False"},
+        {"text": "all_building_blocks_present", "passed": true, "evidence": "found 7/7"},
+        {"text": "discount_percentage_validation", "passed": true, "evidence": "validation in Discount: True"},
+        {"text": "package_private_internals", "passed": true, "evidence": "PriceEntry package-private: True"}
+      ]
+    },
+    {
+      "eval_name": "pricing-plain-java",
+      "config": "without_skill",
+      "pass_rate": 0.778,
+      "passed": 7,
+      "total": 9,
+      "time_seconds": 111.4,
+      "total_tokens": 29217,
+      "failed_assertions": ["money_reused_not_recreated", "package_private_internals"],
+      "expectations": [
+        {"text": "correct_package_placement", "passed": true, "evidence": "pricing package: True"},
+        {"text": "service_per_use_case_pattern", "passed": true, "evidence": "service files: ['ApplyDiscountService.java', 'PricingService.java']"},
+        {"text": "vavr_either_returns", "passed": true, "evidence": "Either returns: True, Vavr import: True"},
+        {"text": "no_lombok_used", "passed": true, "evidence": "lombok imports found: False"},
+        {"text": "money_reused_not_recreated", "passed": false, "evidence": "imports Money: True, creates new: True"},
+        {"text": "productid_reused_not_recreated", "passed": true, "evidence": "imports ProductId: True, creates new: False"},
+        {"text": "all_building_blocks_present", "passed": true, "evidence": "found 7/7"},
+        {"text": "discount_percentage_validation", "passed": true, "evidence": "validation in Discount: True"},
+        {"text": "package_private_internals", "passed": false, "evidence": "PriceEntry package-private: False"}
+      ]
+    },
+    {
+      "eval_name": "transfers-records-modern",
+      "config": "with_skill",
+      "pass_rate": 0.889,
+      "passed": 8,
+      "total": 9,
+      "time_seconds": 103.1,
+      "total_tokens": 28823,
+      "failed_assertions": ["sealed_event_interface"],
+      "expectations": [
+        {"text": "correct_package_placement", "passed": true, "evidence": "transfers package: True"},
+        {"text": "command_handler_pattern", "passed": true, "evidence": "commands+handlers present, implements Command and CommandHandler"},
+        {"text": "records_for_value_objects", "passed": true, "evidence": "TransferId is record: True"},
+        {"text": "sealed_event_interface", "passed": false, "evidence": "sealed Event interface: False"},
+        {"text": "accountid_reused_not_recreated", "passed": true, "evidence": "imports AccountId: True, creates new: False"},
+        {"text": "amount_reused_not_recreated", "passed": true, "evidence": "imports Amount: True, creates new: False"},
+        {"text": "all_building_blocks_present", "passed": true, "evidence": "found 6/6"},
+        {"text": "same_account_validation", "passed": true, "evidence": "same-account validation: True"},
+        {"text": "modern_java_features", "passed": true, "evidence": "var: True, record: True"}
+      ]
+    },
+    {
+      "eval_name": "transfers-records-modern",
+      "config": "without_skill",
+      "pass_rate": 0.889,
+      "passed": 8,
+      "total": 9,
+      "time_seconds": 60.9,
+      "total_tokens": 21914,
+      "failed_assertions": ["all_building_blocks_present"],
+      "expectations": [
+        {"text": "correct_package_placement", "passed": true, "evidence": "transfers package: True"},
+        {"text": "command_handler_pattern", "passed": true, "evidence": "commands+handlers present, implements Command and CommandHandler"},
+        {"text": "records_for_value_objects", "passed": true, "evidence": "TransferId is record: True"},
+        {"text": "sealed_event_interface", "passed": true, "evidence": "sealed Event interface: True"},
+        {"text": "accountid_reused_not_recreated", "passed": true, "evidence": "imports AccountId: True, creates new: False"},
+        {"text": "amount_reused_not_recreated", "passed": true, "evidence": "imports Amount: True, creates new: False"},
+        {"text": "all_building_blocks_present", "passed": false, "evidence": "found 4/6 (TransferInitiated, TransferCompleted missing as separate files)"},
+        {"text": "same_account_validation", "passed": true, "evidence": "same-account validation: True"},
+        {"text": "modern_java_features", "passed": true, "evidence": "var: True, record: True"}
+      ]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "mean_pass_rate": 0.889,
+      "stddev_pass_rate": 0.0,
+      "mean_time_seconds": 107.8,
+      "mean_tokens": 32262
+    },
+    "without_skill": {
+      "mean_pass_rate": 0.852,
+      "stddev_pass_rate": 0.052,
+      "mean_time_seconds": 88.0,
+      "mean_tokens": 27090
+    },
+    "delta": {
+      "pass_rate": "+0.037 (88.9% vs 85.2%)",
+      "time_seconds": "+19.8s (107.8s vs 88.0s)",
+      "tokens": "+5172 (32262 vs 27090)"
+    }
+  },
+  "notes": [
+    "business_rules_enforced fails for BOTH configs on shipping — grading heuristic may be too strict (checks for 'null'/'empty' near 'trackingNumber' but actual code may use different guard). Needs manual review.",
+    "money_reused_not_recreated fails for BOTH — DesignDoc lists Money as building block with 'Already exists' but fixture has it in a different path. Ambiguous test.",
+    "sealed_event_interface: with_skill FAILS, without_skill PASSES — baseline captured sealed Event pattern better. Key skill improvement area.",
+    "package_private_internals: with_skill PASSES, without_skill FAILS — genuine skill advantage in detecting aggregate encapsulation.",
+    "all_building_blocks_present: without_skill misses 2 event files (likely inner records in Transfer.java) — skill ensures separate files per building block.",
+    "With-skill uses ~19% more tokens and ~22% more time — expected overhead from skill instruction reading."
+  ]
+}
