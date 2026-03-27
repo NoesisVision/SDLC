@@ -22,6 +22,7 @@ dependencies = [
     "numpy>=1.24.0",
     "pysbd>=0.3.4",
     "langdetect>=1.0.9",
+    "pydantic>=2.0.0",
     "python-dotenv",
     "opik",
     "harbor",
@@ -43,9 +44,10 @@ dev = [
 # there's no package to install. MCP servers are run directly from src/mcp_servers/*/server.py
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_extensions", "src/mcp_servers", "src/p3", "src/utils"]
+packages = ["contracts", "src/agent_extensions", "src/mcp_servers", "src/p3", "src/utils"]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
