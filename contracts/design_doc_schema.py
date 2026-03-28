@@ -1,6 +1,9 @@
 from enum import Enum
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field
+
+T = TypeVar("T")
 
 
 class BuildingBlockType(str, Enum):
@@ -31,7 +34,7 @@ class RuleType(str, Enum):
     STATE_CHANGE = "State change"
 
 
-class UseCaseType(str, Enum):
+class BehaviorType(str, Enum):
     COMMAND = "Command"
     EVENT = "Event"
     QUERY = "Query"
@@ -39,128 +42,158 @@ class UseCaseType(str, Enum):
 
 class Property(BaseModel):
     name: str
-    type: str
-
-
-class Behaviour(BaseModel):
-    name: str
-    description: str
-    input: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
-    output: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
-    rules: list[str] = Field(default_factory=list, description="List of Rule ids")
+    type: str | None = Field(
+        default=None, description="BuildingBlock name or primitive type name"
+    )
 
 
 class Rule(BaseModel):
+    """A business or domain rule that constrains behaviour."""
+
     model_config = {"populate_by_name": True}
 
-    id: str
-    rule_type: RuleType = Field(alias="ruleType")
-    description: str
-
-
-class Actor(BaseModel):
-    id: str
     name: str
-    description: str
-
-
-class BusinessGoal(BaseModel):
-    id: str
-    name: str
-    description: str
-
-
-class DomainConcept(BaseModel):
-    id: str
-    name: str
-    description: str
-
-
-class QualityAttribute(BaseModel):
-    id: str
-    name: str
-    type: QualityAttributeType
-    description: str
+    rule_type: RuleType | None = Field(default=None, alias="ruleType")
+    description: str | None = None
 
 
 class Scenario(BaseModel):
+    """A BDD-style scenario"""
+
+    name: str = Field(description="Concise title, a few words")
+    description: str = Field(description="What the scenario verifies")
+    given: str = Field(description="Precondition or initial context")
+    when: str = Field(description="Action or event that triggers the scenario")
+    then: str = Field(description="Expected outcome or postcondition")
+
+
+class ChangeSet(BaseModel, Generic[T]):
+    """Diff for a collection of elements.
+
+    `added` contains new elements (all fields should be populated).
+    `removed` contains element ids or names.
+    `modified` contains only the changed fields, matched by id or name.
+    """
+
+    added: list[T] = Field(default_factory=list)
+    removed: list[str] = Field(
+        default_factory=list, description="Names of elements to remove"
+    )
+    modified: list[T] = Field(
+        default_factory=list, description="Elements with only changed fields set"
+    )
+
+
+class Behaviour(BaseModel):
+    """An operation or action that a building block can perform."""
+
+    model_config = {"populate_by_name": True}
+
+    name: str = Field(description="Concise name, a few words")
+    description: str | None = None
+    type: BehaviorType | None = None
+    input: ChangeSet[str] | None = Field(
+        default=None, description="Input BuildingBlock names"
+    )
+    output: ChangeSet[str] | None = Field(
+        default=None, description="Output BuildingBlock names"
+    )
+    used_building_blocks: ChangeSet[str] | None = Field(
+        default=None,
+        alias="usedBuildingBlocks",
+        description="Referenced BuildingBlock names",
+    )
+    rules: ChangeSet[Rule] | None = None
+    scenarios: ChangeSet[Scenario] | None = None
+    is_public: bool = False
+    actor: str | None = Field(
+        default=None, description="Name of the actor who initiates this behaviour"
+    )
+
+
+class Actor(BaseModel):
+    """A person, system, or role that interacts with the domain."""
+
     name: str
-    description: str
-    given: str
-    when: str
-    then: str
+    description: str | None = None
+
+
+class QualityAttribute(BaseModel):
+    """A non-functional requirement or quality characteristic."""
+
+    name: str
+    type: QualityAttributeType | None = None
+    description: str | None = Field(
+        default=None, description="Measurable quality expectation"
+    )
 
 
 class BuildingBlock(BaseModel):
-    id: str
+    """Modification of a BuildingBlock.
+
+    When used in `added`: all scalar fields must be populated,
+    sub-elements go into their ChangeSet's `added`.
+    When used in `modified`: only changed fields are set (None = no change).
+    """
+
+    model_config = {"populate_by_name": True}
+
     name: str
-    type: BuildingBlockType
-    description: str
-    properties: list[Property] = []
-    behaviours: list[Behaviour] = []
+    type: BuildingBlockType | None = None
+    description: str | None = None
+    properties: ChangeSet[Property] | None = None
+    behaviours: ChangeSet[Behaviour] | None = None
+    rules: ChangeSet[Rule] | None = None
+    scenarios: ChangeSet[Scenario] | None = None
 
 
 class DomainModule(BaseModel):
+    """Modification of a DomainModule.
+
+    When used in `added`: all scalar fields must be populated.
+    When used in `modified`: only changed fields are set (None = no change).
+    """
+
     model_config = {"populate_by_name": True}
 
-    id: str
     name: str
-    description: str
-    building_blocks: list[str] = Field(
-        default_factory=list, alias="buildingBlocks", description="List of BuildingBlock ids"
+    description: str | None = None
+    building_blocks: ChangeSet[BuildingBlock] | None = Field(
+        default=None, alias="buildingBlocks"
     )
 
 
 class BoundedContext(BaseModel):
+    """Modification of a BoundedContext.
+
+    When used in `added`: all scalar fields must be populated.
+    When used in `modified`: only changed fields are set (None = no change).
+    """
+
     model_config = {"populate_by_name": True}
 
-    id: str
     name: str
-    description: str
-    modules: list[DomainModule] = []
-    building_blocks: list[str] = Field(
-        default_factory=list,
+    description: str | None = Field(
+        default=None, description="Scope and responsibility of this context"
+    )
+    modules: ChangeSet[DomainModule] | None = None
+    building_blocks: ChangeSet[BuildingBlock] | None = Field(
+        default=None,
         alias="buildingBlocks",
-        description="List of BuildingBlock ids not in any module",
+        description="Building blocks not belonging to any module",
     )
-
-
-class UseCase(BaseModel):
-    model_config = {"populate_by_name": True}
-
-    id: str
-    name: str
-    actor: str = Field(description="Reference to an Actor id")
-    type: UseCaseType
-    description: str | None = None
-    business_goal: str | None = Field(
-        default=None, alias="businessGoal", description="Reference to a BusinessGoal id"
-    )
-    input: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
-    output: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
-    used_building_blocks: list[str] = Field(
-        default_factory=list, alias="usedBuildingBlocks", description="List of BuildingBlock ids"
-    )
-    rules: list[str] = Field(default_factory=list, description="List of Rule ids")
-    scenarios: list[Scenario] = []
-    qualities: list[str] = Field(default_factory=list, description="List of QualityAttribute ids")
-
 
 class DesignDoc(BaseModel):
+    """Describes changes to a design.
+
+    Each field is None when there are no changes to that collection.
+    First iteration is a diff from empty state (everything in `added`).
+    """
+
     model_config = {"populate_by_name": True}
 
-    actors: list[Actor] = []
-    business_goals: list[BusinessGoal] = Field(default_factory=list, alias="businessGoals")
-    domain_concepts: list[DomainConcept] = Field(default_factory=list, alias="domainConcepts")
-    rules: list[Rule] = []
-    quality_attributes: list[QualityAttribute] = Field(
-        default_factory=list, alias="qualityAttributes"
+    description: str = Field(description="Summary of what this design change covers")
+    actors: ChangeSet[Actor] | None = None
+    bounded_contexts: ChangeSet[BoundedContext] | None = Field(
+        default=None, alias="boundedContexts"
     )
-    bounded_contexts: list[BoundedContext] = Field(
-        default_factory=list, alias="boundedContexts"
-    )
-    building_blocks: list[BuildingBlock] = Field(
-        default_factory=list, alias="buildingBlocks"
-    )
-    use_cases: list[UseCase] = Field(default_factory=list, alias="useCases")
-    scenarios: list[Scenario] = []
