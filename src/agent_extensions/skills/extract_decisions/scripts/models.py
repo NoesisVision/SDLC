@@ -25,12 +25,6 @@ class IdeaUnitCategory(StrEnum):
     Irrelevant = "Irrelevant"
 
 
-class ProcessedTurnStatus(StrEnum):
-    """Processing outcome for a turn in a batch."""
-
-    assigned = "assigned"
-    fully_irrelevant = "fully_irrelevant"
-
 
 class DesignConcern(StrEnum):
     """Design concern categories for decision records."""
@@ -114,21 +108,6 @@ class Batch(BaseModel):
     previous_turn: SpeakerTurn | None = Field(default=None, description="Last turn from the previous batch for context")
     extraction_turns: list[SpeakerTurn] = Field(description="Turns to extract topics from in this batch")
     expected_turn_count: int = Field(description="Number of turns expected to be processed")
-
-
-class ProcessedTurn(BaseModel):
-    """Processing result for a single turn."""
-
-    turn_id: str = Field(description="ID of the processed turn")
-    status: ProcessedTurnStatus = Field(description="Processing outcome")
-    topic_ids: list[str] | None = Field(default=None, description="Topic IDs the turn was assigned to")
-
-
-class BatchResultManifest(BaseModel):
-    """Manifest describing how each turn in a batch was processed."""
-
-    batch_index: int = Field(description="Index of the batch")
-    processed_turns: list[ProcessedTurn] = Field(description="Processing result for each turn")
 
 
 # ---------------------------------------------------------------------------

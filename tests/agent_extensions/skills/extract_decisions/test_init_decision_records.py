@@ -1,33 +1,16 @@
 """Tests for init_decision_records.py — directory creation and topic ID extraction."""
 
-import json
-import sys
 from pathlib import Path
 
 import pytest
 
-_SCRIPTS_DIR = (
-    Path(__file__).resolve().parents[4] / "src" / "agent_extensions" / "skills" / "extract_decisions" / "scripts"
-)
-sys.path.insert(0, str(_SCRIPTS_DIR))
-
-from init_decision_records import init_decision_records  # noqa: E402
-from models import StructuredConversation, Topic  # noqa: E402
-
-
-def _write_structured(path, topics):
-    structured = StructuredConversation(
-        conversation_id="test-conv-id",
-        title="Test Conversation",
-        date="2025-03-01 14:00",
-        topics=[Topic(**t) for t in topics],
-    )
-    path.write_text(json.dumps(structured.model_dump()), encoding="utf-8")
+from helpers import write_structured
+from init_decision_records import init_decision_records
 
 
 def test_creates_directory_and_returns_topic_ids(tmp_path):
     structured_path = tmp_path / "meeting_structured.json"
-    _write_structured(
+    write_structured(
         structured_path,
         [
             {"topic_id": "topic_001", "name": "A", "summary": "", "description": "", "idea_units": []},
@@ -46,7 +29,7 @@ def test_creates_directory_and_returns_topic_ids(tmp_path):
 
 def test_directory_name_derived_from_structured_path(tmp_path):
     structured_path = tmp_path / "sprint_review_structured.json"
-    _write_structured(structured_path, [])
+    write_structured(structured_path, [])
 
     result = init_decision_records(structured_path)
 
@@ -57,7 +40,7 @@ def test_directory_name_derived_from_structured_path(tmp_path):
 
 def test_idempotent_directory_creation(tmp_path):
     structured_path = tmp_path / "meeting_structured.json"
-    _write_structured(
+    write_structured(
         structured_path,
         [
             {"topic_id": "topic_001", "name": "A", "summary": "", "description": "", "idea_units": []},
@@ -80,7 +63,7 @@ def test_file_not_found(tmp_path):
 
 def test_empty_topics_returns_empty_list(tmp_path):
     structured_path = tmp_path / "empty_structured.json"
-    _write_structured(structured_path, [])
+    write_structured(structured_path, [])
 
     result = init_decision_records(structured_path)
 
