@@ -1,5 +1,5 @@
 ---
-name: Implement Design Doc (Java)
+name: implement-design-doc-java
 description: Generate or update Java domain model code from a design document JSON file. Use this skill whenever the user asks to implement, generate, or create Java classes from a design doc, design document, design specification, or any JSON file that describes domain building blocks (aggregates, entities, value objects, domain events, repositories, services). Also use when the user wants to turn a domain model specification into Java code, sync Java code with a design contract, or implement building blocks from a JSON description. Trigger on phrases like "implement the design doc", "generate Java from this JSON", "create domain classes from the spec", "implement the building blocks", "turn this design into code", even if the user doesn't say "DesignDoc" exactly — any JSON describing a domain model with bounded contexts, modules, or building blocks qualifies.
 ---
 
