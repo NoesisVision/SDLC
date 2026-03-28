@@ -1,0 +1,442 @@
+{
+  "actors": [
+    {
+      "id": "actor-1",
+      "name": "Customer",
+      "description": "Places and manages orders"
+    }
+  ],
+  "businessGoals": [
+    {
+      "id": "bg-1",
+      "name": "Flexible Order Management",
+      "description": "Allow customers to cancel orders and apply discounts"
+    }
+  ],
+  "domainConcepts": [
+    {
+      "id": "dc-1",
+      "name": "Order",
+      "description": "A customer's purchase request"
+    },
+    {
+      "id": "dc-2",
+      "name": "Discount Code",
+      "description": "A promotional code that reduces order total"
+    },
+    {
+      "id": "dc-3",
+      "name": "Shipping Address",
+      "description": "Delivery destination for the order"
+    }
+  ],
+  "rules": [
+    {
+      "id": "rule-1",
+      "ruleType": "State change",
+      "description": "Only placed orders can be cancelled"
+    },
+    {
+      "id": "rule-2",
+      "ruleType": "Consistency",
+      "description": "Cannot add lines to a non-draft order"
+    },
+    {
+      "id": "rule-3",
+      "ruleType": "Consistency",
+      "description": "Cannot place an empty order"
+    },
+    {
+      "id": "rule-4",
+      "ruleType": "Computation",
+      "description": "Discounted total is order total multiplied by (1 - discount percentage / 100)"
+    },
+    {
+      "id": "rule-5",
+      "ruleType": "Structure",
+      "description": "Discount percentage must be between 0 and 100"
+    },
+    {
+      "id": "rule-6",
+      "ruleType": "Structure",
+      "description": "Shipping address must have street, city, and postalCode"
+    },
+    {
+      "id": "rule-7",
+      "ruleType": "State change",
+      "description": "Shipping address can only be set on draft orders"
+    }
+  ],
+  "qualityAttributes": [],
+  "boundedContexts": [
+    {
+      "id": "bc-1",
+      "name": "Orders",
+      "description": "Order management bounded context",
+      "modules": [],
+      "buildingBlocks": [
+        "bb-1",
+        "bb-2",
+        "bb-3",
+        "bb-4",
+        "bb-5",
+        "bb-6",
+        "bb-7",
+        "bb-8",
+        "bb-9",
+        "bb-10",
+        "bb-11"
+      ]
+    }
+  ],
+  "buildingBlocks": [
+    {
+      "id": "bb-1",
+      "name": "Order",
+      "type": "aggregate",
+      "description": "Aggregate root for customer orders. Contains OrderLine entities.",
+      "properties": [
+        {
+          "name": "id",
+          "type": "OrderId"
+        },
+        {
+          "name": "customerId",
+          "type": "CustomerId"
+        },
+        {
+          "name": "lines",
+          "type": "List<OrderLine>"
+        },
+        {
+          "name": "status",
+          "type": "OrderStatus"
+        },
+        {
+          "name": "createdAt",
+          "type": "Instant"
+        },
+        {
+          "name": "shippingAddress",
+          "type": "ShippingAddress"
+        },
+        {
+          "name": "discountCode",
+          "type": "DiscountCode"
+        }
+      ],
+      "behaviours": [
+        {
+          "name": "create",
+          "description": "Creates a new draft order for a customer.",
+          "input": [
+            "bb-3"
+          ],
+          "output": [],
+          "rules": []
+        },
+        {
+          "name": "addLine",
+          "description": "Adds a product line to the order.",
+          "input": [],
+          "output": [],
+          "rules": [
+            "rule-2"
+          ]
+        },
+        {
+          "name": "place",
+          "description": "Places the order.",
+          "input": [],
+          "output": [],
+          "rules": [
+            "rule-3"
+          ]
+        },
+        {
+          "name": "cancel",
+          "description": "Cancels a placed order.",
+          "input": [],
+          "output": [
+            "bb-8"
+          ],
+          "rules": [
+            "rule-1"
+          ]
+        },
+        {
+          "name": "applyDiscount",
+          "description": "Applies a discount code to the order.",
+          "input": [
+            "bb-6"
+          ],
+          "output": [],
+          "rules": [
+            "rule-5"
+          ]
+        },
+        {
+          "name": "setShippingAddress",
+          "description": "Sets the shipping address for the order.",
+          "input": [
+            "bb-7"
+          ],
+          "output": [],
+          "rules": [
+            "rule-7"
+          ]
+        },
+        {
+          "name": "discountedTotal",
+          "description": "Calculates total after discount.",
+          "input": [],
+          "output": [
+            "bb-5"
+          ],
+          "rules": [
+            "rule-4"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bb-2",
+      "name": "OrderId",
+      "type": "value_object",
+      "description": "Unique identifier for an order.",
+      "properties": [
+        {
+          "name": "value",
+          "type": "UUID"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-3",
+      "name": "CustomerId",
+      "type": "value_object",
+      "description": "Unique identifier for a customer.",
+      "properties": [
+        {
+          "name": "value",
+          "type": "UUID"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-4",
+      "name": "OrderLine",
+      "type": "entity",
+      "description": "A line item in an order.",
+      "properties": [
+        {
+          "name": "productName",
+          "type": "String"
+        },
+        {
+          "name": "quantity",
+          "type": "int"
+        },
+        {
+          "name": "unitPrice",
+          "type": "Money"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-5",
+      "name": "Money",
+      "type": "value_object",
+      "description": "Monetary amount.",
+      "properties": [
+        {
+          "name": "amount",
+          "type": "BigDecimal"
+        },
+        {
+          "name": "currency",
+          "type": "String"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-6",
+      "name": "DiscountCode",
+      "type": "value_object",
+      "description": "A promotional discount code with a percentage.",
+      "properties": [
+        {
+          "name": "code",
+          "type": "String"
+        },
+        {
+          "name": "percentage",
+          "type": "int"
+        }
+      ],
+      "behaviours": [
+        {
+          "name": "applyTo",
+          "description": "Applies this discount to a money amount",
+          "input": [
+            "bb-5"
+          ],
+          "output": [
+            "bb-5"
+          ],
+          "rules": [
+            "rule-4"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bb-7",
+      "name": "ShippingAddress",
+      "type": "value_object",
+      "description": "Delivery address for an order.",
+      "properties": [
+        {
+          "name": "street",
+          "type": "String"
+        },
+        {
+          "name": "city",
+          "type": "String"
+        },
+        {
+          "name": "postalCode",
+          "type": "String"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-8",
+      "name": "OrderCancelled",
+      "type": "domain_event",
+      "description": "Emitted when an order is cancelled.",
+      "properties": [
+        {
+          "name": "orderId",
+          "type": "OrderId"
+        },
+        {
+          "name": "cancelledAt",
+          "type": "Instant"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-9",
+      "name": "OrderStatus",
+      "type": "value_object",
+      "description": "Lifecycle state of an order: Draft, Placed, Cancelled.",
+      "properties": [
+        {
+          "name": "value",
+          "type": "String"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-10",
+      "name": "OrderRepository",
+      "type": "repository",
+      "description": "Repository for orders.",
+      "properties": [],
+      "behaviours": [
+        {
+          "name": "save",
+          "description": "Persists an order",
+          "input": [
+            "bb-1"
+          ],
+          "output": [],
+          "rules": []
+        },
+        {
+          "name": "findById",
+          "description": "Finds an order by id",
+          "input": [
+            "bb-2"
+          ],
+          "output": [
+            "bb-1"
+          ],
+          "rules": []
+        }
+      ]
+    },
+    {
+      "id": "bb-11",
+      "name": "CancelOrderService",
+      "type": "application_service",
+      "description": "Orchestrates the cancel order use case.",
+      "properties": [],
+      "behaviours": [
+        {
+          "name": "cancel",
+          "description": "Loads an order and cancels it",
+          "input": [
+            "bb-2"
+          ],
+          "output": [
+            "bb-8"
+          ],
+          "rules": [
+            "rule-1"
+          ]
+        }
+      ]
+    }
+  ],
+  "useCases": [
+    {
+      "id": "uc-1",
+      "name": "Cancel Order",
+      "actor": "actor-1",
+      "type": "Command",
+      "description": "Customer cancels a placed order",
+      "businessGoal": "bg-1",
+      "input": [
+        "bb-2"
+      ],
+      "output": [
+        "bb-8"
+      ],
+      "usedBuildingBlocks": [
+        "bb-1",
+        "bb-10",
+        "bb-11"
+      ],
+      "rules": [
+        "rule-1"
+      ],
+      "scenarios": [
+        {
+          "name": "Successful cancellation",
+          "description": "Placed order is cancelled",
+          "given": "A placed order",
+          "when": "Customer cancels it",
+          "then": "Order status becomes Cancelled, OrderCancelled event emitted"
+        },
+        {
+          "name": "Draft order cannot be cancelled",
+          "description": "Only placed orders can be cancelled",
+          "given": "A draft order",
+          "when": "Customer tries to cancel",
+          "then": "Cancellation is rejected"
+        }
+      ],
+      "qualities": []
+    }
+  ],
+  "scenarios": []
+}

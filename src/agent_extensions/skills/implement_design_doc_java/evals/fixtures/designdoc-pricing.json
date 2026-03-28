@@ -1,21 +1,61 @@
 {
   "actors": [
-    {"id": "actor-1", "name": "Product Manager", "description": "Defines pricing for products in the catalog"}
+    {
+      "id": "actor-1",
+      "name": "Product Manager",
+      "description": "Defines pricing for products in the catalog"
+    }
   ],
   "businessGoals": [
-    {"id": "bg-1", "name": "Dynamic Pricing", "description": "Support flexible pricing strategies including discounts"}
+    {
+      "id": "bg-1",
+      "name": "Dynamic Pricing",
+      "description": "Support flexible pricing strategies including discounts"
+    }
   ],
   "domainConcepts": [
-    {"id": "dc-1", "name": "Price", "description": "Monetary value assigned to a product"},
-    {"id": "dc-2", "name": "Discount", "description": "A reduction applied to the base price"},
-    {"id": "dc-3", "name": "Price List", "description": "Collection of prices for products in a specific context"}
+    {
+      "id": "dc-1",
+      "name": "Price",
+      "description": "Monetary value assigned to a product"
+    },
+    {
+      "id": "dc-2",
+      "name": "Discount",
+      "description": "A reduction applied to the base price"
+    },
+    {
+      "id": "dc-3",
+      "name": "Price List",
+      "description": "Collection of prices for products in a specific context"
+    }
   ],
   "rules": [
-    {"id": "rule-1", "ruleType": "Consistency", "description": "Base price must be positive"},
-    {"id": "rule-2", "ruleType": "Computation", "description": "Discounted price equals base price minus discount amount, but cannot go below zero"},
-    {"id": "rule-3", "ruleType": "Structure", "description": "Discount percentage must be between 0 and 100"},
-    {"id": "rule-4", "ruleType": "State change", "description": "Price can only be changed for published products"},
-    {"id": "rule-5", "ruleType": "Consistency", "description": "A price list must have at least one price entry"}
+    {
+      "id": "rule-1",
+      "ruleType": "Consistency",
+      "description": "Base price must be positive"
+    },
+    {
+      "id": "rule-2",
+      "ruleType": "Computation",
+      "description": "Discounted price equals base price minus discount amount, but cannot go below zero"
+    },
+    {
+      "id": "rule-3",
+      "ruleType": "Structure",
+      "description": "Discount percentage must be between 0 and 100"
+    },
+    {
+      "id": "rule-4",
+      "ruleType": "State change",
+      "description": "Price can only be changed for published products"
+    },
+    {
+      "id": "rule-5",
+      "ruleType": "Consistency",
+      "description": "A price list must have at least one price entry"
+    }
   ],
   "qualityAttributes": [],
   "boundedContexts": [
@@ -28,7 +68,16 @@
           "id": "mod-1",
           "name": "Pricing",
           "description": "Manages product pricing and discounts",
-          "buildingBlocks": ["bb-1", "bb-2", "bb-3", "bb-4", "bb-5", "bb-6", "bb-7", "bb-8"]
+          "buildingBlocks": [
+            "bb-1",
+            "bb-2",
+            "bb-3",
+            "bb-4",
+            "bb-5",
+            "bb-6",
+            "bb-7",
+            "bb-8"
+          ]
         }
       ]
     }
@@ -40,10 +89,22 @@
       "type": "aggregate",
       "description": "Aggregate root managing a collection of product prices. Contains PriceEntry entities.",
       "properties": [
-        {"name": "id", "type": "PriceListId"},
-        {"name": "name", "type": "String"},
-        {"name": "entries", "type": "List<PriceEntry>"},
-        {"name": "active", "type": "boolean"}
+        {
+          "name": "id",
+          "type": "PriceListId"
+        },
+        {
+          "name": "name",
+          "type": "String"
+        },
+        {
+          "name": "entries",
+          "type": "List<PriceEntry>"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        }
       ],
       "behaviours": [
         {
@@ -56,23 +117,39 @@
         {
           "name": "addEntry",
           "description": "Adds a price entry for a product",
-          "input": ["bb-3", "bb-4"],
+          "input": [
+            "bb-3",
+            "bb-4"
+          ],
           "output": [],
-          "rules": ["rule-1"]
+          "rules": [
+            "rule-1"
+          ]
         },
         {
           "name": "applyDiscount",
           "description": "Applies a discount to a specific product entry",
-          "input": ["bb-5"],
-          "output": ["bb-7"],
-          "rules": ["rule-2", "rule-3"]
+          "input": [
+            "bb-5"
+          ],
+          "output": [
+            "bb-7"
+          ],
+          "rules": [
+            "rule-2",
+            "rule-3"
+          ]
         },
         {
           "name": "activate",
           "description": "Activates the price list for use",
           "input": [],
-          "output": ["bb-8"],
-          "rules": ["rule-5"]
+          "output": [
+            "bb-8"
+          ],
+          "rules": [
+            "rule-5"
+          ]
         }
       ]
     },
@@ -82,7 +159,10 @@
       "type": "value_object",
       "description": "Unique identifier for a price list",
       "properties": [
-        {"name": "value", "type": "UUID"}
+        {
+          "name": "value",
+          "type": "UUID"
+        }
       ],
       "behaviours": []
     },
@@ -92,24 +172,41 @@
       "type": "entity",
       "description": "A price entry for a specific product within a price list. Identity is the productId.",
       "properties": [
-        {"name": "productId", "type": "ProductId"},
-        {"name": "basePrice", "type": "Money"},
-        {"name": "discount", "type": "Discount"}
+        {
+          "name": "productId",
+          "type": "ProductId"
+        },
+        {
+          "name": "basePrice",
+          "type": "Money"
+        },
+        {
+          "name": "discount",
+          "type": "Discount"
+        }
       ],
       "behaviours": [
         {
           "name": "effectivePrice",
           "description": "Calculates the effective price after applying discount",
           "input": [],
-          "output": ["bb-4"],
-          "rules": ["rule-2"]
+          "output": [
+            "bb-4"
+          ],
+          "rules": [
+            "rule-2"
+          ]
         },
         {
           "name": "applyDiscount",
           "description": "Applies a new discount to this entry",
-          "input": ["bb-5"],
+          "input": [
+            "bb-5"
+          ],
           "output": [],
-          "rules": ["rule-3"]
+          "rules": [
+            "rule-3"
+          ]
         }
       ]
     },
@@ -117,10 +214,16 @@
       "id": "bb-4",
       "name": "Money",
       "type": "value_object",
-      "description": "Monetary amount with currency. Already exists in the project.",
+      "description": "Monetary amount with currency.",
       "properties": [
-        {"name": "amount", "type": "BigDecimal"},
-        {"name": "currency", "type": "String"}
+        {
+          "name": "amount",
+          "type": "BigDecimal"
+        },
+        {
+          "name": "currency",
+          "type": "String"
+        }
       ],
       "behaviours": []
     },
@@ -130,15 +233,24 @@
       "type": "value_object",
       "description": "A percentage-based discount",
       "properties": [
-        {"name": "percentage", "type": "int"}
+        {
+          "name": "percentage",
+          "type": "int"
+        }
       ],
       "behaviours": [
         {
           "name": "applyTo",
           "description": "Applies this discount to a money amount",
-          "input": ["bb-4"],
-          "output": ["bb-4"],
-          "rules": ["rule-2"]
+          "input": [
+            "bb-4"
+          ],
+          "output": [
+            "bb-4"
+          ],
+          "rules": [
+            "rule-2"
+          ]
         }
       ]
     },
@@ -152,8 +264,12 @@
         {
           "name": "calculatePrice",
           "description": "Finds the effective price for a product from the active price list",
-          "input": ["bb-1"],
-          "output": ["bb-4"],
+          "input": [
+            "bb-1"
+          ],
+          "output": [
+            "bb-4"
+          ],
           "rules": []
         }
       ]
@@ -164,9 +280,18 @@
       "type": "domain_event",
       "description": "Emitted when a discount is applied to a price entry",
       "properties": [
-        {"name": "priceListId", "type": "PriceListId"},
-        {"name": "productId", "type": "ProductId"},
-        {"name": "discount", "type": "Discount"}
+        {
+          "name": "priceListId",
+          "type": "PriceListId"
+        },
+        {
+          "name": "productId",
+          "type": "ProductId"
+        },
+        {
+          "name": "discount",
+          "type": "Discount"
+        }
       ],
       "behaviours": []
     },
@@ -176,7 +301,10 @@
       "type": "domain_event",
       "description": "Emitted when a price list is activated",
       "properties": [
-        {"name": "priceListId", "type": "PriceListId"}
+        {
+          "name": "priceListId",
+          "type": "PriceListId"
+        }
       ],
       "behaviours": []
     }
@@ -189,10 +317,21 @@
       "type": "Command",
       "description": "Applies a percentage discount to a product in the active price list",
       "businessGoal": "bg-1",
-      "input": ["bb-5"],
-      "output": ["bb-7"],
-      "usedBuildingBlocks": ["bb-1", "bb-3", "bb-6"],
-      "rules": ["rule-2", "rule-3"],
+      "input": [
+        "bb-5"
+      ],
+      "output": [
+        "bb-7"
+      ],
+      "usedBuildingBlocks": [
+        "bb-1",
+        "bb-3",
+        "bb-6"
+      ],
+      "rules": [
+        "rule-2",
+        "rule-3"
+      ],
       "scenarios": [
         {
           "name": "Valid discount applied",

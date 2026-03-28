@@ -1,0 +1,179 @@
+{
+  "actors": [
+    {"id": "actor-1", "name": "Customer", "description": "Requests returns for purchased items"}
+  ],
+  "businessGoals": [
+    {"id": "bg-1", "name": "Hassle-free Returns", "description": "Process customer returns efficiently with refunds"}
+  ],
+  "domainConcepts": [
+    {"id": "dc-1", "name": "Return Request", "description": "A customer's request to return purchased items"},
+    {"id": "dc-2", "name": "Refund", "description": "Money returned to the customer after a successful return"}
+  ],
+  "rules": [
+    {"id": "rule-1", "ruleType": "Consistency", "description": "Only paid orders can be returned"},
+    {"id": "rule-2", "ruleType": "State change", "description": "An approved return cannot be modified"},
+    {"id": "rule-3", "ruleType": "Computation", "description": "Refund amount equals the order total"},
+    {"id": "rule-4", "ruleType": "Consistency", "description": "A return request must reference an existing order"}
+  ],
+  "qualityAttributes": [],
+  "boundedContexts": [
+    {
+      "id": "bc-1",
+      "name": "Sales",
+      "description": "Sales bounded context",
+      "modules": [
+        {
+          "id": "mod-1",
+          "name": "Returns",
+          "description": "Handles customer return requests within the sales context",
+          "buildingBlocks": ["bb-1", "bb-2", "bb-3", "bb-4", "bb-5"]
+        }
+      ]
+    },
+    {
+      "id": "bc-2",
+      "name": "Fulfillment",
+      "description": "Fulfillment bounded context",
+      "modules": [
+        {
+          "id": "mod-2",
+          "name": "ReturnProcessing",
+          "description": "Handles physical return of goods in the fulfillment context",
+          "buildingBlocks": ["bb-6", "bb-7", "bb-8"]
+        }
+      ]
+    }
+  ],
+  "buildingBlocks": [
+    {
+      "id": "bb-1",
+      "name": "ReturnRequest",
+      "type": "aggregate",
+      "description": "Aggregate root for a customer return request",
+      "properties": [
+        {"name": "id", "type": "ReturnRequestId"},
+        {"name": "orderId", "type": "OrderId"},
+        {"name": "reason", "type": "String"},
+        {"name": "refundAmount", "type": "Money"},
+        {"name": "status", "type": "ReturnStatus"}
+      ],
+      "behaviours": [
+        {
+          "name": "submit",
+          "description": "Creates a new return request for a paid order",
+          "input": ["bb-3", "bb-4"],
+          "output": ["bb-5"],
+          "rules": ["rule-1"]
+        },
+        {
+          "name": "approve",
+          "description": "Approves the return request, initiating refund",
+          "input": [],
+          "output": [],
+          "rules": ["rule-2", "rule-3"]
+        }
+      ]
+    },
+    {
+      "id": "bb-2",
+      "name": "ReturnRequestId",
+      "type": "value_object",
+      "description": "Unique identifier for a return request",
+      "properties": [{"name": "value", "type": "UUID"}],
+      "behaviours": []
+    },
+    {
+      "id": "bb-3",
+      "name": "OrderId",
+      "type": "value_object",
+      "description": "Unique identifier for an order.",
+      "properties": [{"name": "value", "type": "UUID"}],
+      "behaviours": []
+    },
+    {
+      "id": "bb-4",
+      "name": "Money",
+      "type": "value_object",
+      "description": "Monetary amount.",
+      "properties": [{"name": "amount", "type": "BigDecimal"}, {"name": "currency", "type": "String"}],
+      "behaviours": []
+    },
+    {
+      "id": "bb-5",
+      "name": "ReturnRequested",
+      "type": "domain_event",
+      "description": "Emitted when a return request is submitted",
+      "properties": [
+        {"name": "returnRequestId", "type": "ReturnRequestId"},
+        {"name": "orderId", "type": "OrderId"},
+        {"name": "refundAmount", "type": "Money"}
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-6",
+      "name": "ReturnReceipt",
+      "type": "aggregate",
+      "description": "Tracks the physical receipt of returned goods at the warehouse",
+      "properties": [
+        {"name": "id", "type": "ReturnReceiptId"},
+        {"name": "returnRequestId", "type": "ReturnRequestId"},
+        {"name": "receivedAt", "type": "Instant"},
+        {"name": "inspected", "type": "boolean"}
+      ],
+      "behaviours": [
+        {
+          "name": "receive",
+          "description": "Records that returned goods have been received",
+          "input": ["bb-2"],
+          "output": ["bb-8"],
+          "rules": []
+        },
+        {
+          "name": "inspect",
+          "description": "Marks the returned goods as inspected",
+          "input": [],
+          "output": [],
+          "rules": []
+        }
+      ]
+    },
+    {
+      "id": "bb-7",
+      "name": "ReturnReceiptId",
+      "type": "value_object",
+      "description": "Unique identifier for a return receipt",
+      "properties": [{"name": "value", "type": "UUID"}],
+      "behaviours": []
+    },
+    {
+      "id": "bb-8",
+      "name": "ReturnReceived",
+      "type": "domain_event",
+      "description": "Emitted when returned goods are received at the warehouse",
+      "properties": [
+        {"name": "returnReceiptId", "type": "ReturnReceiptId"},
+        {"name": "returnRequestId", "type": "ReturnRequestId"},
+        {"name": "receivedAt", "type": "Instant"}
+      ],
+      "behaviours": []
+    }
+  ],
+  "useCases": [
+    {
+      "id": "uc-1",
+      "name": "Submit Return",
+      "actor": "actor-1",
+      "type": "Command",
+      "description": "Customer submits a return request for a paid order",
+      "businessGoal": "bg-1",
+      "input": ["bb-3", "bb-4"],
+      "output": ["bb-5"],
+      "usedBuildingBlocks": ["bb-1"],
+      "rules": ["rule-1", "rule-4"],
+      "scenarios": [],
+      "qualities": []
+    }
+  ],
+  "scenarios": []
+}

@@ -3,30 +3,38 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Implement the Shipping module described in this DesignDoc JSON into my Java project. Read the existing codebase to understand the conventions and follow them. The DesignDoc JSON is at evals/fixtures/designdoc-shipping.json and the project code is at evals/fixtures/style-lombok-spring/",
-      "expected_output": "Java classes matching project conventions: Shipment aggregate, value objects, domain events, repository interface, application services, facade, Spring configuration — all following the patterns detected in the existing codebase. Must reuse existing shared types (OrderId, DomainEvent, DomainEventPublisher).",
-      "files": [
-        "evals/fixtures/designdoc-shipping.json",
-        "evals/fixtures/style-lombok-spring/"
-      ]
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-shipping.json, project: evals/fixtures/style-lombok-spring/",
+      "files": ["evals/fixtures/designdoc-shipping.json", "evals/fixtures/style-lombok-spring/"]
     },
     {
       "id": 2,
-      "prompt": "Implement the Pricing module from this DesignDoc JSON into my catalog project. Read the existing code to understand the style and patterns. The DesignDoc is at evals/fixtures/designdoc-pricing.json and the project is at evals/fixtures/style-plain-java/",
-      "expected_output": "Java classes matching project conventions: PriceList aggregate, PriceEntry entity, value objects, domain events, domain service, application services, repository — following patterns detected in the existing codebase. Must reuse existing shared types (Money, ProductId).",
-      "files": [
-        "evals/fixtures/designdoc-pricing.json",
-        "evals/fixtures/style-plain-java/"
-      ]
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-pricing.json, project: evals/fixtures/style-plain-java/",
+      "files": ["evals/fixtures/designdoc-pricing.json", "evals/fixtures/style-plain-java/"]
     },
     {
       "id": 3,
-      "prompt": "Implement the Transfers module from this DesignDoc JSON into my banking app. Read the existing code to understand the conventions. DesignDoc is at evals/fixtures/designdoc-transfers.json, project at evals/fixtures/style-records-modern/",
-      "expected_output": "Java classes matching project conventions: Transfer aggregate, value objects, domain events, repository, use case handlers — following patterns detected in the existing codebase. Must reuse existing shared types (AccountId, Amount).",
-      "files": [
-        "evals/fixtures/designdoc-transfers.json",
-        "evals/fixtures/style-records-modern/"
-      ]
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-transfers.json, project: evals/fixtures/style-records-modern/",
+      "files": ["evals/fixtures/designdoc-transfers.json", "evals/fixtures/style-records-modern/"]
+    },
+    {
+      "id": 4,
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-payroll.json, project: evals/fixtures/style-mixed-patterns/",
+      "files": ["evals/fixtures/designdoc-payroll.json", "evals/fixtures/style-mixed-patterns/"]
+    },
+    {
+      "id": 5,
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-order-extended.json, project: evals/fixtures/style-delta-existing/",
+      "files": ["evals/fixtures/designdoc-order-extended.json", "evals/fixtures/style-delta-existing/"]
+    },
+    {
+      "id": 6,
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-receiving.json, project: evals/fixtures/style-unusual-conventions/",
+      "files": ["evals/fixtures/designdoc-receiving.json", "evals/fixtures/style-unusual-conventions/"]
+    },
+    {
+      "id": 7,
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-returns.json, project: evals/fixtures/style-cross-module/",
+      "files": ["evals/fixtures/designdoc-returns.json", "evals/fixtures/style-cross-module/"]
     }
   ]
 }
