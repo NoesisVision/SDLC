@@ -1,0 +1,52 @@
+{
+  "eval_name": "returns",
+  "output_dir": "iteration-9/returns-cross-module/with_skill/outputs",
+  "pass_rate": "9/9",
+  "expectations": [
+    {
+      "text": "return_request_in_sales_package",
+      "passed": true,
+      "evidence": "sales.returns package: True"
+    },
+    {
+      "text": "return_receipt_in_fulfillment_package",
+      "passed": true,
+      "evidence": "fulfillment package: True"
+    },
+    {
+      "text": "sealed_events_pattern",
+      "passed": true,
+      "evidence": "ReturnRequest events: True, ReturnReceipt events: True"
+    },
+    {
+      "text": "repository_as_nested_interface",
+      "passed": true,
+      "evidence": "ReturnRequest.Repository: True, ReturnReceipt.Repository: True"
+    },
+    {
+      "text": "orderid_reused_from_shared",
+      "passed": true,
+      "evidence": "imports OrderId: True, creates new: False"
+    },
+    {
+      "text": "money_reused_from_shared",
+      "passed": true,
+      "evidence": "imports Money: True, creates new: False"
+    },
+    {
+      "text": "all_building_blocks_present",
+      "passed": true,
+      "evidence": "found 6/6: ['ReturnRequest', 'ReturnRequestId', 'ReturnRequested', 'ReturnReceipt', 'ReturnReceiptId', 'ReturnReceived']"
+    },
+    {
+      "text": "cross_module_reference",
+      "passed": true,
+      "evidence": "ReturnReceipt references ReturnRequestId: True"
+    },
+    {
+      "text": "return_status_present",
+      "passed": true,
+      "evidence": "ReturnStatus: True"
+    }
+  ]
+}
