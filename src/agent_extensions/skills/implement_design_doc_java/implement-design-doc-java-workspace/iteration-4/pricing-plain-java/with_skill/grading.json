@@ -1,0 +1,52 @@
+{
+  "eval_name": "pricing",
+  "output_dir": "iteration-4/pricing-plain-java/with_skill/outputs",
+  "pass_rate": "9/9",
+  "expectations": [
+    {
+      "text": "correct_package_placement",
+      "passed": true,
+      "evidence": "pricing package: True"
+    },
+    {
+      "text": "service_per_use_case_pattern",
+      "passed": true,
+      "evidence": "service files: ['ApplyDiscountService.java', 'PricingService.java']"
+    },
+    {
+      "text": "vavr_either_returns",
+      "passed": true,
+      "evidence": "Either returns: True, Vavr import: True"
+    },
+    {
+      "text": "no_lombok_used",
+      "passed": true,
+      "evidence": "lombok imports found: False"
+    },
+    {
+      "text": "money_reused_not_recreated",
+      "passed": true,
+      "evidence": "imports Money: True, creates new: False"
+    },
+    {
+      "text": "productid_reused_not_recreated",
+      "passed": true,
+      "evidence": "imports ProductId: True, creates new: False"
+    },
+    {
+      "text": "all_building_blocks_present",
+      "passed": true,
+      "evidence": "found 7/7: ['PriceList', 'PriceListId', 'PriceEntry', 'Discount', 'PricingService', 'DiscountApplied', 'PriceListActivated']"
+    },
+    {
+      "text": "discount_percentage_validation",
+      "passed": true,
+      "evidence": "validation in Discount: True"
+    },
+    {
+      "text": "package_private_internals",
+      "passed": true,
+      "evidence": "PriceEntry package-private: True"
+    }
+  ]
+}
