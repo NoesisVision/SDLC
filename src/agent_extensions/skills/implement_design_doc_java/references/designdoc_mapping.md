@@ -123,6 +123,12 @@ Interface for persisting and retrieving aggregates.
 - Implementation is OUT OF SCOPE — only generate the interface
 - Follow project's repository naming and return type conventions (Optional, nullable, etc.)
 
+**Critical: check how the project structures repository interfaces.** Common patterns:
+- **Separate interface file** in the domain package (most common)
+- **Nested interface inside the aggregate** (e.g., `Order.Repository`) — some projects nest the repository interface inside the aggregate root class to express the tight coupling
+
+If the project uses nested repository interfaces, your new aggregate must also define its repository as a nested interface.
+
 ### `factory`
 
 Encapsulates complex creation logic.

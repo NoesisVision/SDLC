@@ -122,7 +122,7 @@ Present a summary to the user mapping each DesignDoc element to its code locatio
 | Encapsulation | Access modifiers on existing classes | Match: package-private children, public API surface |
 | Immutability | Field declarations, setters | Match: final fields, records, defensive copies |
 | Constructor style | Existing constructors | Match: static factories, builders, plain |
-| Repository style | Existing repository interfaces | Match: method naming, Optional returns, collection semantics |
+| Repository location | Existing repository interfaces | Match: separate file vs **nested interface inside aggregate** (e.g., `Order.Repository`) |
 | DI framework | Spring/Guice/CDI annotations | Match: @Component, @Service, configuration classes |
 
 ## Scope

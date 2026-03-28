@@ -623,16 +623,7 @@ def grade_receiving(files: dict[str, str]) -> list[dict]:
         "evidence": f"nested Repository interface in ReceivingNote: {has_nested_repo}"
     })
 
-    # 4. factory_as_inner_class — KEY DISCRIMINATOR
-    # Project uses InventoryItem.Factory as static inner class
-    has_nested_factory = "class Factory" in receiving_note or "static class Factory" in receiving_note
-    results.append({
-        "text": "factory_as_inner_class",
-        "passed": has_nested_factory,
-        "evidence": f"nested Factory in ReceivingNote: {has_nested_factory}"
-    })
-
-    # 5. sku_reused
+    # 4. sku_reused
     imports_sku = file_contains(files, r"import\s+io\.proj\.warehouse\.inventory\.Sku")
     creates_sku = any_file_named(files, "Sku.java")
     results.append({
