@@ -42,48 +42,49 @@ class UseCaseType(str, Enum):
 
 class Property(BaseModel):
     name: str
-    type: str
+    type: str | None = Field(description="BuildingBlock id or primitive type name")
 
 
 class Behaviour(BaseModel):
-    name: str
-    description: str
-    input: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
-    output: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
-    rules: list["Rule"] = []
+    id: str
+    name: str | None = None
+    description: str | None
+    input: ChangeSet[str] | None = Field(default_factory=list, description="List of BuildingBlock ids")
+    output: ChangeSet[str] | None = Field(default_factory=list, description="List of BuildingBlock ids")
+    rules: ChangeSet[Rule] | None = []
 
 
 class Rule(BaseModel):
     model_config = {"populate_by_name": True}
 
     id: str
-    rule_type: RuleType = Field(alias="ruleType")
-    description: str
+    rule_type: RuleType | None = Field(alias="ruleType")
+    description: str | None = None
 
 
 class Actor(BaseModel):
     id: str
     name: str
-    description: str
+    description: str | None = None
 
 
 class BusinessGoal(BaseModel):
     id: str
     name: str
-    description: str
+    description: str | None = None
 
 
 class DomainConcept(BaseModel):
     id: str
     name: str
-    description: str
+    description: str | None = None
 
 
 class QualityAttribute(BaseModel):
     id: str
     name: str
-    type: QualityAttributeType
-    description: str
+    type: QualityAttributeType | None
+    description: str | None
 
 
 class Scenario(BaseModel):
