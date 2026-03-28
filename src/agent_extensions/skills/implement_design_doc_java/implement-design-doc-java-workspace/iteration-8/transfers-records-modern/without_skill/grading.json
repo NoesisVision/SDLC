@@ -1,0 +1,52 @@
+{
+  "eval_name": "transfers",
+  "output_dir": "iteration-8/transfers-records-modern/without_skill/outputs",
+  "pass_rate": "9/9",
+  "expectations": [
+    {
+      "text": "correct_package_placement",
+      "passed": true,
+      "evidence": "transfers package: True"
+    },
+    {
+      "text": "command_handler_pattern",
+      "passed": true,
+      "evidence": "commands: ['InitiateTransferCommand.java'], handlers: ['InitiateTransferHandler.java'], implements: cmd=True, handler=True"
+    },
+    {
+      "text": "records_for_value_objects",
+      "passed": true,
+      "evidence": "TransferId is record: True"
+    },
+    {
+      "text": "sealed_event_interface",
+      "passed": true,
+      "evidence": "sealed Event interface: True"
+    },
+    {
+      "text": "accountid_reused_not_recreated",
+      "passed": true,
+      "evidence": "imports AccountId: True, creates new: False"
+    },
+    {
+      "text": "amount_reused_not_recreated",
+      "passed": true,
+      "evidence": "imports Amount: True, creates new: False"
+    },
+    {
+      "text": "all_building_blocks_present",
+      "passed": true,
+      "evidence": "found 6/6: ['Transfer', 'TransferId', 'TransferStatus', 'TransferInitiated (inner)', 'TransferCompleted (inner)', 'TransferRepository']"
+    },
+    {
+      "text": "same_account_validation",
+      "passed": true,
+      "evidence": "same-account validation: True"
+    },
+    {
+      "text": "modern_java_features",
+      "passed": true,
+      "evidence": "var: True, record: True"
+    }
+  ]
+}

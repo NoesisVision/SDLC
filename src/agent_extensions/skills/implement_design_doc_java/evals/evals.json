@@ -3,36 +3,21 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-shipping.json, project: evals/fixtures/style-lombok-spring/",
-      "files": ["evals/fixtures/designdoc-shipping.json", "evals/fixtures/style-lombok-spring/"]
-    },
-    {
-      "id": 2,
       "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-pricing.json, project: evals/fixtures/style-plain-java/",
       "files": ["evals/fixtures/designdoc-pricing.json", "evals/fixtures/style-plain-java/"]
     },
     {
-      "id": 3,
-      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-transfers.json, project: evals/fixtures/style-records-modern/",
-      "files": ["evals/fixtures/designdoc-transfers.json", "evals/fixtures/style-records-modern/"]
-    },
-    {
-      "id": 4,
+      "id": 2,
       "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-payroll.json, project: evals/fixtures/style-mixed-patterns/",
       "files": ["evals/fixtures/designdoc-payroll.json", "evals/fixtures/style-mixed-patterns/"]
     },
     {
-      "id": 5,
-      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-order-extended.json, project: evals/fixtures/style-delta-existing/",
-      "files": ["evals/fixtures/designdoc-order-extended.json", "evals/fixtures/style-delta-existing/"]
-    },
-    {
-      "id": 6,
+      "id": 3,
       "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-receiving.json, project: evals/fixtures/style-unusual-conventions/",
       "files": ["evals/fixtures/designdoc-receiving.json", "evals/fixtures/style-unusual-conventions/"]
     },
     {
-      "id": 7,
+      "id": 4,
       "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-returns.json, project: evals/fixtures/style-cross-module/",
       "files": ["evals/fixtures/designdoc-returns.json", "evals/fixtures/style-cross-module/"]
     }
