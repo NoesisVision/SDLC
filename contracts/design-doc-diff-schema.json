@@ -1,0 +1,1069 @@
+{
+  "$defs": {
+    "Actor": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "Behaviour": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "input": {
+          "description": "List of BuildingBlock ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Input",
+          "type": "array"
+        },
+        "output": {
+          "description": "List of BuildingBlock ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Output",
+          "type": "array"
+        },
+        "rules": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Rule"
+          },
+          "title": "Rules",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ],
+      "title": "Behaviour",
+      "type": "object"
+    },
+    "BoundedContextMod": {
+      "description": "Modification of a BoundedContext.\n\nWhen used in `added`: all scalar fields must be populated.\nWhen used in `modified`: only changed fields are set (None = no change).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "domainConcepts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_DomainConcept_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "modules": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_DomainModuleMod_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "buildingBlocks": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_BuildingBlockMod_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "useCases": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_UseCaseMod_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "BoundedContextMod",
+      "type": "object"
+    },
+    "BuildingBlockMod": {
+      "description": "Modification of a BuildingBlock.\n\nWhen used in `added`: all scalar fields must be populated,\nsub-elements go into their ChangeSet's `added`.\nWhen used in `modified`: only changed fields are set (None = no change).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BuildingBlockType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "properties": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_Property_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "behaviours": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_Behaviour_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rules": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_Rule_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "scenarios": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_Scenario_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "BuildingBlockMod",
+      "type": "object"
+    },
+    "BuildingBlockType": {
+      "enum": [
+        "aggregate",
+        "entity",
+        "value_object",
+        "domain_event",
+        "domain_command",
+        "domain_query",
+        "domain_service",
+        "application_service",
+        "repository",
+        "factory",
+        "external_integration"
+      ],
+      "title": "BuildingBlockType",
+      "type": "string"
+    },
+    "BusinessGoal": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "title": "BusinessGoal",
+      "type": "object"
+    },
+    "ChangeSet_Actor_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Actor"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Actor"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[Actor]",
+      "type": "object"
+    },
+    "ChangeSet_Behaviour_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Behaviour"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Behaviour"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[Behaviour]",
+      "type": "object"
+    },
+    "ChangeSet_BoundedContextMod_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/BoundedContextMod"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/BoundedContextMod"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[BoundedContextMod]",
+      "type": "object"
+    },
+    "ChangeSet_BuildingBlockMod_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/BuildingBlockMod"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/BuildingBlockMod"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[BuildingBlockMod]",
+      "type": "object"
+    },
+    "ChangeSet_BusinessGoal_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/BusinessGoal"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/BusinessGoal"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[BusinessGoal]",
+      "type": "object"
+    },
+    "ChangeSet_DomainConcept_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainConcept"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainConcept"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[DomainConcept]",
+      "type": "object"
+    },
+    "ChangeSet_DomainModuleMod_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainModuleMod"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainModuleMod"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[DomainModuleMod]",
+      "type": "object"
+    },
+    "ChangeSet_Property_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Property"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Property"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[Property]",
+      "type": "object"
+    },
+    "ChangeSet_QualityAttribute_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/QualityAttribute"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/QualityAttribute"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[QualityAttribute]",
+      "type": "object"
+    },
+    "ChangeSet_Rule_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Rule"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Rule"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[Rule]",
+      "type": "object"
+    },
+    "ChangeSet_Scenario_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Scenario"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Scenario"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[Scenario]",
+      "type": "object"
+    },
+    "ChangeSet_UseCaseMod_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UseCaseMod"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UseCaseMod"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[UseCaseMod]",
+      "type": "object"
+    },
+    "ChangeSet_str_": {
+      "properties": {
+        "added": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Added",
+          "type": "array"
+        },
+        "removed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed",
+          "type": "array"
+        },
+        "modified": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Modified",
+          "type": "array"
+        }
+      },
+      "title": "ChangeSet[str]",
+      "type": "object"
+    },
+    "DomainConcept": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "title": "DomainConcept",
+      "type": "object"
+    },
+    "DomainModuleMod": {
+      "description": "Modification of a DomainModule.\n\nWhen used in `added`: all scalar fields must be populated.\nWhen used in `modified`: only changed fields are set (None = no change).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "buildingBlocks": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_BuildingBlockMod_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "DomainModuleMod",
+      "type": "object"
+    },
+    "Property": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "title": "Property",
+      "type": "object"
+    },
+    "QualityAttribute": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/QualityAttributeType"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "description"
+      ],
+      "title": "QualityAttribute",
+      "type": "object"
+    },
+    "QualityAttributeType": {
+      "enum": [
+        "performance",
+        "availability",
+        "security",
+        "other"
+      ],
+      "title": "QualityAttributeType",
+      "type": "string"
+    },
+    "Rule": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "ruleType": {
+          "$ref": "#/$defs/RuleType"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "ruleType",
+        "description"
+      ],
+      "title": "Rule",
+      "type": "object"
+    },
+    "RuleType": {
+      "enum": [
+        "Consistency",
+        "Structure",
+        "Computation",
+        "State change"
+      ],
+      "title": "RuleType",
+      "type": "string"
+    },
+    "Scenario": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "given": {
+          "title": "Given",
+          "type": "string"
+        },
+        "when": {
+          "title": "When",
+          "type": "string"
+        },
+        "then": {
+          "title": "Then",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "given",
+        "when",
+        "then"
+      ],
+      "title": "Scenario",
+      "type": "object"
+    },
+    "UseCaseMod": {
+      "description": "Modification of a UseCase.\n\nWhen used in `added`: all scalar fields must be populated.\nWhen used in `modified`: only changed fields are set (None = no change).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actor"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UseCaseType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "businessGoals": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_str_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "input": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_str_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_str_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "usedBuildingBlocks": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_str_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rules": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_Rule_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "scenarios": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_Scenario_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "qualityAttributes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeSet_str_"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "UseCaseMod",
+      "type": "object"
+    },
+    "UseCaseType": {
+      "enum": [
+        "Command",
+        "Event",
+        "Query"
+      ],
+      "title": "UseCaseType",
+      "type": "string"
+    }
+  },
+  "description": "Describes changes to a DesignDoc.\n\nEach field is None when there are no changes to that collection.\nFirst iteration is a diff from empty state (everything in `added`).",
+  "properties": {
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "actors": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChangeSet_Actor_"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "businessGoals": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChangeSet_BusinessGoal_"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "qualityAttributes": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChangeSet_QualityAttribute_"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "boundedContexts": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChangeSet_BoundedContextMod_"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "description"
+  ],
+  "title": "DesignDocDiff",
+  "type": "object"
+}

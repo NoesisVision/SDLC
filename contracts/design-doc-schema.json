@@ -50,9 +50,9 @@
           "type": "array"
         },
         "rules": {
-          "description": "List of Rule ids",
+          "default": [],
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Rule"
           },
           "title": "Rules",
           "type": "array"
@@ -79,6 +79,13 @@
           "title": "Description",
           "type": "string"
         },
+        "domainConcepts": {
+          "items": {
+            "$ref": "#/$defs/DomainConcept"
+          },
+          "title": "Domainconcepts",
+          "type": "array"
+        },
         "modules": {
           "default": [],
           "items": {
@@ -88,11 +95,18 @@
           "type": "array"
         },
         "buildingBlocks": {
-          "description": "List of BuildingBlock ids not in any module",
+          "description": "List of BuildingBlocks not in any module",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/BuildingBlock"
           },
           "title": "Buildingblocks",
+          "type": "array"
+        },
+        "useCases": {
+          "items": {
+            "$ref": "#/$defs/UseCase"
+          },
+          "title": "Usecases",
           "type": "array"
         }
       },
@@ -135,6 +149,22 @@
             "$ref": "#/$defs/Behaviour"
           },
           "title": "Behaviours",
+          "type": "array"
+        },
+        "rules": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Rule"
+          },
+          "title": "Rules",
+          "type": "array"
+        },
+        "scenarios": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Scenario"
+          },
+          "title": "Scenarios",
           "type": "array"
         }
       },
@@ -225,9 +255,9 @@
           "type": "string"
         },
         "buildingBlocks": {
-          "description": "List of BuildingBlock ids",
+          "description": "List of BuildingBlocks",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/BuildingBlock"
           },
           "title": "Buildingblocks",
           "type": "array"
@@ -380,29 +410,17 @@
           "$ref": "#/$defs/UseCaseType"
         },
         "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Description"
+          "default": "",
+          "title": "Description",
+          "type": "string"
         },
-        "businessGoal": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Reference to a BusinessGoal id",
-          "title": "Businessgoal"
+        "businessGoals": {
+          "description": "List of BusinessGoal ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Businessgoals",
+          "type": "array"
         },
         "input": {
           "description": "List of BuildingBlock ids",
@@ -429,9 +447,9 @@
           "type": "array"
         },
         "rules": {
-          "description": "List of Rule ids",
+          "default": [],
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Rule"
           },
           "title": "Rules",
           "type": "array"
@@ -444,12 +462,12 @@
           "title": "Scenarios",
           "type": "array"
         },
-        "qualities": {
+        "quality_attributes": {
           "description": "List of QualityAttribute ids",
           "items": {
             "type": "string"
           },
-          "title": "Qualities",
+          "title": "Quality Attributes",
           "type": "array"
         }
       },
@@ -488,21 +506,6 @@
       "title": "Businessgoals",
       "type": "array"
     },
-    "domainConcepts": {
-      "items": {
-        "$ref": "#/$defs/DomainConcept"
-      },
-      "title": "Domainconcepts",
-      "type": "array"
-    },
-    "rules": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/Rule"
-      },
-      "title": "Rules",
-      "type": "array"
-    },
     "qualityAttributes": {
       "items": {
         "$ref": "#/$defs/QualityAttribute"
@@ -515,28 +518,6 @@
         "$ref": "#/$defs/BoundedContext"
       },
       "title": "Boundedcontexts",
-      "type": "array"
-    },
-    "buildingBlocks": {
-      "items": {
-        "$ref": "#/$defs/BuildingBlock"
-      },
-      "title": "Buildingblocks",
-      "type": "array"
-    },
-    "useCases": {
-      "items": {
-        "$ref": "#/$defs/UseCase"
-      },
-      "title": "Usecases",
-      "type": "array"
-    },
-    "scenarios": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/Scenario"
-      },
-      "title": "Scenarios",
       "type": "array"
     }
   },

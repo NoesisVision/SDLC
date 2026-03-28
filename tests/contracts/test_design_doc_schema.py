@@ -71,11 +71,11 @@ class TestBaseTypes:
             description="Places an order",
             input=["bb-1"],
             output=["bb-2"],
-            rules=["rule-1"],
+            rules=[Rule(id="r-1", ruleType="Consistency", description="test")],
         )
         assert b.input == ["bb-1"]
         assert b.output == ["bb-2"]
-        assert b.rules == ["rule-1"]
+        assert len(b.rules) == 1
 
     def test_rule_creation(self) -> None:
         r = Rule(id="r-1", ruleType="Consistency", description="Must be valid")
@@ -139,6 +139,8 @@ class TestBuildingBlock:
         )
         assert bb.properties == []
         assert bb.behaviours == []
+        assert bb.rules == []
+        assert bb.scenarios == []
 
 
 class TestOrganizationalStructure:
@@ -147,9 +149,12 @@ class TestOrganizationalStructure:
             id="mod-1",
             name="Order Management",
             description="Core orders",
-            buildingBlocks=["bb-1", "bb-2"],
+            buildingBlocks=[
+                BuildingBlock(id="bb-1", name="Order", type="aggregate", description="Order")
+            ],
         )
-        assert dm.building_blocks == ["bb-1", "bb-2"]
+        assert len(dm.building_blocks) == 1
+        assert dm.building_blocks[0].id == "bb-1"
 
     def test_bounded_context_with_modules(self) -> None:
         bc = BoundedContext(
@@ -161,13 +166,39 @@ class TestOrganizationalStructure:
                     id="mod-1",
                     name="Order Management",
                     description="Core orders",
-                    buildingBlocks=["bb-1"],
+                    buildingBlocks=[
+                        BuildingBlock(id="bb-1", name="Order", type="aggregate", description="Order")
+                    ],
                 )
             ],
-            buildingBlocks=["bb-5"],
+            buildingBlocks=[
+                BuildingBlock(id="bb-5", name="Shared", type="value_object", description="Shared VO")
+            ],
         )
         assert len(bc.modules) == 1
-        assert bc.building_blocks == ["bb-5"]
+        assert len(bc.building_blocks) == 1
+
+    def test_bounded_context_with_domain_concepts(self) -> None:
+        bc = BoundedContext(
+            id="bc-1",
+            name="Ordering",
+            description="Order context",
+            domainConcepts=[
+                DomainConcept(id="dc-1", name="Order", description="A purchase request")
+            ],
+        )
+        assert len(bc.domain_concepts) == 1
+
+    def test_bounded_context_with_use_cases(self) -> None:
+        bc = BoundedContext(
+            id="bc-1",
+            name="Ordering",
+            description="Order context",
+            useCases=[
+                UseCase(id="uc-1", name="Place Order", actor="a-1", type="Command")
+            ],
+        )
+        assert len(bc.use_cases) == 1
 
 
 class TestUseCase:
@@ -178,11 +209,11 @@ class TestUseCase:
             actor="actor-1",
             type="Command",
             description="Customer places order",
-            businessGoal="bg-1",
+            businessGoals=["bg-1"],
             input=["bb-3"],
             output=["bb-4"],
             usedBuildingBlocks=["bb-1", "bb-2"],
-            rules=["rule-1"],
+            rules=[Rule(id="r-1", ruleType="Consistency", description="test")],
             scenarios=[
                 Scenario(
                     name="Happy path",
@@ -192,24 +223,26 @@ class TestUseCase:
                     then="Order placed",
                 )
             ],
-            qualities=["qa-1"],
+            quality_attributes=["qa-1"],
         )
-        assert uc.business_goal == "bg-1"
+        assert uc.business_goals == ["bg-1"]
         assert uc.used_building_blocks == ["bb-1", "bb-2"]
         assert len(uc.scenarios) == 1
+        assert uc.quality_attributes == ["qa-1"]
 
-    def test_use_case_optional_fields(self) -> None:
+    def test_use_case_defaults(self) -> None:
         uc = UseCase(
             id="uc-1",
             name="List Orders",
             actor="actor-1",
             type="Query",
         )
-        assert uc.description is None
-        assert uc.business_goal is None
+        assert uc.description == ""
+        assert uc.business_goals == []
         assert uc.input == []
         assert uc.used_building_blocks == []
         assert uc.scenarios == []
+        assert uc.quality_attributes == []
 
 
 class TestDesignDoc:
@@ -217,13 +250,13 @@ class TestDesignDoc:
         doc = DesignDoc.model_validate(sample_design_doc_data)
         assert len(doc.actors) == 1
         assert len(doc.business_goals) == 1
-        assert len(doc.domain_concepts) == 2
-        assert len(doc.rules) == 2
         assert len(doc.quality_attributes) == 1
         assert len(doc.bounded_contexts) == 1
-        assert len(doc.building_blocks) == 4
-        assert len(doc.use_cases) == 1
-        assert len(doc.scenarios) == 1
+        bc = doc.bounded_contexts[0]
+        assert len(bc.domain_concepts) == 2
+        assert len(bc.modules) == 1
+        assert len(bc.modules[0].building_blocks) == 4
+        assert len(bc.use_cases) == 1
 
     def test_design_doc_round_trip(self, sample_design_doc_data: dict) -> None:
         doc = DesignDoc.model_validate(sample_design_doc_data)
@@ -234,8 +267,7 @@ class TestDesignDoc:
     def test_design_doc_minimal(self) -> None:
         doc = DesignDoc()
         assert doc.actors == []
-        assert doc.building_blocks == []
-        assert doc.use_cases == []
+        assert doc.bounded_contexts == []
 
     def test_json_schema_generation(self) -> None:
         schema = DesignDoc.model_json_schema()
@@ -256,10 +288,10 @@ class TestAliasHandling:
             "name": "Test",
             "actor": "a-1",
             "type": "Command",
-            "businessGoal": "bg-1",
+            "businessGoals": ["bg-1"],
             "usedBuildingBlocks": ["bb-1"],
         })
-        assert uc.business_goal == "bg-1"
+        assert uc.business_goals == ["bg-1"]
         assert uc.used_building_blocks == ["bb-1"]
 
     def test_domain_module_accepts_alias(self) -> None:
@@ -267,15 +299,27 @@ class TestAliasHandling:
             "id": "mod-1",
             "name": "Test",
             "description": "Test module",
-            "buildingBlocks": ["bb-1"],
+            "buildingBlocks": [
+                {"id": "bb-1", "name": "Order", "type": "aggregate", "description": "Order"}
+            ],
         })
-        assert dm.building_blocks == ["bb-1"]
+        assert len(dm.building_blocks) == 1
 
     def test_bounded_context_accepts_alias(self) -> None:
         bc = BoundedContext.model_validate({
             "id": "bc-1",
             "name": "Test",
             "description": "Test context",
-            "buildingBlocks": ["bb-1"],
+            "buildingBlocks": [
+                {"id": "bb-1", "name": "Order", "type": "aggregate", "description": "Order"}
+            ],
+            "domainConcepts": [
+                {"id": "dc-1", "name": "Order", "description": "Order concept"}
+            ],
+            "useCases": [
+                {"id": "uc-1", "name": "Test", "actor": "a-1", "type": "Command"}
+            ],
         })
-        assert bc.building_blocks == ["bb-1"]
+        assert len(bc.building_blocks) == 1
+        assert len(bc.domain_concepts) == 1
+        assert len(bc.use_cases) == 1

@@ -132,9 +132,9 @@ class UseCase(BaseModel):
     name: str
     actor: str = Field(description="Reference to an Actor id")
     type: UseCaseType
-    description: str | None = None
-    business_goal: str | None = Field(
-        default=None, alias="businessGoal", description="Reference to a BusinessGoal id"
+    description: str = ""
+    business_goals: list[str] = Field(
+        default_factory=list, alias="businessGoals", description="List of BusinessGoal ids"
     )
     input: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
     output: list[str] = Field(default_factory=list, description="List of BuildingBlock ids")
