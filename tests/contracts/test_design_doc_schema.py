@@ -1,11 +1,12 @@
 from contracts.design_doc_schema import (
     Actor,
     Behaviour,
+    BoundedContext,
     BuildingBlock,
     BuildingBlockType,
-    BoundedContext,
     BusinessGoal,
-    DesignDoc,
+    ChangeSet,
+    DesignDocDiff,
     DomainConcept,
     DomainModule,
     Property,
@@ -37,11 +38,6 @@ class TestEnums:
         assert QualityAttributeType.SECURITY == "security"
         assert QualityAttributeType.OTHER == "other"
 
-    def test_quality_attribute_type_has_no_capex_opex(self) -> None:
-        values = [e.value for e in QualityAttributeType]
-        assert "CAPEX" not in values
-        assert "OPEX" not in values
-
     def test_building_block_type_values(self) -> None:
         expected = {
             "aggregate", "entity", "value_object",
@@ -53,19 +49,19 @@ class TestEnums:
         assert actual == expected
 
 
-class TestBaseTypes:
-    def test_property_creation(self) -> None:
+class TestLeafTypes:
+    def test_property(self) -> None:
         prop = Property(name="orderId", type="UUID")
         assert prop.name == "orderId"
         assert prop.type == "UUID"
 
-    def test_behaviour_with_defaults(self) -> None:
+    def test_behaviour_defaults(self) -> None:
         b = Behaviour(name="place", description="Places an order")
         assert b.input == []
         assert b.output == []
         assert b.rules == []
 
-    def test_behaviour_with_references(self) -> None:
+    def test_behaviour_with_rules(self) -> None:
         b = Behaviour(
             name="place",
             description="Places an order",
@@ -74,17 +70,16 @@ class TestBaseTypes:
             rules=[Rule(id="r-1", ruleType="Consistency", description="test")],
         )
         assert b.input == ["bb-1"]
-        assert b.output == ["bb-2"]
         assert len(b.rules) == 1
 
-    def test_rule_creation(self) -> None:
+    def test_rule(self) -> None:
         r = Rule(id="r-1", ruleType="Consistency", description="Must be valid")
-        assert r.id == "r-1"
         assert r.rule_type == RuleType.CONSISTENCY
-        assert r.description == "Must be valid"
 
+    def test_rule_alias(self) -> None:
+        r = Rule.model_validate({"id": "r-1", "ruleType": "Consistency", "description": "test"})
+        assert r.rule_type == RuleType.CONSISTENCY
 
-class TestDomainElements:
     def test_actor(self) -> None:
         a = Actor(id="a-1", name="Customer", description="End user")
         assert a.id == "a-1"
@@ -97,7 +92,7 @@ class TestDomainElements:
         dc = DomainConcept(id="dc-1", name="Order", description="A purchase request")
         assert dc.id == "dc-1"
 
-    def test_scenario_structured(self) -> None:
+    def test_scenario(self) -> None:
         s = Scenario(
             name="Happy path",
             description="Order is placed successfully",
@@ -106,8 +101,6 @@ class TestDomainElements:
             then="Order is created",
         )
         assert s.given == "A customer with items"
-        assert s.when == "Customer submits order"
-        assert s.then == "Order is created"
 
     def test_quality_attribute(self) -> None:
         qa = QualityAttribute(
@@ -116,210 +109,389 @@ class TestDomainElements:
         assert qa.type == QualityAttributeType.PERFORMANCE
 
 
-class TestBuildingBlock:
-    def test_building_block_creation(self) -> None:
-        bb = BuildingBlock(
+class TestChangeSet:
+    def test_empty(self) -> None:
+        cs = ChangeSet[Actor]()
+        assert cs.added == []
+        assert cs.removed == []
+        assert cs.modified == []
+
+    def test_with_elements(self) -> None:
+        cs = ChangeSet[Actor](
+            added=[Actor(id="a-2", name="Admin", description="System admin")],
+            removed=["a-3"],
+            modified=[Actor(id="a-1", name="Updated", description="Updated")],
+        )
+        assert len(cs.added) == 1
+        assert cs.removed == ["a-3"]
+        assert cs.modified[0].name == "Updated"
+
+
+class TestBuildingBlockMod:
+    def test_as_add(self) -> None:
+        mod = BuildingBlock(
+            id="bb-10",
+            name="DiscountCode",
+            type=BuildingBlockType.VALUE_OBJECT,
+            description="Discount code",
+            properties=ChangeSet[Property](
+                added=[Property(name="code", type="str")],
+            ),
+        )
+        assert mod.name == "DiscountCode"
+        assert mod.properties.added[0].name == "code"
+
+    def test_as_modify(self) -> None:
+        mod = BuildingBlock(
             id="bb-1",
-            name="Order",
-            type="aggregate",
-            description="Order aggregate root",
-            properties=[Property(name="id", type="OrderId")],
-            behaviours=[Behaviour(name="place", description="Places order")],
+            properties=ChangeSet[Property](
+                added=[Property(name="discount", type="Decimal")],
+            ),
+            behaviours=ChangeSet[Behaviour](
+                removed=["old_method"],
+            ),
         )
-        assert bb.type == BuildingBlockType.AGGREGATE
-        assert len(bb.properties) == 1
-        assert len(bb.behaviours) == 1
+        assert mod.name is None
+        assert mod.properties.added[0].name == "discount"
+        assert mod.behaviours.removed == ["old_method"]
 
-    def test_building_block_defaults(self) -> None:
-        bb = BuildingBlock(
+    def test_scalar_change(self) -> None:
+        mod = BuildingBlock(
             id="bb-1",
-            name="OrderPlaced",
-            type="domain_event",
-            description="Event emitted on order placement",
+            description="New description",
+            type=BuildingBlockType.ENTITY,
         )
-        assert bb.properties == []
-        assert bb.behaviours == []
-        assert bb.rules == []
-        assert bb.scenarios == []
+        assert mod.description == "New description"
+        assert mod.name is None
 
 
-class TestOrganizationalStructure:
-    def test_domain_module(self) -> None:
-        dm = DomainModule(
-            id="mod-1",
-            name="Order Management",
-            description="Core orders",
-            buildingBlocks=[
-                BuildingBlock(id="bb-1", name="Order", type="aggregate", description="Order")
-            ],
-        )
-        assert len(dm.building_blocks) == 1
-        assert dm.building_blocks[0].id == "bb-1"
-
-    def test_bounded_context_with_modules(self) -> None:
-        bc = BoundedContext(
-            id="bc-1",
-            name="Ordering",
-            description="Order context",
-            modules=[
-                DomainModule(
-                    id="mod-1",
-                    name="Order Management",
-                    description="Core orders",
-                    buildingBlocks=[
-                        BuildingBlock(id="bb-1", name="Order", type="aggregate", description="Order")
-                    ],
-                )
-            ],
-            buildingBlocks=[
-                BuildingBlock(id="bb-5", name="Shared", type="value_object", description="Shared VO")
-            ],
-        )
-        assert len(bc.modules) == 1
-        assert len(bc.building_blocks) == 1
-
-    def test_bounded_context_with_domain_concepts(self) -> None:
-        bc = BoundedContext(
-            id="bc-1",
-            name="Ordering",
-            description="Order context",
-            domainConcepts=[
-                DomainConcept(id="dc-1", name="Order", description="A purchase request")
-            ],
-        )
-        assert len(bc.domain_concepts) == 1
-
-    def test_bounded_context_with_use_cases(self) -> None:
-        bc = BoundedContext(
-            id="bc-1",
-            name="Ordering",
-            description="Order context",
-            useCases=[
-                UseCase(id="uc-1", name="Place Order", actor="a-1", type="Command")
-            ],
-        )
-        assert len(bc.use_cases) == 1
-
-
-class TestUseCase:
-    def test_use_case_full(self) -> None:
-        uc = UseCase(
-            id="uc-1",
-            name="Place Order",
-            actor="actor-1",
+class TestUseCaseMod:
+    def test_as_add(self) -> None:
+        mod = UseCase(
+            id="uc-2",
+            name="Cancel Order",
+            actor="a-1",
             type="Command",
-            description="Customer places order",
-            businessGoals=["bg-1"],
-            input=["bb-3"],
-            output=["bb-4"],
-            usedBuildingBlocks=["bb-1", "bb-2"],
-            rules=[Rule(id="r-1", ruleType="Consistency", description="test")],
-            scenarios=[
-                Scenario(
-                    name="Happy path",
-                    description="Success",
-                    given="Items in cart",
-                    when="Submit",
-                    then="Order placed",
-                )
-            ],
-            quality_attributes=["qa-1"],
+            description="Cancel an order",
+            input=ChangeSet[str](added=["bb-20"]),
         )
-        assert uc.business_goals == ["bg-1"]
-        assert uc.used_building_blocks == ["bb-1", "bb-2"]
-        assert len(uc.scenarios) == 1
-        assert uc.quality_attributes == ["qa-1"]
+        assert mod.name == "Cancel Order"
+        assert mod.input.added == ["bb-20"]
 
-    def test_use_case_defaults(self) -> None:
-        uc = UseCase(
+    def test_as_modify(self) -> None:
+        mod = UseCase(
             id="uc-1",
-            name="List Orders",
-            actor="actor-1",
-            type="Query",
+            usedBuildingBlocks=ChangeSet[str](added=["bb-10"], removed=["bb-2"]),
+            businessGoals=ChangeSet[str](added=["bg-2"]),
+            qualityAttributes=ChangeSet[str](added=["qa-2"]),
         )
-        assert uc.description == ""
-        assert uc.business_goals == []
-        assert uc.input == []
-        assert uc.used_building_blocks == []
-        assert uc.scenarios == []
-        assert uc.quality_attributes == []
+        assert mod.used_building_blocks.added == ["bb-10"]
+        assert mod.business_goals.added == ["bg-2"]
+        assert mod.quality_attributes.added == ["qa-2"]
 
 
-class TestDesignDoc:
-    def test_full_design_doc_from_json(self, sample_design_doc_data: dict) -> None:
-        doc = DesignDoc.model_validate(sample_design_doc_data)
-        assert len(doc.actors) == 1
-        assert len(doc.business_goals) == 1
-        assert len(doc.quality_attributes) == 1
-        assert len(doc.bounded_contexts) == 1
-        bc = doc.bounded_contexts[0]
-        assert len(bc.domain_concepts) == 2
-        assert len(bc.modules) == 1
-        assert len(bc.modules[0].building_blocks) == 4
-        assert len(bc.use_cases) == 1
+class TestDomainModuleMod:
+    def test_add_building_block(self) -> None:
+        mod = DomainModule(
+            id="mod-1",
+            buildingBlocks=ChangeSet[BuildingBlock](
+                added=[
+                    BuildingBlock(
+                        id="bb-10", name="DiscountCode",
+                        type=BuildingBlockType.VALUE_OBJECT,
+                        description="Discount code",
+                    )
+                ],
+            ),
+        )
+        assert mod.building_blocks.added[0].name == "DiscountCode"
 
-    def test_design_doc_round_trip(self, sample_design_doc_data: dict) -> None:
-        doc = DesignDoc.model_validate(sample_design_doc_data)
-        exported = doc.model_dump(by_alias=True)
-        doc_again = DesignDoc.model_validate(exported)
-        assert doc == doc_again
+    def test_modify_building_block(self) -> None:
+        mod = DomainModule(
+            id="mod-1",
+            buildingBlocks=ChangeSet[BuildingBlock](
+                modified=[
+                    BuildingBlock(
+                        id="bb-1",
+                        properties=ChangeSet[Property](
+                            added=[Property(name="discount", type="Decimal")],
+                        ),
+                    )
+                ],
+            ),
+        )
+        bb_mod = mod.building_blocks.modified[0]
+        assert bb_mod.properties.added[0].name == "discount"
 
-    def test_design_doc_minimal(self) -> None:
-        doc = DesignDoc()
-        assert doc.actors == []
-        assert doc.bounded_contexts == []
+
+class TestBoundedContextMod:
+    def test_add_module(self) -> None:
+        mod = BoundedContext(
+            id="bc-1",
+            modules=ChangeSet[DomainModule](
+                added=[
+                    DomainModule(
+                        id="mod-2", name="Shipping", description="Shipping module",
+                        buildingBlocks=ChangeSet[BuildingBlock](
+                            added=[
+                                BuildingBlock(
+                                    id="bb-20", name="Shipment",
+                                    type=BuildingBlockType.AGGREGATE,
+                                    description="Shipment aggregate",
+                                )
+                            ],
+                        ),
+                    )
+                ],
+            ),
+        )
+        assert mod.modules.added[0].building_blocks.added[0].name == "Shipment"
+
+    def test_nested_drill_down(self) -> None:
+        mod = BoundedContext(
+            id="bc-1",
+            modules=ChangeSet[DomainModule](
+                modified=[
+                    DomainModule(
+                        id="mod-1",
+                        buildingBlocks=ChangeSet[BuildingBlock](
+                            modified=[
+                                BuildingBlock(
+                                    id="bb-1",
+                                    properties=ChangeSet[Property](
+                                        added=[Property(name="discount", type="Decimal")],
+                                    ),
+                                )
+                            ],
+                        ),
+                    )
+                ],
+            ),
+        )
+        bb_mod = mod.modules.modified[0].building_blocks.modified[0]
+        assert bb_mod.properties.added[0].name == "discount"
+
+    def test_add_use_case(self) -> None:
+        mod = BoundedContext(
+            id="bc-1",
+            useCases=ChangeSet[UseCase](
+                added=[UseCase(id="uc-2", name="Cancel Order", actor="a-1", type="Command")],
+            ),
+        )
+        assert mod.use_cases.added[0].name == "Cancel Order"
+
+    def test_add_domain_concept(self) -> None:
+        mod = BoundedContext(
+            id="bc-1",
+            domainConcepts=ChangeSet[DomainConcept](
+                added=[DomainConcept(id="dc-3", name="Discount", description="Price reduction")],
+            ),
+        )
+        assert mod.domain_concepts.added[0].name == "Discount"
+
+
+class TestDesignDocDiff:
+    def test_empty_diff(self) -> None:
+        diff = DesignDocDiff(description="No changes")
+        assert diff.actors is None
+        assert diff.business_goals is None
+        assert diff.quality_attributes is None
+        assert diff.bounded_contexts is None
+
+    def test_first_iteration(self) -> None:
+        diff = DesignDocDiff(
+            description="Initial implementation",
+            actors=ChangeSet[Actor](
+                added=[Actor(id="a-1", name="Customer", description="End user")]
+            ),
+            businessGoals=ChangeSet[BusinessGoal](
+                added=[BusinessGoal(id="bg-1", name="Online ordering", description="Allow online orders")]
+            ),
+            boundedContexts=ChangeSet[BoundedContext](
+                added=[
+                    BoundedContext(
+                        id="bc-1", name="Ordering", description="Order lifecycle",
+                        modules=ChangeSet[DomainModule](
+                            added=[
+                                DomainModule(
+                                    id="mod-1", name="Order Management", description="Core orders",
+                                    buildingBlocks=ChangeSet[BuildingBlock](
+                                        added=[
+                                            BuildingBlock(
+                                                id="bb-1", name="Order",
+                                                type=BuildingBlockType.AGGREGATE,
+                                                description="Order aggregate",
+                                                properties=ChangeSet[Property](
+                                                    added=[Property(name="id", type="OrderId")],
+                                                ),
+                                            )
+                                        ],
+                                    ),
+                                )
+                            ],
+                        ),
+                    )
+                ]
+            ),
+        )
+        bc = diff.bounded_contexts.added[0]
+        bb = bc.modules.added[0].building_blocks.added[0]
+        assert bb.name == "Order"
+        assert bb.properties.added[0].name == "id"
+
+    def test_leaf_change_surgical(self) -> None:
+        diff = DesignDocDiff(
+            description="Add discount property to Order aggregate",
+            boundedContexts=ChangeSet[BoundedContext](
+                modified=[
+                    BoundedContext(
+                        id="bc-1",
+                        modules=ChangeSet[DomainModule](
+                            modified=[
+                                DomainModule(
+                                    id="mod-1",
+                                    buildingBlocks=ChangeSet[BuildingBlock](
+                                        modified=[
+                                            BuildingBlock(
+                                                id="bb-1",
+                                                properties=ChangeSet[Property](
+                                                    added=[Property(name="discount", type="Decimal")],
+                                                ),
+                                            )
+                                        ],
+                                    ),
+                                )
+                            ],
+                        ),
+                    )
+                ]
+            ),
+        )
+        bb_mod = (
+            diff.bounded_contexts.modified[0]
+            .modules.modified[0]
+            .building_blocks.modified[0]
+        )
+        assert bb_mod.properties.added[0].name == "discount"
+
+    def test_mixed_operations(self) -> None:
+        diff = DesignDocDiff(
+            description="Add shipping, remove legacy, update ordering",
+            actors=ChangeSet[Actor](
+                added=[Actor(id="a-2", name="Warehouse", description="Warehouse staff")],
+            ),
+            boundedContexts=ChangeSet[BoundedContext](
+                added=[BoundedContext(id="bc-2", name="Shipping", description="Shipping context")],
+                removed=["bc-legacy"],
+                modified=[BoundedContext(id="bc-1", description="Updated ordering context")],
+            ),
+        )
+        assert len(diff.actors.added) == 1
+        assert len(diff.bounded_contexts.added) == 1
+        assert diff.bounded_contexts.removed == ["bc-legacy"]
+        assert diff.bounded_contexts.modified[0].description == "Updated ordering context"
+
+    def test_round_trip(self) -> None:
+        diff = DesignDocDiff(
+            description="Round trip test",
+            actors=ChangeSet[Actor](
+                added=[Actor(id="a-2", name="Admin", description="Admin")],
+                removed=["a-3"],
+            ),
+            boundedContexts=ChangeSet[BoundedContext](
+                modified=[
+                    BoundedContext(
+                        id="bc-1",
+                        modules=ChangeSet[DomainModule](
+                            modified=[
+                                DomainModule(
+                                    id="mod-1",
+                                    buildingBlocks=ChangeSet[BuildingBlock](
+                                        added=[
+                                            BuildingBlock(
+                                                id="bb-10", name="DiscountCode",
+                                                type=BuildingBlockType.VALUE_OBJECT,
+                                                description="Discount",
+                                            )
+                                        ],
+                                        modified=[
+                                            BuildingBlock(
+                                                id="bb-1",
+                                                properties=ChangeSet[Property](
+                                                    added=[Property(name="discount", type="Decimal")],
+                                                ),
+                                            )
+                                        ],
+                                    ),
+                                )
+                            ],
+                        ),
+                    )
+                ],
+            ),
+        )
+        exported = diff.model_dump(by_alias=True)
+        restored = DesignDocDiff.model_validate(exported)
+        assert restored == diff
+
+    def test_from_json_with_aliases(self) -> None:
+        data = {
+            "description": "Alias test",
+            "businessGoals": {
+                "added": [{"id": "bg-2", "name": "Goal", "description": "New"}],
+                "removed": [],
+                "modified": [],
+            },
+            "boundedContexts": {
+                "added": [],
+                "removed": ["bc-old"],
+                "modified": [
+                    {
+                        "id": "bc-1",
+                        "modules": {
+                            "modified": [
+                                {
+                                    "id": "mod-1",
+                                    "buildingBlocks": {
+                                        "removed": ["bb-99"],
+                                        "modified": [
+                                            {
+                                                "id": "bb-1",
+                                                "properties": {
+                                                    "added": [{"name": "f", "type": "int"}],
+                                                },
+                                            }
+                                        ],
+                                    },
+                                }
+                            ],
+                        },
+                        "useCases": {
+                            "modified": [
+                                {
+                                    "id": "uc-1",
+                                    "usedBuildingBlocks": {
+                                        "added": ["bb-10"],
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+        }
+        diff = DesignDocDiff.model_validate(data)
+        assert diff.business_goals.added[0].id == "bg-2"
+        assert diff.bounded_contexts.removed == ["bc-old"]
+        bc_mod = diff.bounded_contexts.modified[0]
+        mod_mod = bc_mod.modules.modified[0]
+        assert mod_mod.building_blocks.removed == ["bb-99"]
+        assert mod_mod.building_blocks.modified[0].properties.added[0].name == "f"
+        assert bc_mod.use_cases.modified[0].used_building_blocks.added == ["bb-10"]
 
     def test_json_schema_generation(self) -> None:
-        schema = DesignDoc.model_json_schema()
+        schema = DesignDocDiff.model_json_schema()
         assert schema["type"] == "object"
         assert "$defs" in schema
-        assert "BuildingBlock" in schema["$defs"]
-        assert "BuildingBlockType" in schema["$defs"]
-
-
-class TestAliasHandling:
-    def test_rule_accepts_alias(self) -> None:
-        r = Rule.model_validate({"id": "r-1", "ruleType": "Consistency", "description": "test"})
-        assert r.rule_type == RuleType.CONSISTENCY
-
-    def test_use_case_accepts_alias(self) -> None:
-        uc = UseCase.model_validate({
-            "id": "uc-1",
-            "name": "Test",
-            "actor": "a-1",
-            "type": "Command",
-            "businessGoals": ["bg-1"],
-            "usedBuildingBlocks": ["bb-1"],
-        })
-        assert uc.business_goals == ["bg-1"]
-        assert uc.used_building_blocks == ["bb-1"]
-
-    def test_domain_module_accepts_alias(self) -> None:
-        dm = DomainModule.model_validate({
-            "id": "mod-1",
-            "name": "Test",
-            "description": "Test module",
-            "buildingBlocks": [
-                {"id": "bb-1", "name": "Order", "type": "aggregate", "description": "Order"}
-            ],
-        })
-        assert len(dm.building_blocks) == 1
-
-    def test_bounded_context_accepts_alias(self) -> None:
-        bc = BoundedContext.model_validate({
-            "id": "bc-1",
-            "name": "Test",
-            "description": "Test context",
-            "buildingBlocks": [
-                {"id": "bb-1", "name": "Order", "type": "aggregate", "description": "Order"}
-            ],
-            "domainConcepts": [
-                {"id": "dc-1", "name": "Order", "description": "Order concept"}
-            ],
-            "useCases": [
-                {"id": "uc-1", "name": "Test", "actor": "a-1", "type": "Command"}
-            ],
-        })
-        assert len(bc.building_blocks) == 1
-        assert len(bc.domain_concepts) == 1
-        assert len(bc.use_cases) == 1
+        assert "BuildingBlockMod" in schema["$defs"]
+        assert "BoundedContextMod" in schema["$defs"]

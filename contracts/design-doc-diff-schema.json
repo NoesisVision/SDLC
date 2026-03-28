@@ -1010,7 +1010,7 @@
       "type": "string"
     }
   },
-  "description": "Describes changes to a DesignDoc.\n\nEach field is None when there are no changes to that collection.\nFirst iteration is a diff from empty state (everything in `added`).",
+  "description": "Describes changes to a design.\n\nEach field is None when there are no changes to that collection.\nFirst iteration is a diff from empty state (everything in `added`).",
   "properties": {
     "description": {
       "title": "Description",
