@@ -65,7 +65,7 @@
       "title": "Behaviour",
       "type": "object"
     },
-    "BoundedContextMod": {
+    "BoundedContext": {
       "description": "Modification of a BoundedContext.\n\nWhen used in `added`: all scalar fields must be populated.\nWhen used in `modified`: only changed fields are set (None = no change).",
       "properties": {
         "id": {
@@ -110,7 +110,7 @@
         "modules": {
           "anyOf": [
             {
-              "$ref": "#/$defs/ChangeSet_DomainModuleMod_"
+              "$ref": "#/$defs/ChangeSet_DomainModule_"
             },
             {
               "type": "null"
@@ -121,7 +121,7 @@
         "buildingBlocks": {
           "anyOf": [
             {
-              "$ref": "#/$defs/ChangeSet_BuildingBlockMod_"
+              "$ref": "#/$defs/ChangeSet_BuildingBlock_"
             },
             {
               "type": "null"
@@ -132,7 +132,7 @@
         "useCases": {
           "anyOf": [
             {
-              "$ref": "#/$defs/ChangeSet_UseCaseMod_"
+              "$ref": "#/$defs/ChangeSet_UseCase_"
             },
             {
               "type": "null"
@@ -144,10 +144,10 @@
       "required": [
         "id"
       ],
-      "title": "BoundedContextMod",
+      "title": "BoundedContext",
       "type": "object"
     },
-    "BuildingBlockMod": {
+    "BuildingBlock": {
       "description": "Modification of a BuildingBlock.\n\nWhen used in `added`: all scalar fields must be populated,\nsub-elements go into their ChangeSet's `added`.\nWhen used in `modified`: only changed fields are set (None = no change).",
       "properties": {
         "id": {
@@ -237,7 +237,7 @@
       "required": [
         "id"
       ],
-      "title": "BuildingBlockMod",
+      "title": "BuildingBlock",
       "type": "object"
     },
     "BuildingBlockType": {
@@ -340,12 +340,12 @@
       "title": "ChangeSet[Behaviour]",
       "type": "object"
     },
-    "ChangeSet_BoundedContextMod_": {
+    "ChangeSet_BoundedContext_": {
       "properties": {
         "added": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/BoundedContextMod"
+            "$ref": "#/$defs/BoundedContext"
           },
           "title": "Added",
           "type": "array"
@@ -361,21 +361,21 @@
         "modified": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/BoundedContextMod"
+            "$ref": "#/$defs/BoundedContext"
           },
           "title": "Modified",
           "type": "array"
         }
       },
-      "title": "ChangeSet[BoundedContextMod]",
+      "title": "ChangeSet[BoundedContext]",
       "type": "object"
     },
-    "ChangeSet_BuildingBlockMod_": {
+    "ChangeSet_BuildingBlock_": {
       "properties": {
         "added": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/BuildingBlockMod"
+            "$ref": "#/$defs/BuildingBlock"
           },
           "title": "Added",
           "type": "array"
@@ -391,13 +391,13 @@
         "modified": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/BuildingBlockMod"
+            "$ref": "#/$defs/BuildingBlock"
           },
           "title": "Modified",
           "type": "array"
         }
       },
-      "title": "ChangeSet[BuildingBlockMod]",
+      "title": "ChangeSet[BuildingBlock]",
       "type": "object"
     },
     "ChangeSet_BusinessGoal_": {
@@ -460,12 +460,12 @@
       "title": "ChangeSet[DomainConcept]",
       "type": "object"
     },
-    "ChangeSet_DomainModuleMod_": {
+    "ChangeSet_DomainModule_": {
       "properties": {
         "added": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/DomainModuleMod"
+            "$ref": "#/$defs/DomainModule"
           },
           "title": "Added",
           "type": "array"
@@ -481,13 +481,13 @@
         "modified": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/DomainModuleMod"
+            "$ref": "#/$defs/DomainModule"
           },
           "title": "Modified",
           "type": "array"
         }
       },
-      "title": "ChangeSet[DomainModuleMod]",
+      "title": "ChangeSet[DomainModule]",
       "type": "object"
     },
     "ChangeSet_Property_": {
@@ -610,12 +610,12 @@
       "title": "ChangeSet[Scenario]",
       "type": "object"
     },
-    "ChangeSet_UseCaseMod_": {
+    "ChangeSet_UseCase_": {
       "properties": {
         "added": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/UseCaseMod"
+            "$ref": "#/$defs/UseCase"
           },
           "title": "Added",
           "type": "array"
@@ -631,13 +631,13 @@
         "modified": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/UseCaseMod"
+            "$ref": "#/$defs/UseCase"
           },
           "title": "Modified",
           "type": "array"
         }
       },
-      "title": "ChangeSet[UseCaseMod]",
+      "title": "ChangeSet[UseCase]",
       "type": "object"
     },
     "ChangeSet_str_": {
@@ -693,7 +693,7 @@
       "title": "DomainConcept",
       "type": "object"
     },
-    "DomainModuleMod": {
+    "DomainModule": {
       "description": "Modification of a DomainModule.\n\nWhen used in `added`: all scalar fields must be populated.\nWhen used in `modified`: only changed fields are set (None = no change).",
       "properties": {
         "id": {
@@ -727,7 +727,7 @@
         "buildingBlocks": {
           "anyOf": [
             {
-              "$ref": "#/$defs/ChangeSet_BuildingBlockMod_"
+              "$ref": "#/$defs/ChangeSet_BuildingBlock_"
             },
             {
               "type": "null"
@@ -739,7 +739,7 @@
       "required": [
         "id"
       ],
-      "title": "DomainModuleMod",
+      "title": "DomainModule",
       "type": "object"
     },
     "Property": {
@@ -862,7 +862,7 @@
       "title": "Scenario",
       "type": "object"
     },
-    "UseCaseMod": {
+    "UseCase": {
       "description": "Modification of a UseCase.\n\nWhen used in `added`: all scalar fields must be populated.\nWhen used in `modified`: only changed fields are set (None = no change).",
       "properties": {
         "id": {
@@ -997,7 +997,7 @@
       "required": [
         "id"
       ],
-      "title": "UseCaseMod",
+      "title": "UseCase",
       "type": "object"
     },
     "UseCaseType": {
@@ -1052,7 +1052,7 @@
     "boundedContexts": {
       "anyOf": [
         {
-          "$ref": "#/$defs/ChangeSet_BoundedContextMod_"
+          "$ref": "#/$defs/ChangeSet_BoundedContext_"
         },
         {
           "type": "null"
@@ -1064,6 +1064,6 @@
   "required": [
     "description"
   ],
-  "title": "DesignDocDiff",
+  "title": "DesignDoc",
   "type": "object"
 }

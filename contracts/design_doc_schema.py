@@ -184,6 +184,7 @@ class BoundedContext(BaseModel):
 
     id: str
     name: str | None = None
+    description: str | None = None
     domain_concepts: ChangeSet[DomainConcept] | None = Field(
         default=None, alias="domainConcepts"
     )
@@ -196,7 +197,7 @@ class BoundedContext(BaseModel):
     )
 
 
-class DesignDocDiff(BaseModel):
+class DesignDoc(BaseModel):
     """Describes changes to a design.
 
     Each field is None when there are no changes to that collection.

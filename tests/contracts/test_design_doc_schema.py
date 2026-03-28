@@ -6,7 +6,7 @@ from contracts.design_doc_schema import (
     BuildingBlockType,
     BusinessGoal,
     ChangeSet,
-    DesignDocDiff,
+    DesignDoc,
     DomainConcept,
     DomainModule,
     Property,
@@ -292,14 +292,14 @@ class TestBoundedContextMod:
 
 class TestDesignDocDiff:
     def test_empty_diff(self) -> None:
-        diff = DesignDocDiff(description="No changes")
+        diff = DesignDoc(description="No changes")
         assert diff.actors is None
         assert diff.business_goals is None
         assert diff.quality_attributes is None
         assert diff.bounded_contexts is None
 
     def test_first_iteration(self) -> None:
-        diff = DesignDocDiff(
+        diff = DesignDoc(
             description="Initial implementation",
             actors=ChangeSet[Actor](
                 added=[Actor(id="a-1", name="Customer", description="End user")]
@@ -340,7 +340,7 @@ class TestDesignDocDiff:
         assert bb.properties.added[0].name == "id"
 
     def test_leaf_change_surgical(self) -> None:
-        diff = DesignDocDiff(
+        diff = DesignDoc(
             description="Add discount property to Order aggregate",
             boundedContexts=ChangeSet[BoundedContext](
                 modified=[
@@ -375,7 +375,7 @@ class TestDesignDocDiff:
         assert bb_mod.properties.added[0].name == "discount"
 
     def test_mixed_operations(self) -> None:
-        diff = DesignDocDiff(
+        diff = DesignDoc(
             description="Add shipping, remove legacy, update ordering",
             actors=ChangeSet[Actor](
                 added=[Actor(id="a-2", name="Warehouse", description="Warehouse staff")],
@@ -392,7 +392,7 @@ class TestDesignDocDiff:
         assert diff.bounded_contexts.modified[0].description == "Updated ordering context"
 
     def test_round_trip(self) -> None:
-        diff = DesignDocDiff(
+        diff = DesignDoc(
             description="Round trip test",
             actors=ChangeSet[Actor](
                 added=[Actor(id="a-2", name="Admin", description="Admin")],
@@ -431,7 +431,7 @@ class TestDesignDocDiff:
             ),
         )
         exported = diff.model_dump(by_alias=True)
-        restored = DesignDocDiff.model_validate(exported)
+        restored = DesignDoc.model_validate(exported)
         assert restored == diff
 
     def test_from_json_with_aliases(self) -> None:
@@ -480,7 +480,7 @@ class TestDesignDocDiff:
                 ],
             },
         }
-        diff = DesignDocDiff.model_validate(data)
+        diff = DesignDoc.model_validate(data)
         assert diff.business_goals.added[0].id == "bg-2"
         assert diff.bounded_contexts.removed == ["bc-old"]
         bc_mod = diff.bounded_contexts.modified[0]
@@ -490,8 +490,8 @@ class TestDesignDocDiff:
         assert bc_mod.use_cases.modified[0].used_building_blocks.added == ["bb-10"]
 
     def test_json_schema_generation(self) -> None:
-        schema = DesignDocDiff.model_json_schema()
+        schema = DesignDoc.model_json_schema()
         assert schema["type"] == "object"
         assert "$defs" in schema
-        assert "BuildingBlockMod" in schema["$defs"]
-        assert "BoundedContextMod" in schema["$defs"]
+        assert "BuildingBlock" in schema["$defs"]
+        assert "BoundedContext" in schema["$defs"]
