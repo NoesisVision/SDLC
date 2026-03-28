@@ -41,11 +41,9 @@ class BehaviorType(str, Enum):
 
 
 class Property(BaseModel):
-    """A named property of a building block."""
-
-    name: str = Field(description="Property name")
+    name: str
     type: str | None = Field(
-        default=None, description="BuildingBlock id or primitive type name"
+        default=None, description="BuildingBlock name or primitive type name"
     )
 
 
@@ -54,19 +52,15 @@ class Rule(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    name: str = Field(description="Rule name")
-    rule_type: RuleType | None = Field(
-        default=None, alias="ruleType", description="Type of the rule"
-    )
-    description: str | None = Field(
-        default=None, description="Human-readable rule description"
-    )
+    name: str
+    rule_type: RuleType | None = Field(default=None, alias="ruleType")
+    description: str | None = None
 
 
 class Scenario(BaseModel):
     """A BDD-style scenario"""
 
-    name: str = Field(description="Short scenario title")
+    name: str = Field(description="Concise title, a few words")
     description: str = Field(description="What the scenario verifies")
     given: str = Field(description="Precondition or initial context")
     when: str = Field(description="Action or event that triggers the scenario")
@@ -81,9 +75,9 @@ class ChangeSet(BaseModel, Generic[T]):
     `modified` contains only the changed fields, matched by id or name.
     """
 
-    added: list[T] = Field(default_factory=list, description="New elements to add")
+    added: list[T] = Field(default_factory=list)
     removed: list[str] = Field(
-        default_factory=list, description="Ids or names of elements to remove"
+        default_factory=list, description="Names of elements to remove"
     )
     modified: list[T] = Field(
         default_factory=list, description="Elements with only changed fields set"
@@ -95,54 +89,40 @@ class Behaviour(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    name: str = Field(description="Short behaviour name")
-    description: str | None = Field(
-        default=None, description="What this behaviour does"
-    )
-    type: BehaviorType | None = Field(
-        default=None, description="Whether this is a command, event, or query"
-    )
+    name: str = Field(description="Concise name, a few words")
+    description: str | None = None
+    type: BehaviorType | None = None
     input: ChangeSet[str] | None = Field(
-        default=None, description="List of input BuildingBlock ids"
+        default=None, description="Input BuildingBlock names"
     )
     output: ChangeSet[str] | None = Field(
-        default=None, description="List of output BuildingBlock ids"
+        default=None, description="Output BuildingBlock names"
     )
     used_building_blocks: ChangeSet[str] | None = Field(
         default=None,
         alias="usedBuildingBlocks",
-        description="Changes to referenced BuildingBlock ids",
+        description="Referenced BuildingBlock names",
     )
-    rules: ChangeSet[Rule] | None = Field(
-        default=None, description="Rules governing this behaviour"
-    )
-    scenarios: ChangeSet[Scenario] | None = Field(
-        default=None, description="Changes to BDD scenarios"
-    )
-    is_public: bool = Field(
-        default=False, description="Whether this is a public API"
-    )
+    rules: ChangeSet[Rule] | None = None
+    scenarios: ChangeSet[Scenario] | None = None
+    is_public: bool = False
     actor: str | None = Field(
-        default=None, description="Actor id who initiates this behavior"
+        default=None, description="Name of the actor who initiates this behaviour"
     )
 
 
 class Actor(BaseModel):
     """A person, system, or role that interacts with the domain."""
 
-    name: str = Field(description="Actor name")
-    description: str | None = Field(
-        default=None, description="What this actor represents"
-    )
+    name: str
+    description: str | None = None
 
 
 class QualityAttribute(BaseModel):
     """A non-functional requirement or quality characteristic."""
 
-    name: str = Field(description="Quality attribute name")
-    type: QualityAttributeType | None = Field(
-        default=None, description="Category of quality attribute"
-    )
+    name: str
+    type: QualityAttributeType | None = None
     description: str | None = Field(
         default=None, description="Measurable quality expectation"
     )
@@ -158,25 +138,13 @@ class BuildingBlock(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    name: str = Field(description="Building block name")
-    type: BuildingBlockType | None = Field(
-        default=None, description="DDD building block type"
-    )
-    description: str | None = Field(
-        default=None, description="Purpose of this building block"
-    )
-    properties: ChangeSet[Property] | None = Field(
-        default=None, description="Changes to properties"
-    )
-    behaviours: ChangeSet[Behaviour] | None = Field(
-        default=None, description="Changes to behaviours"
-    )
-    rules: ChangeSet[Rule] | None = Field(
-        default=None, description="Changes to business rules"
-    )
-    scenarios: ChangeSet[Scenario] | None = Field(
-        default=None, description="Changes to BDD scenarios"
-    )
+    name: str
+    type: BuildingBlockType | None = None
+    description: str | None = None
+    properties: ChangeSet[Property] | None = None
+    behaviours: ChangeSet[Behaviour] | None = None
+    rules: ChangeSet[Rule] | None = None
+    scenarios: ChangeSet[Scenario] | None = None
 
 
 class DomainModule(BaseModel):
@@ -188,14 +156,10 @@ class DomainModule(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    name: str = Field(description="Module name")
-    description: str | None = Field(
-        default=None, description="Purpose of this module"
-    )
+    name: str
+    description: str | None = None
     building_blocks: ChangeSet[BuildingBlock] | None = Field(
-        default=None,
-        alias="buildingBlocks",
-        description="Changes to building blocks in this module",
+        default=None, alias="buildingBlocks"
     )
 
 
@@ -208,17 +172,15 @@ class BoundedContext(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    name: str = Field(description="Bounded context name")
+    name: str
     description: str | None = Field(
         default=None, description="Scope and responsibility of this context"
     )
-    modules: ChangeSet[DomainModule] | None = Field(
-        default=None, description="Changes to domain modules"
-    )
+    modules: ChangeSet[DomainModule] | None = None
     building_blocks: ChangeSet[BuildingBlock] | None = Field(
         default=None,
         alias="buildingBlocks",
-        description="Changes to top-level building blocks",
+        description="Building blocks not belonging to any module",
     )
 
 class DesignDoc(BaseModel):
@@ -231,11 +193,7 @@ class DesignDoc(BaseModel):
     model_config = {"populate_by_name": True}
 
     description: str = Field(description="Summary of what this design change covers")
-    actors: ChangeSet[Actor] | None = Field(
-        default=None, description="Changes to actors"
-    )
+    actors: ChangeSet[Actor] | None = None
     bounded_contexts: ChangeSet[BoundedContext] | None = Field(
-        default=None,
-        alias="boundedContexts",
-        description="Changes to bounded contexts",
+        default=None, alias="boundedContexts"
     )
