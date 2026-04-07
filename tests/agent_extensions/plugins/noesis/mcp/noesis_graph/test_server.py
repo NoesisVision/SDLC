@@ -59,8 +59,11 @@ async def test_missing_env_var_raises_error(monkeypatch) -> None:
     assert any("CLAUDE_PLUGIN_DATA" in str(e) for e in causes)
 
 
-async def test_server_starts_with_no_tools() -> None:
-    """Test that the server starts and exposes no tools yet."""
+async def test_server_exposes_conversation_tools() -> None:
+    """Test that the server starts and exposes conversation tools."""
     async with create_connected_server_and_client_session(noesis_graph_server) as client:
         result = await client.list_tools()
-        assert result.tools == []
+        tool_names = {t.name for t in result.tools}
+        assert "register_conversation" in tool_names
+        assert "set_conversation_metadata" in tool_names
+        assert "get_raw_speaker_turns" in tool_names

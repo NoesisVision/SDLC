@@ -2,6 +2,8 @@
 # dependencies = [
 #     "mcp>=1.0.0",
 #     "falkordblite>=0.4.0",
+#     "pysbd>=0.3.4",
+#     "langdetect>=1.0.9",
 # ]
 # ///
 """Noesis Graph MCP Server.
@@ -18,6 +20,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from redislite.falkordb_client import FalkorDB, Graph
+
+from .conversations.registry import get_raw_speaker_turns, register_conversation, set_conversation_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,10 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
 
 
 noesis_graph_server = FastMCP("noesis-graph", lifespan=app_lifespan)
+
+noesis_graph_server.tool()(register_conversation)
+noesis_graph_server.tool()(set_conversation_metadata)
+noesis_graph_server.tool()(get_raw_speaker_turns)
 
 if __name__ == "__main__":
     noesis_graph_server.run(transport="stdio")

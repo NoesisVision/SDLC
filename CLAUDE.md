@@ -33,3 +33,4 @@
 8. Do NOT use comments in method bodies. Use descriptive function and variable names.
 9. Use ONLY `uv` to run scripts.
 10. Access Pydantic model fields via **typed attributes** (`result.id`, `result.items[0].name`), never via dict keys. Use `.model_dump()` only at serialization boundaries (API responses, file I/O).
+11. Use `None` for optional arguments in functions.
