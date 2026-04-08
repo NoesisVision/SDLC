@@ -8,7 +8,7 @@ from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.models impor
     RegisterConversationResponse,
     SetConversationMetadataResponse,
 )
-from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.registry import reset_store
+from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.registry import reset_graph
 from agent_extensions.plugins.noesis.mcp.noesis_graph.server import noesis_graph_server
 
 BASIC_CONVERSATION = """\
@@ -63,10 +63,10 @@ EXISTING_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 
 @pytest.fixture(autouse=True)
-def _clean_store():
-    reset_store()
+def _clean_graph():
+    reset_graph()
     yield
-    reset_store()
+    reset_graph()
 
 
 async def _call_tool(tool_name: str, arguments: dict) -> str:

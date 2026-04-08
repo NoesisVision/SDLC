@@ -21,7 +21,12 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from redislite.falkordb_client import FalkorDB, Graph
 
-from .conversations.registry import get_raw_speaker_turns, register_conversation, set_conversation_metadata
+from .conversations.registry import (
+    get_raw_speaker_turns,
+    init_graph,
+    register_conversation,
+    set_conversation_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +74,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
 
     data_dir = _resolve_data_dir()
     ctx = _initialize_graph_db(data_dir)
+    init_graph(ctx.graph)
 
     try:
         yield ctx
