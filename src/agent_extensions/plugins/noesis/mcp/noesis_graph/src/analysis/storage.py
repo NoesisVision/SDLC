@@ -10,7 +10,7 @@ import uuid
 
 from redislite.falkordb_client import Graph
 
-from .models import (
+from noesis_graph.analysis.models import (
     ConversationSummaryInput,
     CreateCrossReferencesResponse,
     CreateTopicsResponse,

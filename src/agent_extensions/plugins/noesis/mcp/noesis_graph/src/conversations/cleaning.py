@@ -5,7 +5,7 @@ import re
 import pysbd
 from langdetect import LangDetectException, detect
 
-from .models import CONVERSATION_ID_PATTERN, RawConversationMetadata, RawSpeakerTurn
+from noesis_graph.conversations.models import CONVERSATION_ID_PATTERN, RawConversationMetadata, RawSpeakerTurn
 
 _PYSBD_LANGUAGES = set(pysbd.languages.LANGUAGE_CODES.keys())
 _SEGMENTER_CACHE: dict[str, pysbd.Segmenter] = {}

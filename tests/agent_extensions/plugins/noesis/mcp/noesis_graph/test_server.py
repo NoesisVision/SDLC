@@ -3,7 +3,7 @@
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from agent_extensions.plugins.noesis.mcp.noesis_graph.server import noesis_graph_server
+from noesis_graph.server import noesis_graph_server
 
 
 @pytest.mark.real_db

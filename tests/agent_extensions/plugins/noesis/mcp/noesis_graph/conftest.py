@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 from redislite.falkordb_client import FalkorDB
 
-from agent_extensions.plugins.noesis.mcp.noesis_graph.analysis import (
+from noesis_graph.analysis import (
     init_graph as init_analysis_graph,
 )
-from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.registry import init_graph
-from agent_extensions.plugins.noesis.mcp.noesis_graph.server import (
+from noesis_graph.conversations.registry import init_graph
+from noesis_graph.server import (
     GRAPH_NAME,
     GraphContext,
     noesis_graph_server,

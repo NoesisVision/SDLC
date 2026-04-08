@@ -37,6 +37,7 @@ dev = [
     "isort>=5.12.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
+    "noesis-graph",
 ]
 
 # Note: This repository contains standalone scripts (MCP servers, TypeScript tools)
@@ -45,6 +46,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["contracts", "src/agent_extensions", "src/mcp_servers", "src/p3", "src/utils"]
+
+[tool.uv.sources]
+noesis-graph = { path = "src/agent_extensions/plugins/noesis/mcp/noesis_graph", editable = true }
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

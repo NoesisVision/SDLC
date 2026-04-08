@@ -24,6 +24,7 @@ __pycache__/
 *.so
 .Python
 *.egg-info/
+build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

@@ -1,11 +1,3 @@
-# /// script
-# dependencies = [
-#     "mcp>=1.0.0",
-#     "falkordblite>=0.4.0",
-#     "pysbd>=0.3.4",
-#     "langdetect>=1.0.9",
-# ]
-# ///
 """Noesis Graph MCP Server.
 
 Provides graph database tools for storing and querying knowledge in FalkorDB.
@@ -21,12 +13,13 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from redislite.falkordb_client import FalkorDB, Graph
 
-from .analysis import init_graph as init_analysis_graph
-from .analysis.batching import get_next_turn_batch
-from .analysis.context import get_decisions, get_topic_idea_units, get_topic_nodes
-from .analysis.finalization import finalize_conversation
-from .analysis.restructuring import merge_topics, reparent_topic, reorder_topic
-from .analysis.retrieval import (
+from noesis_graph.analysis import init_graph as init_analysis_graph
+from noesis_graph.analysis.batching import get_next_turn_batch
+from noesis_graph.analysis.context import get_decisions, get_topic_idea_units, get_topic_nodes
+from noesis_graph.analysis.export import export_conversation_document
+from noesis_graph.analysis.finalization import finalize_conversation
+from noesis_graph.analysis.restructuring import merge_topics, reparent_topic, reorder_topic
+from noesis_graph.analysis.retrieval import (
     get_conversation_summary,
     get_decision_chain,
     get_topic_detail,
@@ -34,14 +27,14 @@ from .analysis.retrieval import (
     get_topic_tree,
     search,
 )
-from .analysis.storage import (
+from noesis_graph.analysis.storage import (
     create_cross_references,
     create_topics,
     set_summaries,
     store_decisions,
     store_idea_units,
 )
-from .conversations.registry import (
+from noesis_graph.conversations.registry import (
     get_raw_speaker_turns,
     init_graph,
     register_conversation,
@@ -129,6 +122,8 @@ noesis_graph_server.tool()(reorder_topic)
 
 noesis_graph_server.tool()(finalize_conversation)
 
+noesis_graph_server.tool()(export_conversation_document)
+
 noesis_graph_server.tool()(get_topic_tree)
 noesis_graph_server.tool()(get_topic_detail)
 noesis_graph_server.tool()(get_topic_history)
@@ -136,5 +131,10 @@ noesis_graph_server.tool()(get_decision_chain)
 noesis_graph_server.tool()(search)
 noesis_graph_server.tool()(get_conversation_summary)
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point for the noesis-graph CLI command."""
     noesis_graph_server.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

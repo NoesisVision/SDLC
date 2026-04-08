@@ -1,10 +1,11 @@
 {
   "mcpServers": {
     "noesis-graph": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
-        "${CLAUDE_PLUGIN_ROOT}/mcp/noesis_graph/server.py"
+        "--from",
+        "${CLAUDE_PLUGIN_ROOT}/mcp/noesis_graph",
+        "noesis-graph"
       ]
     }
   }

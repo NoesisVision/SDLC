@@ -8,7 +8,7 @@ import logging
 
 from redislite.falkordb_client import Graph
 
-from .models import FinalizeConversationResponse
+from noesis_graph.analysis.models import FinalizeConversationResponse
 
 logger = logging.getLogger(__name__)
 

@@ -2,5 +2,7 @@
   "name": "noesis",
   "description": "Noesis plugin for Claude AI",
   "version": "0.1.0",
-  "author": "Noesis Vision"
+  "author": {
+    "name": "Noesis Vision"
+  }
 }

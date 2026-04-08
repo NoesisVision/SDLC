@@ -3,7 +3,7 @@
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from agent_extensions.plugins.noesis.mcp.noesis_graph.analysis.models import (
+from noesis_graph.analysis.models import (
     ConversationSummaryResponse,
     CreateTopicsResponse,
     GetDecisionChainResponse,
@@ -13,11 +13,11 @@ from agent_extensions.plugins.noesis.mcp.noesis_graph.analysis.models import (
     StoreDecisionsResponse,
     TopicDetailResponse,
 )
-from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.models import (
+from noesis_graph.conversations.models import (
     RegisterConversationResponse,
 )
-from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.registry import reset_graph
-from agent_extensions.plugins.noesis.mcp.noesis_graph.server import noesis_graph_server
+from noesis_graph.conversations.registry import reset_graph
+from noesis_graph.server import noesis_graph_server
 
 CONVERSATION = """\
 # Design Review
@@ -41,7 +41,7 @@ def _clean_graph():
 
 
 def _clean_analysis_nodes():
-    from agent_extensions.plugins.noesis.mcp.noesis_graph.analysis.storage import _graph
+    from noesis_graph.analysis.storage import _graph
 
     if _graph is not None:
         _graph.query(

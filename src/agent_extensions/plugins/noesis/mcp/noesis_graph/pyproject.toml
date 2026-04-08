@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "noesis-graph"
+version = "0.1.0"
+description = "Noesis Graph MCP Server — knowledge graph tools backed by FalkorDB"
+requires-python = ">=3.14"
+license = {text = "Proprietary"}
+dependencies = [
+    "mcp>=1.0.0",
+    "falkordblite>=0.4.0",
+    "pysbd>=0.3.4",
+    "langdetect>=1.0.9",
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+noesis-graph = "noesis_graph.server:main"
+
+[tool.setuptools.package-dir]
+noesis_graph = "src"

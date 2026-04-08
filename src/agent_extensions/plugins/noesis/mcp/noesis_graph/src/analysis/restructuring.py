@@ -8,7 +8,7 @@ import logging
 
 from redislite.falkordb_client import Graph
 
-from .models import MergeTopicsResponse, ReparentTopicResponse, ReorderTopicResponse
+from noesis_graph.analysis.models import MergeTopicsResponse, ReparentTopicResponse, ReorderTopicResponse
 
 logger = logging.getLogger(__name__)
 

@@ -3,14 +3,14 @@
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from agent_extensions.plugins.noesis.mcp.noesis_graph.analysis.models import (
+from noesis_graph.analysis.models import (
     GetNextTurnBatchResponse,
 )
-from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.models import (
+from noesis_graph.conversations.models import (
     RegisterConversationResponse,
 )
-from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.registry import reset_graph
-from agent_extensions.plugins.noesis.mcp.noesis_graph.server import noesis_graph_server
+from noesis_graph.conversations.registry import reset_graph
+from noesis_graph.server import noesis_graph_server
 
 CONVERSATION = """\
 # Architecture Review

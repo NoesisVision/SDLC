@@ -6,8 +6,8 @@ from pathlib import Path
 
 from redislite.falkordb_client import Graph
 
-from .cleaning import parse_transcript, strip_conversation_id_line
-from .models import (
+from noesis_graph.conversations.cleaning import parse_transcript, strip_conversation_id_line
+from noesis_graph.conversations.models import (
     CONVERSATION_ID_PATTERN,
     GetRawSpeakerTurnsResponse,
     RawConversationMetadata,

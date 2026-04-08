@@ -22,15 +22,17 @@ def init_graph(graph: Graph) -> None:
     """Create indexes and bind graph to all analysis submodules."""
     _create_indexes(graph)
 
-    from .batching import init_graph as init_batching
-    from .context import init_graph as init_context
-    from .finalization import init_graph as init_finalization
-    from .restructuring import init_graph as init_restructuring
-    from .retrieval import init_graph as init_retrieval
-    from .storage import init_graph as init_storage
+    from noesis_graph.analysis.batching import init_graph as init_batching
+    from noesis_graph.analysis.context import init_graph as init_context
+    from noesis_graph.analysis.export import init_graph as init_export
+    from noesis_graph.analysis.finalization import init_graph as init_finalization
+    from noesis_graph.analysis.restructuring import init_graph as init_restructuring
+    from noesis_graph.analysis.retrieval import init_graph as init_retrieval
+    from noesis_graph.analysis.storage import init_graph as init_storage
 
     init_batching(graph)
     init_context(graph)
+    init_export(graph)
     init_finalization(graph)
     init_restructuring(graph)
     init_retrieval(graph)

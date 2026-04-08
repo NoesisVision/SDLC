@@ -4,7 +4,7 @@ import logging
 
 from redislite.falkordb_client import Graph
 
-from .models import BatchTurn, GetNextTurnBatchResponse, estimate_token_count
+from noesis_graph.analysis.models import BatchTurn, GetNextTurnBatchResponse, estimate_token_count
 
 logger = logging.getLogger(__name__)
 

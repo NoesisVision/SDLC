@@ -351,3 +351,15 @@ class ConversationSummaryResponse(BaseModel):
     date: str = Field(description="Conversation date")
     summary: str | None = Field(default=None, description="Conversation summary")
     topics_touched: list[str] = Field(description="Titles of topics with idea units")
+
+
+# --- Export ---
+
+
+class ExportConversationDocumentResponse(BaseModel):
+    """Response from export_conversation_document."""
+
+    status: str = Field(description="'success'")
+    topics_count: int = Field(description="Number of topics included in the document")
+    decisions_count: int = Field(description="Number of decisions included in the document")
+    output_path: str = Field(description="Path where the document was saved")
