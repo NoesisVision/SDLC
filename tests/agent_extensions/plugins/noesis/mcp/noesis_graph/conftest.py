@@ -7,6 +7,9 @@ from pathlib import Path
 import pytest
 from redislite.falkordb_client import FalkorDB
 
+from agent_extensions.plugins.noesis.mcp.noesis_graph.analysis import (
+    init_graph as init_analysis_graph,
+)
 from agent_extensions.plugins.noesis.mcp.noesis_graph.conversations.registry import init_graph
 from agent_extensions.plugins.noesis.mcp.noesis_graph.server import (
     GRAPH_NAME,
@@ -26,6 +29,7 @@ def shared_graph_context(tmp_path_factory):
     ctx = GraphContext(db=db, graph=graph, db_path=db_file)
 
     init_graph(graph)
+    init_analysis_graph(graph)
 
     yield ctx
 

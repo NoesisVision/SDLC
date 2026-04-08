@@ -21,6 +21,26 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from redislite.falkordb_client import FalkorDB, Graph
 
+from .analysis import init_graph as init_analysis_graph
+from .analysis.batching import get_next_turn_batch
+from .analysis.context import get_decisions, get_topic_idea_units, get_topic_nodes
+from .analysis.finalization import finalize_conversation
+from .analysis.restructuring import merge_topics, reparent_topic, reorder_topic
+from .analysis.retrieval import (
+    get_conversation_summary,
+    get_decision_chain,
+    get_topic_detail,
+    get_topic_history,
+    get_topic_tree,
+    search,
+)
+from .analysis.storage import (
+    create_cross_references,
+    create_topics,
+    set_summaries,
+    store_decisions,
+    store_idea_units,
+)
 from .conversations.registry import (
     get_raw_speaker_turns,
     init_graph,
@@ -75,6 +95,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[GraphContext]:
     data_dir = _resolve_data_dir()
     ctx = _initialize_graph_db(data_dir)
     init_graph(ctx.graph)
+    init_analysis_graph(ctx.graph)
 
     try:
         yield ctx
@@ -89,6 +110,31 @@ noesis_graph_server = FastMCP("noesis-graph", lifespan=app_lifespan)
 noesis_graph_server.tool()(register_conversation)
 noesis_graph_server.tool()(set_conversation_metadata)
 noesis_graph_server.tool()(get_raw_speaker_turns)
+
+noesis_graph_server.tool()(get_next_turn_batch)
+
+noesis_graph_server.tool()(create_topics)
+noesis_graph_server.tool()(store_idea_units)
+noesis_graph_server.tool()(store_decisions)
+noesis_graph_server.tool()(create_cross_references)
+noesis_graph_server.tool()(set_summaries)
+
+noesis_graph_server.tool()(get_topic_nodes)
+noesis_graph_server.tool()(get_topic_idea_units)
+noesis_graph_server.tool()(get_decisions)
+
+noesis_graph_server.tool()(merge_topics)
+noesis_graph_server.tool()(reparent_topic)
+noesis_graph_server.tool()(reorder_topic)
+
+noesis_graph_server.tool()(finalize_conversation)
+
+noesis_graph_server.tool()(get_topic_tree)
+noesis_graph_server.tool()(get_topic_detail)
+noesis_graph_server.tool()(get_topic_history)
+noesis_graph_server.tool()(get_decision_chain)
+noesis_graph_server.tool()(search)
+noesis_graph_server.tool()(get_conversation_summary)
 
 if __name__ == "__main__":
     noesis_graph_server.run(transport="stdio")
