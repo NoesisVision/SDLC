@@ -15,6 +15,8 @@ _INDEX_DEFINITIONS = [
     "CREATE INDEX FOR (iu:IdeaUnit) ON (iu.idea_unit_id)",
     "CREATE INDEX FOR (t:Topic) ON (t.topic_id)",
     "CREATE INDEX FOR (d:Decision) ON (d.decision_id)",
+    "CREATE INDEX FOR (br:BatchResult) ON (br.conversation_id)",
+    "CREATE INDEX FOR (rr:ReviewerResult) ON (rr.conversation_id)",
 ]
 
 
@@ -28,12 +30,14 @@ def init_graph(graph: Graph) -> None:
     from noesis_graph.analysis.finalization import init_graph as init_finalization
     from noesis_graph.analysis.restructuring import init_graph as init_restructuring
     from noesis_graph.analysis.retrieval import init_graph as init_retrieval
+    from noesis_graph.analysis.pipeline import init_graph as init_pipeline
     from noesis_graph.analysis.storage import init_graph as init_storage
 
     init_batching(graph)
     init_context(graph)
     init_export(graph)
     init_finalization(graph)
+    init_pipeline(graph)
     init_restructuring(graph)
     init_retrieval(graph)
     init_storage(graph)

@@ -8,6 +8,7 @@ from noesis_graph.analysis.models import (
     GetDecisionsResponse,
     GetTopicIdeaUnitsResponse,
     GetTopicNodesResponse,
+    GetTopicsWithCategoriesResponse,
     StoreDecisionsResponse,
     StoreIdeaUnitsResponse,
 )
@@ -278,3 +279,70 @@ async def test_get_all_decisions(tmp_path) -> None:
     result = GetDecisionsResponse.model_validate_json(raw)
 
     assert len(result.decisions) == 2
+
+
+# -- get_topics_with_categories tests --
+
+
+async def test_get_topics_with_categories(tmp_path) -> None:
+    conv_file = tmp_path / "conv.md"
+    conv_file.write_text(CONVERSATION, encoding="utf-8")
+    conversation_id = await _register(conv_file)
+
+    topic_db = await _create_topic("Database Choice")
+    topic_api = await _create_topic("API Design")
+
+    await _call_tool(
+        "store_idea_units",
+        {
+            "conversation_id": conversation_id,
+            "idea_units": [
+                {
+                    "turn_order": 0,
+                    "sequence_in_turn": 0,
+                    "text": "We should use PostgreSQL.",
+                    "sentence_indices": [0],
+                    "categories": ["Position", "Decision"],
+                    "topic_id": topic_db,
+                },
+                {
+                    "turn_order": 1,
+                    "sequence_in_turn": 0,
+                    "text": "The API should be RESTful.",
+                    "sentence_indices": [0],
+                    "categories": ["Information"],
+                    "topic_id": topic_api,
+                },
+            ],
+        },
+    )
+
+    raw = await _call_tool(
+        "get_topics_with_categories",
+        {
+            "conversation_id": conversation_id,
+            "categories": ["Decision", "Position"],
+        },
+    )
+    result = GetTopicsWithCategoriesResponse.model_validate_json(raw)
+
+    assert len(result.topics) == 1
+    assert result.topics[0].topic_id == topic_db
+    assert result.topics[0].title == "Database Choice"
+
+
+async def test_get_topics_with_categories_empty(tmp_path) -> None:
+    conv_file = tmp_path / "conv.md"
+    conv_file.write_text(CONVERSATION, encoding="utf-8")
+    conversation_id = await _register(conv_file)
+
+    raw = await _call_tool(
+        "get_topics_with_categories",
+        {
+            "conversation_id": conversation_id,
+            "categories": ["Decision"],
+        },
+    )
+    result = GetTopicsWithCategoriesResponse.model_validate_json(raw)
+
+    assert result.topics == []

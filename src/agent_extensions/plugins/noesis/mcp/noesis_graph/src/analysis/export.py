@@ -100,8 +100,9 @@ def _fetch_conversation_topics(graph: Graph, conversation_id: str) -> list[dict]
 
 def _enrich_topic_with_path(graph: Graph, topic: dict) -> dict:
     ancestors = _fetch_ancestor_chain(graph, topic["topic_id"])
-    full_path = " - ".join(ancestors + [topic["title"]])
-    return {**topic, "full_path": full_path}
+    path_parts = ancestors + [topic["title"]]
+    full_path = " - ".join(path_parts)
+    return {**topic, "full_path": full_path, "path_parts": path_parts}
 
 
 def _fetch_ancestor_chain(graph: Graph, topic_id: str) -> list[str]:
@@ -192,14 +193,54 @@ def _render_topics_section(lines: list[str], topics: list[dict]) -> None:
         lines.append("")
         return
 
+    topic_titles = {t["title"] for t in topics}
+    tree = _build_topic_tree(topics)
+    _render_topic_tree(lines, tree, topic_titles, depth=0)
+    lines.append("")
+
     for topic in topics:
-        lines.append(f"### {topic['full_path']}")
-        lines.append("")
-        if topic["summary"]:
-            lines.append(topic["summary"])
+        _render_topic_description(lines, topic)
+
+
+def _build_topic_tree(topics: list[dict]) -> dict:
+    tree: dict = {}
+    for topic in topics:
+        node = tree
+        for part in topic["path_parts"]:
+            node = node.setdefault(part, {})
+    return tree
+
+
+def _render_topic_tree(
+    lines: list[str],
+    tree: dict,
+    topic_titles: set[str],
+    depth: int,
+) -> None:
+    indent = "   " * depth
+    for idx, name in enumerate(tree, 1):
+        if name in topic_titles:
+            slug = _slugify(name)
+            lines.append(f"{indent}{idx}. [{name}](#{slug})")
         else:
-            lines.append("*No summary available.*")
-        lines.append("")
+            lines.append(f"{indent}{idx}. {name}")
+        _render_topic_tree(lines, tree[name], topic_titles, depth + 1)
+
+
+def _slugify(text: str) -> str:
+    slug = text.lower().strip()
+    slug = slug.replace(" ", "-")
+    return "".join(c for c in slug if c.isalnum() or c == "-")
+
+
+def _render_topic_description(lines: list[str], topic: dict) -> None:
+    lines.append(f"### {topic['title']}")
+    lines.append("")
+    if topic["summary"]:
+        lines.append(topic["summary"])
+    else:
+        lines.append("*No summary available.*")
+    lines.append("")
 
 
 def _render_decisions_section(lines: list[str], decisions: list[dict]) -> None:

@@ -186,6 +186,21 @@ class GetTopicNodesResponse(BaseModel):
     topics: list[TopicNode] = Field(description="Topic nodes at the requested level")
 
 
+class TopicRef(BaseModel):
+    """A lightweight topic reference."""
+
+    topic_id: str = Field(description="Topic UUID")
+    title: str = Field(description="Topic title")
+
+
+class GetTopicsWithCategoriesResponse(BaseModel):
+    """Response from get_topics_with_categories."""
+
+    topics: list[TopicRef] = Field(
+        description="Topics that have idea units with the requested categories"
+    )
+
+
 class IdeaUnitDetail(BaseModel):
     """An idea unit with turn context."""
 
@@ -250,11 +265,28 @@ class ReorderTopicResponse(BaseModel):
 # --- Finalization ---
 
 
+class StructuralWarning(BaseModel):
+    """A topic with too many children, flagging a potential split."""
+
+    topic_id: str = Field(description="Topic UUID")
+    title: str = Field(description="Topic title")
+    children_count: int = Field(description="Number of direct children")
+
+
 class FinalizeConversationResponse(BaseModel):
     """Response from finalize_conversation."""
 
-    status: str = Field(description="'success'")
-    topics_updated: int = Field(description="Number of topics with recomputed token counts")
+    status: str = Field(description="'success' or 'error'")
+    topics_updated: int = Field(
+        default=0, description="Number of topics with recomputed token counts"
+    )
+    structural_warnings: list[StructuralWarning] = Field(
+        default_factory=list,
+        description="Topics with >7 children that may need splitting",
+    )
+    reason: str | None = Field(
+        default=None, description="Error reason if status is 'error'"
+    )
 
 
 # --- Retrieval ---
@@ -363,3 +395,101 @@ class ExportConversationDocumentResponse(BaseModel):
     topics_count: int = Field(description="Number of topics included in the document")
     decisions_count: int = Field(description="Number of decisions included in the document")
     output_path: str = Field(description="Path where the document was saved")
+
+
+# --- Batch Pipeline ---
+
+
+class BatchIdeaUnit(BaseModel):
+    """An idea unit from batch analysis, before topic resolution."""
+
+    turn_order: int = Field(description="Order of the source turn in the conversation")
+    sequence_in_turn: int = Field(description="Position within the turn (0-based)")
+    text: str = Field(description="Idea unit text (original language)")
+    sentence_indices: list[int] = Field(description="Indices into the turn's sentences array")
+    categories: list[str] = Field(
+        description="One or more of: Information, Position, Argument, Decision, NotRelevant"
+    )
+    preliminary_topic: str = Field(description="Short descriptive topic label from batch analysis")
+    parent_topic_hint: str = Field(
+        description="'existing:<topic_id>' if matching an existing topic, or 'new'"
+    )
+
+
+class PreliminaryTopic(BaseModel):
+    """A preliminary topic identified during batch analysis."""
+
+    title: str = Field(description="Topic title (English)")
+    parent: str = Field(description="'existing:<topic_id>' or 'new'")
+    summary_hint: str = Field(description="Brief summary of the topic content")
+
+
+class StoreBatchResultsResponse(BaseModel):
+    """Response from store_batch_results."""
+
+    batch_number: int = Field(description="Batch number that was stored")
+    idea_unit_count: int = Field(description="Number of idea units in this batch")
+    preliminary_topic_count: int = Field(description="Number of preliminary topics in this batch")
+
+
+class SimilarityGroup(BaseModel):
+    """A group of preliminary topics that likely refer to the same subject.
+
+    Detected by turn-overlap heuristic: topics whose idea units come
+    from largely the same turns are likely duplicates.
+    """
+
+    titles: list[str] = Field(description="Preliminary topic titles in this group")
+    shared_turn_count: int = Field(description="Number of turns shared by all topics in the group")
+
+
+class GetBatchResultsResponse(BaseModel):
+    """Response from get_batch_results."""
+
+    preliminary_topics: list[PreliminaryTopic] = Field(
+        description="Deduplicated preliminary topics across all batches"
+    )
+    similarity_groups: list[SimilarityGroup] = Field(
+        default_factory=list,
+        description="Groups of preliminary topics that may be duplicates (by turn overlap)",
+    )
+    active_state_json: str = Field(description="Active state JSON from the last batch")
+    last_primary_turn_order: int = Field(description="Last turn order from the last batch")
+    has_more: bool = Field(description="Whether more turns remain after the last batch")
+    total_batches: int = Field(description="Number of batches stored")
+    idea_units: list[BatchIdeaUnit] | None = Field(
+        default=None,
+        description="All idea units across batches. Only populated when summary_only=False.",
+    )
+
+
+class GetLatestBatchStateResponse(BaseModel):
+    """Response from get_latest_batch_state."""
+
+    batch_number: int = Field(description="Most recent batch number")
+    active_state_json: str = Field(description="Active state JSON from the latest batch")
+    last_primary_turn_order: int = Field(description="Last turn order from the latest batch")
+    has_more: bool = Field(description="Whether more turns remain after the latest batch")
+
+
+class TopicMappingEntry(BaseModel):
+    """Maps a preliminary topic name to a resolved topic_id."""
+
+    preliminary_topic: str = Field(description="Preliminary topic title from batch analysis")
+    topic_id: str = Field(description="UUID of the resolved topic")
+
+
+class StoreReviewerResultResponse(BaseModel):
+    """Response from store_reviewer_result."""
+
+    status: str = Field(description="'success'")
+
+
+class ResolveAndStoreIdeaUnitsResponse(BaseModel):
+    """Response from resolve_and_store_idea_units."""
+
+    stored_count: int = Field(description="Number of idea units stored")
+    skipped_not_relevant: int = Field(description="Number of NotRelevant-only units skipped")
+    unresolved_topics: list[str] = Field(
+        description="Preliminary topic titles that could not be resolved"
+    )

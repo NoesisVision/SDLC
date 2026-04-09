@@ -15,7 +15,12 @@ from redislite.falkordb_client import FalkorDB, Graph
 
 from noesis_graph.analysis import init_graph as init_analysis_graph
 from noesis_graph.analysis.batching import get_next_turn_batch
-from noesis_graph.analysis.context import get_decisions, get_topic_idea_units, get_topic_nodes
+from noesis_graph.analysis.context import (
+    get_decisions,
+    get_topic_idea_units,
+    get_topic_nodes,
+    get_topics_with_categories,
+)
 from noesis_graph.analysis.export import export_conversation_document
 from noesis_graph.analysis.finalization import finalize_conversation
 from noesis_graph.analysis.restructuring import merge_topics, reparent_topic, reorder_topic
@@ -26,6 +31,13 @@ from noesis_graph.analysis.retrieval import (
     get_topic_history,
     get_topic_tree,
     search,
+)
+from noesis_graph.analysis.pipeline import (
+    get_batch_results,
+    get_latest_batch_state,
+    resolve_and_store_idea_units,
+    store_batch_results,
+    store_reviewer_result,
 )
 from noesis_graph.analysis.storage import (
     create_cross_references,
@@ -112,8 +124,15 @@ noesis_graph_server.tool()(store_decisions)
 noesis_graph_server.tool()(create_cross_references)
 noesis_graph_server.tool()(set_summaries)
 
+noesis_graph_server.tool()(store_batch_results)
+noesis_graph_server.tool()(get_batch_results)
+noesis_graph_server.tool()(get_latest_batch_state)
+noesis_graph_server.tool()(resolve_and_store_idea_units)
+noesis_graph_server.tool()(store_reviewer_result)
+
 noesis_graph_server.tool()(get_topic_nodes)
 noesis_graph_server.tool()(get_topic_idea_units)
+noesis_graph_server.tool()(get_topics_with_categories)
 noesis_graph_server.tool()(get_decisions)
 
 noesis_graph_server.tool()(merge_topics)

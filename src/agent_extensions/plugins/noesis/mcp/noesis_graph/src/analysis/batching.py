@@ -75,7 +75,7 @@ def _fetch_turns_after(
         "MATCH (c:RawConversation {conversation_id: $cid})"
         "-[r:HAS_RAW_TURN]->(t:RawSpeakerTurn)"
         " WHERE r.order >= $start"
-        " RETURN r.order, t.speaker, t.time, t.sentences"
+        " RETURN DISTINCT r.order, t.speaker, t.time, t.sentences"
         " ORDER BY r.order",
         params={"cid": conversation_id, "start": start_order},
     )

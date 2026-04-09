@@ -60,6 +60,7 @@ Return a JSON object:
 - Intra-conversation reversals do NOT produce separate Decision nodes. They become alternatives.
 - Cross-conversation supersession (this conversation overturns a prior decision) DOES produce a new Decision with a `SUPERSEDES` edge.
 - If no clear decision was reached on a topic, do NOT create a Decision node — report it in `topics_without_decisions`.
+- **Skip if already covered:** If `get_decisions(topic_id)` returns existing decisions that already cover the same outcome as the idea units, and no new contradictory positions were introduced in this conversation, do NOT create a duplicate decision. Report the topic in `topics_without_decisions` with reason "existing decision sufficient". Only create a new decision if: (a) no decision exists yet, or (b) the conversation introduced a position that supersedes the existing decision.
 - **Workshop-style discussions**: In collaborative design sessions, participants often explore options without committing. Indicators of a real decision: explicit agreement from multiple speakers ("OK, let's do it this way"), action items assigned, or a clear conclusion statement. Indicators of exploration only: "maybe", "we should think about", "what if", discussion ending with "let's continue next time". When in doubt, classify as `status: "proposed"` rather than `status: "taken"`.
 - Keep ADR fields concise but complete.
 - Write all ADR fields (title, context, decision, rationale, consequences, alternatives) in English, regardless of transcript language.

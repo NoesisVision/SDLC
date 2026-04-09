@@ -39,7 +39,8 @@ def _clean_analysis_nodes():
 
     if _graph is not None:
         _graph.query(
-            "MATCH (n) WHERE n:Topic OR n:IdeaUnit OR n:Decision DETACH DELETE n"
+            "MATCH (n) WHERE n:Topic OR n:IdeaUnit OR n:Decision"
+            " OR n:ReviewerResult DETACH DELETE n"
         )
 
 
@@ -83,6 +84,15 @@ async def test_finalize_sets_status_and_updates_topics(tmp_path) -> None:
         },
     )
 
+    await _call_tool(
+        "store_reviewer_result",
+        {
+            "conversation_id": conversation_id,
+            "reviewed_topics_count": 1,
+            "mismatches_count": 0,
+        },
+    )
+
     raw = await _call_tool(
         "finalize_conversation", {"conversation_id": conversation_id}
     )
@@ -96,6 +106,15 @@ async def test_finalize_conversation_without_idea_units(tmp_path) -> None:
     conv_file = tmp_path / "conv.md"
     conv_file.write_text(CONVERSATION, encoding="utf-8")
     conversation_id = await _register(conv_file)
+
+    await _call_tool(
+        "store_reviewer_result",
+        {
+            "conversation_id": conversation_id,
+            "reviewed_topics_count": 0,
+            "mismatches_count": 0,
+        },
+    )
 
     raw = await _call_tool(
         "finalize_conversation", {"conversation_id": conversation_id}

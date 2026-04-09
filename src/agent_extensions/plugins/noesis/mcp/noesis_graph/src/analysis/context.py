@@ -15,8 +15,10 @@ from noesis_graph.analysis.models import (
     GetDecisionsResponse,
     GetTopicIdeaUnitsResponse,
     GetTopicNodesResponse,
+    GetTopicsWithCategoriesResponse,
     IdeaUnitDetail,
     TopicNode,
+    TopicRef,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,28 @@ async def get_topic_nodes(
     else:
         topics = _fetch_child_topics(graph, parent_id)
     return GetTopicNodesResponse(topics=topics)
+
+
+async def get_topics_with_categories(
+    conversation_id: str,
+    categories: list[str],
+) -> GetTopicsWithCategoriesResponse:
+    """Return topics that received idea units with specific categories.
+
+    Traces through the full path: RawConversation -> HAS_RAW_TURN ->
+    RawSpeakerTurn -> CONTAINS -> IdeaUnit -> BELONGS_TO -> Topic to
+    find topics scoped to a specific conversation.
+
+    Args:
+        conversation_id: UUID of the conversation.
+        categories: Categories to filter by (e.g. ["Decision", "Position"]).
+
+    Returns:
+        Topics that have at least one idea unit with a matching category.
+    """
+    graph = _require_graph()
+    topics = _fetch_topics_with_categories(graph, conversation_id, categories)
+    return GetTopicsWithCategoriesResponse(topics=topics)
 
 
 async def get_topic_idea_units(
@@ -128,6 +152,24 @@ def _fetch_child_topics(graph: Graph, parent_id: str) -> list[TopicNode]:
             children_count=row[3],
             sort_order=row[4],
         )
+        for row in result.result_set
+    ]
+
+
+def _fetch_topics_with_categories(
+    graph: Graph, conversation_id: str, categories: list[str]
+) -> list[TopicRef]:
+    result = graph.query(
+        "MATCH (c:RawConversation {conversation_id: $cid})"
+        "-[:HAS_RAW_TURN]->(turn:RawSpeakerTurn)"
+        "-[:CONTAINS]->(iu:IdeaUnit)"
+        "-[:BELONGS_TO]->(t:Topic)"
+        " WHERE any(cat IN iu.categories WHERE cat IN $cats)"
+        " RETURN DISTINCT t.topic_id, t.title",
+        params={"cid": conversation_id, "cats": categories},
+    )
+    return [
+        TopicRef(topic_id=row[0], title=row[1])
         for row in result.result_set
     ]
 

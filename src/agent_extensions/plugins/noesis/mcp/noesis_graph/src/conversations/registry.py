@@ -127,26 +127,32 @@ async def get_raw_speaker_turns(
     speakers: list[str] | None = None,
     from_time: str | None = None,
     to_time: str | None = None,
+    offset: int | None = None,
+    limit: int | None = None,
 ) -> GetRawSpeakerTurnsResponse:
-    """Retrieve speaker turns with optional filtering.
+    """Retrieve speaker turns with optional filtering and pagination.
 
     Args:
         conversation_id: UUID identifying the conversation.
         speakers: Filter by speaker names (case-insensitive).
         from_time: Include turns at or after this time (HH:MM:SS).
         to_time: Include turns at or before this time (HH:MM:SS).
+        offset: Number of turns to skip (for pagination).
+        limit: Maximum number of turns to return (for pagination).
 
     Returns:
         Filtered list of speaker turns.
     """
     _assert_conversation_exists(conversation_id)
 
-    query, params = _build_turns_query(conversation_id, speakers, from_time, to_time)
+    query, params = _build_turns_query(
+        conversation_id, speakers, from_time, to_time, offset, limit
+    )
     graph = _require_graph()
     result = graph.query(query, params=params)
 
     turns = [
-        RawSpeakerTurn(speaker=row[0], time=row[1], sentences=row[2])
+        RawSpeakerTurn(speaker=row[1], time=row[2], sentences=row[3])
         for row in result.result_set
     ]
 
@@ -179,6 +185,7 @@ def _store_conversation(
     turns: list[RawSpeakerTurn],
 ) -> None:
     graph = _require_graph()
+    _assert_conversation_not_registered(graph, conversation_id)
     graph.query(
         "CREATE (:RawConversation {conversation_id: $cid, title: $title, date: $date})",
         params={
@@ -190,6 +197,19 @@ def _store_conversation(
 
     for order, turn in enumerate(turns):
         _store_turn(graph, conversation_id, turn, order)
+
+
+def _assert_conversation_not_registered(graph: Graph, conversation_id: str) -> None:
+    result = graph.query(
+        "MATCH (c:RawConversation {conversation_id: $cid}) RETURN count(c)",
+        params={"cid": conversation_id},
+    )
+    count = result.result_set[0][0] if result.result_set else 0
+    if count > 0:
+        raise ValueError(
+            f"Conversation {conversation_id} is already registered. "
+            "Delete it first before re-registering."
+        )
 
 
 def _store_turn(graph: Graph, conversation_id: str, turn: RawSpeakerTurn, order: int) -> None:
@@ -246,6 +266,8 @@ def _build_turns_query(
     speakers: list[str] | None,
     from_time: str | None,
     to_time: str | None,
+    offset: int | None,
+    limit: int | None,
 ) -> tuple[str, dict]:
     params: dict = {"cid": conversation_id}
     where_clauses: list[str] = []
@@ -268,6 +290,14 @@ def _build_turns_query(
     )
     if where_clauses:
         query += " WHERE " + " AND ".join(where_clauses)
-    query += " RETURN t.speaker, t.time, t.sentences ORDER BY r.order"
+    query += " RETURN DISTINCT r.order, t.speaker, t.time, t.sentences ORDER BY r.order"
+
+    if offset is not None:
+        query += " SKIP $offset"
+        params["offset"] = offset
+
+    if limit is not None:
+        query += " LIMIT $limit"
+        params["limit"] = limit
 
     return query, params

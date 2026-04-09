@@ -80,7 +80,7 @@ async def store_idea_units(
     for iu in idea_units:
         idea_unit_id = str(uuid.uuid4())
         token_count = estimate_token_count(iu.text)
-        _create_idea_unit_with_edges(
+        create_idea_unit_with_edges(
             graph, conversation_id, idea_unit_id, iu, token_count
         )
     return StoreIdeaUnitsResponse(count=len(idea_units))
@@ -193,7 +193,7 @@ def _create_subtopic_edge(
     )
 
 
-def _create_idea_unit_with_edges(
+def create_idea_unit_with_edges(
     graph: Graph,
     conversation_id: str,
     idea_unit_id: str,
