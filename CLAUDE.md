@@ -34,3 +34,4 @@
 9. Use ONLY `uv` to run scripts.
 10. Access Pydantic model fields via **typed attributes** (`result.id`, `result.items[0].name`), never via dict keys. Use `.model_dump()` only at serialization boundaries (API responses, file I/O).
 11. Use `None` for optional arguments in functions.
+12. PEP 723 scripts executed with `uv run` cannot import from Python packages (directories with `__init__.py`). Keep all shared modules as flat `.py` files in the same directory.

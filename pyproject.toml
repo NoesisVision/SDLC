@@ -21,6 +21,8 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "ruff>=0.1.0",
+    "pysbd>=0.3.4",
+    "langdetect>=1.0.9",
 ]
 
 # Note: Skill scripts use PEP 723 inline metadata for their own dependencies.
@@ -30,7 +32,11 @@ dev = [
 packages = ["contracts"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [
+    ".",
+    "src/agent_extensions/plugins/noesis/scripts",
+    "tests/agent_extensions/plugins/noesis/scripts",
+]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
