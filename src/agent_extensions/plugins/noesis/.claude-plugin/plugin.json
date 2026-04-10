@@ -1,6 +1,6 @@
 {
   "name": "noesis",
-  "description": "Noesis plugin for Claude AI",
+  "description": "Noesis plugin for Claude Code CLI",
   "version": "0.1.0",
   "author": {
     "name": "Noesis Vision"

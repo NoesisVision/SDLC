@@ -1,13 +1,5 @@
 {
   "mcpServers": {
-    "noesis-graph": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "${CLAUDE_PLUGIN_ROOT}/mcp/noesis_graph",
-        "--reinstall",
-        "noesis-graph"
-      ]
-    }
+
   }
 }
