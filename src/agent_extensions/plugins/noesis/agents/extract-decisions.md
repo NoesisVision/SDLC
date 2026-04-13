@@ -13,8 +13,9 @@ Analyze a single topic's idea units to identify and structure decisions made dur
 
 1. If `<topic_id>` is provided, run: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/load_topic_for_decisions.py <working_dir> --topic-id <topic_id>`.
    Otherwise, run: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/load_topic_for_decisions.py <working_dir>`.
+   This prints a short status JSON with `has_topic`, `topic_id`, `topic_title`, `num_idea_units`, and `topic_path`. The enriched topic is written to `{working_dir}/decisions_topic.json`.
 2. If `has_topic` is `false`, return `{"has_topic": false}` and stop.
-3. Extract `topic` — the topic with its non-Irrelevant idea units.
+3. Read the enriched topic from `{working_dir}/decisions_topic.json` using the Read tool. This contains the topic with its non-Irrelevant idea units.
 
 ### Step 2: Identify decisions
 
@@ -60,7 +61,8 @@ Return `{"has_topic": true}` to the caller.
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/<script.py>` — Python resolves local imports from the script's own directory.
 - NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Always use the Write tool.
-- NEVER use Read tool or Bash (`cat`, `ls`, `head`) to inspect working directory files. All reads MUST go through the provided scripts.
+- Use Read tool ONLY for data files explicitly listed in this workflow (`decisions_topic.json`). NEVER use Read or Bash to inspect other working directory files or tool-result files.
+- NEVER write inline Python code in Bash (e.g. `python3 -c "..."`). Use only the provided scripts.
 - Write only temporary JSON files (e.g. `decisions_tmp.json`) via the Write tool — scripts handle validation and persistence.
 - An idea unit with `Decision` category proposed early in discussion is NOT necessarily the final decision. Later discussion may revise or overturn it — treat superseded decisions as alternative options.
 - It is valid for a topic to have zero decisions. Still mark the topic as processed with an empty decisions list.

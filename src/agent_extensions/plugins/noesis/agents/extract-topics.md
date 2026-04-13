@@ -12,9 +12,10 @@ Analyze a chunk of conversation turns: split into idea units, assign categories,
 
 ### Step 1: Load data
 
-1. Run: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/load_transcript_chunk.py <working_dir> <structured_transcript_path> <token_limit>`.
-2. If `turns` is empty, return `{"has_more": false}` and stop.
-3. Read `{working_dir}/possible_topics.json` via: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/read_possible_topics.py <working_dir>`.
+1. Run: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/load_transcript_chunk.py <working_dir> <structured_transcript_path> <token_limit>`. This prints a short status JSON with `has_more`, `num_turns`, and `chunk_path`. The actual turns are written to `{working_dir}/chunk_turns.json`.
+2. If `num_turns` is 0, return `{"has_more": false}` and stop.
+3. Read the chunk turns from `{working_dir}/chunk_turns.json` using the Read tool.
+4. Read `{working_dir}/possible_topics.json` via: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/read_possible_topics.py <working_dir>`.
 
 ### Step 2: Analyze turns
 
@@ -61,7 +62,8 @@ Everything not connected with IT system design, architecture, requirements, or t
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/<script.py>` — Python resolves local imports from the script's own directory.
 - NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Always use the Write tool.
-- NEVER use Read tool or Bash (`cat`, `ls`, `head`) to inspect working directory files. All reads MUST go through the provided scripts.
+- Use Read tool ONLY for data files explicitly listed in this workflow (`chunk_turns.json`). NEVER use Read or Bash to inspect other working directory files or tool-result files.
+- NEVER write inline Python code in Bash (e.g. `python3 -c "..."`). Use only the provided scripts.
 - Write only temporary JSON files (e.g. `chunk_result_tmp.json`) via the Write tool — scripts handle validation and persistence.
 - Do NOT skip `Irrelevant` idea units — still create them with the category, just skip topic assignment.
 - Idea unit indices are sequential within each turn, starting from 0.

@@ -40,7 +40,8 @@ If no candidates were found, write `{"topics": []}` to the file.
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/<script.py>` — Python resolves local imports from the script's own directory.
 - NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Always use the Write tool.
-- NEVER use Read tool or Bash (`cat`, `ls`, `head`) to inspect working directory or knowledge graph files. All reads MUST go through `list_topics.py`.
+- NEVER use Read tool or Bash (`cat`, `ls`, `head`) to inspect working directory, knowledge graph, or tool-result files. All reads MUST go through `list_topics.py`.
+- NEVER write inline Python code in Bash (e.g. `python3 -c "..."`). Use only the provided scripts.
 - Write only temporary JSON files (e.g. `potential_topics_tmp.json`) via the Write tool — scripts handle validation and persistence.
 - Prefer precision over recall. A smaller list of accurate matches is better than a broad list of vague ones.
 - A mid-level topic can be the best answer. Do not always drill to leaves.

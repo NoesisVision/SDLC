@@ -100,4 +100,5 @@ class EnrichedTopic(BaseModel):
     title: str
     short_summary: str
     long_summary: str
+    conversation_id: str
     idea_units: list[IdeaUnitDetail]

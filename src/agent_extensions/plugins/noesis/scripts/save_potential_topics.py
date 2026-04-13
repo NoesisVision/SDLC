@@ -41,6 +41,10 @@ def _main() -> None:
     potential_topics = PotentialTopics.model_validate_json(raw_input)
     save_potential_topics(working_dir, potential_topics.topics)
 
+    input_path = Path(sys.argv[2])
+    if input_path.exists():
+        input_path.unlink()
+
     print(json.dumps({"status": "Ok", "count": len(potential_topics.topics)}))
 
 

@@ -105,6 +105,13 @@ def _main() -> None:
         sys.exit(1)
 
     result = load_transcript_chunk(working_dir, structured_transcript_path, token_limit)
+
+    turns = result.pop("turns")
+    chunk_path = working_dir / "chunk_turns.json"
+    chunk_path.write_text(json.dumps(turns, ensure_ascii=False))
+
+    result["chunk_path"] = str(chunk_path)
+    result["num_turns"] = len(turns)
     print(json.dumps(result))
 
 

@@ -142,6 +142,11 @@ def _main() -> None:
     review = TopicReviewResult.model_validate_json(raw_input)
 
     save_topic_review(working_dir, review)
+
+    input_path = Path(sys.argv[2])
+    if input_path.exists():
+        input_path.unlink()
+
     print(json.dumps({
         "status": "Ok",
         "topic_id": review.topic_id,

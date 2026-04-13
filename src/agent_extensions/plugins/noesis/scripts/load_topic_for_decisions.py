@@ -97,6 +97,7 @@ def _enrich_topic(
         title=topic.title,
         short_summary=topic.short_summary,
         long_summary=topic.long_summary,
+        conversation_id=conversation_id,
         idea_units=details,
     )
 
@@ -145,10 +146,16 @@ def _main() -> None:
         print(json.dumps({"status": "Ok", "has_topic": False}))
         return
 
+    topic_path = working_dir / "decisions_topic.json"
+    topic_path.write_text(json.dumps(topic.model_dump(), ensure_ascii=False))
+
     print(json.dumps({
         "status": "Ok",
         "has_topic": True,
-        "topic": topic.model_dump(),
+        "topic_id": topic.id,
+        "topic_title": topic.title,
+        "num_idea_units": len(topic.idea_units),
+        "topic_path": str(topic_path),
     }))
 
 

@@ -74,6 +74,11 @@ def _main() -> None:
     result = DecisionExtractionResult.model_validate_json(raw_input)
 
     save_topic_decisions(working_dir, result)
+
+    input_path = Path(sys.argv[2])
+    if input_path.exists():
+        input_path.unlink()
+
     print(json.dumps({
         "status": "Ok",
         "topic_id": result.topic_id,

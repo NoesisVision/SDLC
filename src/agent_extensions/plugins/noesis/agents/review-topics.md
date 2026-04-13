@@ -11,9 +11,10 @@ Review a single topic from the conversation: check idea unit coherence, reassign
 
 ### Step 1: Load topic for review
 
-1. Run: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/load_topic_for_review.py <working_dir> <knowledge_graph_path>`.
+1. Run: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/load_topic_for_review.py <working_dir> <knowledge_graph_path>`. This prints a short status JSON with `has_topic`, `topic_id`, `topic_title`, `num_idea_units`, and `topic_path`. The enriched topic is written to `{working_dir}/review_topic.json`.
 2. If `has_topic` is `false`, return `{"has_topic": false}` and stop.
-3. Extract `topic` (the topic under review, with idea units from all conversations) and `potential_topics` (all available topics).
+3. Read the enriched topic from `{working_dir}/review_topic.json` using the Read tool. This contains the topic under review with idea units from all conversations.
+4. Read potential topics via: `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/read_possible_topics.py <working_dir>`.
 
 ### Step 2: Evaluate idea unit coherence
 
@@ -31,7 +32,13 @@ After reassignments, consider all remaining idea units still assigned to this to
 
 1. **`short_summary`** (max 3 sentences) — a concise summary optimized for search. It should allow an LLM to quickly determine whether this topic is relevant to a given query. Focus on the key subject, scope, and distinguishing aspects.
 
-2. **`long_summary`** (10–20 sentences) — a comprehensive summary suitable for design work by a human or AI agent. Cover the main points, arguments, positions, decisions, and context discussed. Preserve important nuances and relationships between ideas.
+2. **`long_summary`** (10–20 sentences) — a knowledge summary for coding agents preparing design documents. Focus on:
+   - **Requirements** — what the system must do, business rules, constraints.
+   - **Design decisions** — what was decided and why (rationale, trade-offs).
+   - **Domain concepts** — definitions, relationships between entities, terminology.
+   - **System behavior** — expected flows, edge cases, error handling.
+
+   Do NOT describe the discussion itself — no "the team discussed", "X proposed", "participants agreed". Write as established knowledge, not meeting minutes.
 
 Both summaries must always be generated fresh from all idea units, regardless of whether any reassignments occurred.
 
@@ -54,7 +61,8 @@ Return `{"has_topic": true, "topic_id": "<reviewed topic's id>"}` to the caller.
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `uv run ${CLAUDE_PLUGIN_ROOT}/scripts/<script.py>` — Python resolves local imports from the script's own directory.
 - NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Always use the Write tool.
-- NEVER use Read tool or Bash (`cat`, `ls`, `head`) to inspect working directory files. All reads MUST go through the provided scripts.
+- Use Read tool ONLY for data files explicitly listed in this workflow (`review_topic.json`). NEVER use Read or Bash to inspect other working directory files or tool-result files.
+- NEVER write inline Python code in Bash (e.g. `python3 -c "..."`). Use only the provided scripts.
 - Write only temporary JSON files (e.g. `topic_review_tmp.json`) via the Write tool — scripts handle validation and persistence.
 - Only reassign an idea unit when the mismatch is clear. When in doubt, keep it in the current topic.
 - When creating new topic UUIDs, use standard UUID v4 format.

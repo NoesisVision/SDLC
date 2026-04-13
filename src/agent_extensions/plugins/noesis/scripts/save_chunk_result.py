@@ -114,6 +114,11 @@ def _main() -> None:
     chunk_result = ChunkResult.model_validate_json(raw_input)
 
     save_chunk_result(working_dir, chunk_result)
+
+    input_path = Path(sys.argv[2])
+    if input_path.exists():
+        input_path.unlink()
+
     print(json.dumps({"status": "Ok", "turns_saved": len(chunk_result.turns), "new_topics": len(chunk_result.new_topics)}))
 
 

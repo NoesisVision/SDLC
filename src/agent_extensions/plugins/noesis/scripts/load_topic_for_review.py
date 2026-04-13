@@ -52,7 +52,9 @@ def load_topic_for_review(
     kg_turn_maps = _build_kg_turn_maps(kg, conversation.conversation_id)
 
     all_refs = _collect_all_refs(topic, kg_topic, conversation.conversation_id)
-    enriched = _enrich_topic(topic, all_refs, turn_map, kg_turn_maps)
+    enriched = _enrich_topic(
+        topic, all_refs, turn_map, kg_turn_maps, conversation.conversation_id,
+    )
     return enriched, potential_topics
 
 
@@ -160,6 +162,7 @@ def _enrich_topic(
     all_refs: list[IdeaUnitRef],
     current_turn_map: dict[int, Turn],
     kg_turn_maps: dict[str, dict[int, Turn]],
+    conversation_id: str,
 ) -> EnrichedTopic:
     details: list[IdeaUnitDetail] = []
     for ref in all_refs:
@@ -172,6 +175,7 @@ def _enrich_topic(
         title=topic.title,
         short_summary=topic.short_summary,
         long_summary=topic.long_summary,
+        conversation_id=conversation_id,
         idea_units=details,
     )
 
@@ -220,17 +224,22 @@ def _main() -> None:
 
     knowledge_graph_path = Path(sys.argv[2])
 
-    topic, potential_topics = load_topic_for_review(working_dir, knowledge_graph_path)
+    topic, _ = load_topic_for_review(working_dir, knowledge_graph_path)
 
     if topic is None:
         print(json.dumps({"status": "Ok", "has_topic": False}))
         return
 
+    topic_path = working_dir / "review_topic.json"
+    topic_path.write_text(json.dumps(topic.model_dump(), ensure_ascii=False))
+
     print(json.dumps({
         "status": "Ok",
         "has_topic": True,
-        "topic": topic.model_dump(),
-        "potential_topics": potential_topics,
+        "topic_id": topic.id,
+        "topic_title": topic.title,
+        "num_idea_units": len(topic.idea_units),
+        "topic_path": str(topic_path),
     }))
 
 
