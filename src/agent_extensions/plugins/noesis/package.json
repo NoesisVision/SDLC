@@ -1,0 +1,12 @@
+{
+  "name": "my-claude-skill",
+  "type": "module",
+  "dependencies": {
+    "sentencex": "^1.0.20",
+    "tinyld": "^1.3.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.12"
+  }
+}
