@@ -18,7 +18,8 @@ Analyze a chunk of conversation turns: split into idea units, assign categories,
    - <sentence 2>
    ```
 2. If the chunk file is empty or has no turns, return and stop.
-3. Read `{working_dir}/potential_topics.json` via: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/read-potential-topics.ts <working_dir>`.
+3. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/read-potential-topics.ts <working_dir> > {working_dir}/tmp_potential_topics.json`.
+4. Read `{working_dir}/tmp_potential_topics.json` using the Read tool.
 
 ### Step 2: Analyze turns
 
@@ -70,8 +71,8 @@ Think of topics as **chapters in a system design document**. A software architec
 ## Rules
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/<path>.ts`.
-- NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Always use the Write tool.
-- Use Read tool ONLY for data files explicitly listed in this workflow (`chunk_{chunk_id}.md`). NEVER use Read or Bash to inspect other working directory files or tool-result files.
+- NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Use `>` ONLY to capture script stdout to tmp files. Use the Write tool for all other file writes.
+- Use Read tool ONLY for data files explicitly listed in this workflow (`chunk_{chunk_id}.md`, `tmp_potential_topics.json`). NEVER use Read or Bash to inspect other working directory files.
 - NEVER write inline code in Bash. Use only the provided scripts.
 - Write only temporary JSON files (e.g. `chunk_result_tmp.json`) via the Write tool — scripts handle validation and persistence.
 - Do NOT skip `Irrelevant` idea units — still create them with the category, just skip topic assignment.

@@ -94,6 +94,32 @@ export type DecisionExtractionResult = z.infer<
   typeof DecisionExtractionResultSchema
 >;
 
+// --- Path functions ---
+
+export function buildTopicPath(roots: Topic[], targetId: string): string[] {
+  const path: string[] = [];
+  findPathRecursive(roots, targetId, path);
+  return path;
+}
+
+function findPathRecursive(
+  topics: Topic[],
+  targetId: string,
+  path: string[],
+): boolean {
+  for (const topic of topics) {
+    path.push(topic.title);
+    if (topic.id === targetId) {
+      return true;
+    }
+    if (findPathRecursive(topic.subtopics, targetId, path)) {
+      return true;
+    }
+    path.pop();
+  }
+  return false;
+}
+
 // --- Domain functions ---
 
 export function createTopicFromPotential(

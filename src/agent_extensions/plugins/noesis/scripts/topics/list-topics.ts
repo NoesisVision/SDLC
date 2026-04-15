@@ -1,7 +1,7 @@
 import { outputResult, parseArgs, readJson } from "../io.js";
 import { KnowledgeGraphSchema } from "../knowledge-graph/types.js";
 import type { TopicOverview } from "../knowledge-graph/types.js";
-import { findTopicInHierarchy } from "./types.js";
+import { buildTopicPath, findTopicInHierarchy } from "./types.js";
 import type { Topic } from "./types.js";
 
 export function listTopics(
@@ -12,34 +12,10 @@ export function listTopics(
     ? (findTopicInHierarchy(topics, parentId)?.subtopics ?? [])
     : topics;
 
-  return targets.map((t) => toOverview(t, buildPath(topics, t.id)));
+  return targets.map((t) => toOverview(t, buildTopicPath(topics, t.id)));
 }
 
 // --- Private functions ---
-
-function buildPath(roots: Topic[], targetId: string): string[] {
-  const path: string[] = [];
-  findPathRecursive(roots, targetId, path);
-  return path;
-}
-
-function findPathRecursive(
-  topics: Topic[],
-  targetId: string,
-  path: string[],
-): boolean {
-  for (const topic of topics) {
-    path.push(topic.title);
-    if (topic.id === targetId) {
-      return true;
-    }
-    if (findPathRecursive(topic.subtopics, targetId, path)) {
-      return true;
-    }
-    path.pop();
-  }
-  return false;
-}
 
 function toOverview(topic: Topic, path: string[]): TopicOverview {
   return {

@@ -11,9 +11,10 @@ Review a single topic from the conversation — check idea unit coherence, gener
 
 ### Step 1: Load topic for review
 
-1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/load-topic-for-review.ts <working_dir> <knowledge_graph_path>`. This prints a short status JSON with `has_topic`, `topic_id`, `topic_title`, `num_idea_units`, `has_decision_units`, and `topic_path`. The enriched topic is written to `{working_dir}/review_topic.md`.
-2. If `has_topic` is `false`, return `{"has_topic": false}` and stop.
-3. Read the enriched topic from `{working_dir}/review_topic.md` using the Read tool. The file is markdown:
+1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/load-topic-for-review.ts <working_dir> <knowledge_graph_path> > {working_dir}/tmp_review_status.json`. The enriched topic is written to `{working_dir}/review_topic.md`.
+2. Read `{working_dir}/tmp_review_status.json` using the Read tool. It contains `has_topic`, `topic_id`, `topic_title`, `num_idea_units`, `has_decision_units`, and `topic_path`.
+3. If `has_topic` is `false`, return `{"has_topic": false}` and stop.
+4. Read the enriched topic from `{working_dir}/review_topic.md` using the Read tool. The file is markdown:
    ```
    # <topic title>
    - **ID:** <topic_id>
@@ -27,7 +28,8 @@ Review a single topic from the conversation — check idea unit coherence, gener
    <sentences joined as text>
    ```
    Purely Irrelevant units are already filtered out. Idea units marked `[prior conversation]` come from the knowledge graph — use them for context when generating summaries, but do NOT reassign them (they belong to a different conversation).
-4. Read potential topics via: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/read-potential-topics.ts <working_dir>`. Returns `{"status": "Ok", "topics": [{"id", "title", "short_summary", "path", "is_new", "parent_id"}, ...]}` — a flat list of all known topics with their hierarchy paths.
+5. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/read-potential-topics.ts <working_dir> > {working_dir}/tmp_potential_topics.json`.
+6. Read `{working_dir}/tmp_potential_topics.json` using the Read tool. It contains `{"status": "Ok", "topics": [{"id", "title", "short_summary", "path", "is_new", "parent_id"}, ...]}` — a flat list of all known topics with their hierarchy paths.
 
 ### Step 2: Evaluate idea unit coherence
 
@@ -70,8 +72,9 @@ Write the JSON to `{working_dir}/topic_review_tmp.json` using the Write tool, th
 
 If `has_decision_units` from Step 1 is `false`, skip to Step 7.
 
-1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/load-topic-for-decisions.ts <working_dir> --topic_id <topic_id>`. The enriched topic is written to `{working_dir}/decisions_topic.md`.
-2. Read the enriched topic from `{working_dir}/decisions_topic.md` using the Read tool. Same markdown format as `review_topic.md`, but contains only idea units from the current conversation (non-Irrelevant).
+1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/load-topic-for-decisions.ts <working_dir> --topic_id <topic_id> > {working_dir}/tmp_decisions_status.json`. The enriched topic is written to `{working_dir}/decisions_topic.md`.
+2. Read `{working_dir}/tmp_decisions_status.json` using the Read tool.
+3. Read the enriched topic from `{working_dir}/decisions_topic.md` using the Read tool. Same markdown format as `review_topic.md`, but contains only idea units from the current conversation (non-Irrelevant).
 
 ### Step 6: Identify and save decisions
 
@@ -112,8 +115,8 @@ Return `{"has_topic": true, "topic_id": "<reviewed topic's id>"}` to the caller.
 ## Rules
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/<path>.ts`.
-- NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Always use the Write tool.
-- Use Read tool ONLY for data files explicitly listed in this workflow (`review_topic.md`, `decisions_topic.md`). NEVER use Read or Bash to inspect other working directory files or tool-result files.
+- NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Use `>` ONLY to capture script stdout to tmp files. Use the Write tool for all other file writes.
+- Use Read tool ONLY for data files explicitly listed in this workflow (`review_topic.md`, `decisions_topic.md`, `tmp_review_status.json`, `tmp_potential_topics.json`, `tmp_decisions_status.json`). NEVER use Read or Bash to inspect other working directory files.
 - NEVER write inline code in Bash. Use only the provided scripts.
 - Write only temporary JSON files (e.g. `topic_review_tmp.json`, `decisions_tmp.json`) via the Write tool — scripts handle validation and persistence.
 - Only reassign an idea unit when the mismatch is clear. When in doubt, keep it in the current topic.
