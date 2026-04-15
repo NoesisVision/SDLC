@@ -1,5 +1,9 @@
 # Skills guidelines
 
+## General
+
+1. For large (> 10KB) tools output write output to tmp file in a tool and load it with Read tool in agent. 
+
 ## TypeScript scripts (Bun)
 
 1. All scripts run with `bun run scripts/<domain>/<script>.ts`.
