@@ -3,43 +3,72 @@ import { NestFactory } from "@nestjs/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AppModule } from "./app.module.js";
+import { FileLogger } from "./logging/file-logger.js";
 
 export async function startServer(): Promise<void> {
   const [argDataDir, argProjectDir] = process.argv.slice(2);
   const dataDir = argDataDir || process.env["CLAUDE_PLUGIN_DATA"];
-  const projectDir = argProjectDir;
+  const projectDir =
+    argProjectDir ||
+    process.env["CLAUDE_PROJECT_DIR"] ||
+    process.env["NOESIS_PROJECT_DIR"];
 
-  if (!dataDir || !projectDir) {
+  if (!dataDir) {
     throw new Error(
-      "Usage: noesis-graph <plugin-data-dir> <project-root-dir>\n" +
-        "       plugin-data-dir also reads from CLAUDE_PLUGIN_DATA env var",
+      "Plugin data directory is required.\n" +
+        "Provide as first CLI arg or set CLAUDE_PLUGIN_DATA env var.",
     );
   }
 
-  const app = await NestFactory.create(
-    AppModule.forRoot(dataDir, projectDir),
-    { logger: false },
-  );
-  app.enableShutdownHooks();
-  await app.listen(0);
+  if (!projectDir) {
+    throw new Error(
+      "Project directory is required.\n" +
+        "Provide as second CLI arg or set CLAUDE_PROJECT_DIR env var.",
+    );
+  }
 
-  const url = await app.getUrl();
-  console.error(`[noesis] Noesis Graph available at ${url}`);
-  openBrowser(url);
+  const logger = new FileLogger(dataDir);
+  logger.log(`Data dir: ${dataDir}`, "Bootstrap");
+  logger.log(`Project dir: ${projectDir}`, "Bootstrap");
 
   const mcp = new McpServer({ name: "noesis", version: "0.1.0" });
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
+  logger.log("MCP transport connected", "Bootstrap");
+
+  startApp(dataDir, projectDir, logger);
 }
 
-function openBrowser(url: string): void {
+async function startApp(
+  dataDir: string,
+  projectDir: string,
+  logger: FileLogger,
+): Promise<void> {
+  try {
+    const app = await NestFactory.create(
+      AppModule.forRoot(dataDir, projectDir),
+      { logger },
+    );
+    app.enableShutdownHooks();
+    await app.listen(0);
+
+    const url = await app.getUrl();
+    logger.log(`Noesis Graph available at ${url}`, "Bootstrap");
+    openBrowser(url, logger);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error(`App startup failed: ${message}`, undefined, "Bootstrap");
+  }
+}
+
+function openBrowser(url: string, logger: FileLogger): void {
   const cmd = process.platform === "darwin" ? "open" : "xdg-open";
   try {
     Bun.spawn([cmd, url], {
       stdio: ["ignore", "ignore", "ignore"],
     });
   } catch {
-    console.error(`[noesis] Could not open browser. Visit ${url} manually.`);
+    logger.warn(`Could not open browser. Visit ${url} manually.`, "Bootstrap");
   }
 }
 

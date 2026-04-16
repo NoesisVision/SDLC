@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Logger,
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
@@ -22,6 +23,7 @@ export interface SerenaState {
 
 @Injectable()
 export class SerenaService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(SerenaService.name);
   private client: Client | null = null;
   private state: SerenaState = { status: "disconnected" };
 
@@ -30,10 +32,10 @@ export class SerenaService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     try {
       await this.connect();
-      console.error("[noesis] Serena connected");
+      this.logger.log("Serena connected");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`[noesis] Serena connection failed: ${message}`);
+      this.logger.error(`Serena connection failed: ${message}`);
     }
   }
 

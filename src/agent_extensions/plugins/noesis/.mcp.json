@@ -1,8 +1,11 @@
 {
   "mcpServers": {
     "noesis": {
-      "command": "bun",
-      "args": ["run", "mcp/noesis-graph/server.ts"]
+      "command": "sh",
+      "args": [
+        "-c",
+        "export NOESIS_PROJECT_DIR=$(pwd) && cd ${CLAUDE_PLUGIN_ROOT} && exec bun run mcp/noesis-graph/server.ts"
+      ]
     }
   }
 }

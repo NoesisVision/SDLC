@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Logger,
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
@@ -14,6 +15,7 @@ type LbugConnection = InstanceType<typeof Connection>;
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(DatabaseService.name);
   private database: LbugDatabase | null = null;
   private connection: LbugConnection | null = null;
 
@@ -23,7 +25,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const dbPath = `${this.dataDir}/ladybug-db`;
     this.database = new Database(dbPath);
     this.connection = new Connection(this.database);
-    console.error("[noesis] LadybugDB initialized");
+    this.logger.log("LadybugDB initialized");
   }
 
   async onModuleDestroy(): Promise<void> {

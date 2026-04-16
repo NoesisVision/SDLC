@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const SERVER_PATH = resolve(import.meta.dirname, "server.ts");
+const PLUGIN_ROOT = resolve(import.meta.dirname, "../..");
 
 describe("MCP server smoke test", () => {
   let tmpDir: string;
@@ -38,6 +39,7 @@ describe("MCP server smoke test", () => {
     transport = new StdioClientTransport({
       command: "bun",
       args: ["run", SERVER_PATH, tmpDir, projectDir],
+      cwd: PLUGIN_ROOT,
       env: {
         ...process.env,
         DISPLAY: "",

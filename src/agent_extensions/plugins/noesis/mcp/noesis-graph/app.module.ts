@@ -15,7 +15,7 @@ export class AppModule {
         ConfigModule.forRoot(dataDir, projectDir),
         ServeStaticModule.forRoot({
           rootPath: resolve(import.meta.dirname, "ui/dist"),
-          exclude: ["/api/(.*)"],
+          exclude: ["/api/{*path}"],
         }),
         DatabaseModule,
         SerenaModule,
