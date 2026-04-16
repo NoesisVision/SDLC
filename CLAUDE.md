@@ -12,7 +12,8 @@
     - private functions in an order that makes understanding easier (dependency after dependant)
 6. Check and adjust (if needed) code structure on EVERY modification. 
 7. Mimic `src` structure in `tests`.
-8. Use **kebab-case** for directory and file names.
+8. Naming:
+   - **Directories and Files:** `kebab-case`
    - **Types, Interfaces, Enums:** `PascalCase`
    - **Functions, methods, variables:** `camelCase`
    - **Constants:** `UPPER_SNAKE_CASE`
@@ -20,9 +21,10 @@
 
 ## TypeScript
 
-1. Use ESM modules — all imports must use `.js` extensions (even for `.ts` files).
-2. Use path alias `@utils/*` for imports from `src/utils/`.
-3. Strict TypeScript — no `any` types without justification.
+1. **Bun** as runtime and package manager (`bun install`, `bun run`, `bunx`).
+2. **Next.js** for backend servers (API routes, SSR).
+3. **React + Vite** for UI applications.
+4. Strict TypeScript — no `any` types without justification.
 
 ## Python
 
