@@ -4,7 +4,7 @@ import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import { SerenaController } from "./serena.controller.js";
 import { SerenaService, type SerenaState } from "./serena.service.js";
-import { DATA_DIR } from "../config/config.module.js";
+import { PROJECT_DIR } from "../config/config.module.js";
 
 describe("SerenaController", () => {
   let app: INestApplication;
@@ -21,7 +21,7 @@ describe("SerenaController", () => {
           provide: SerenaService,
           useValue: { getState: () => mockState },
         },
-        { provide: DATA_DIR, useValue: "/tmp" },
+        { provide: PROJECT_DIR, useValue: "/tmp" },
       ],
     }).compile();
 
