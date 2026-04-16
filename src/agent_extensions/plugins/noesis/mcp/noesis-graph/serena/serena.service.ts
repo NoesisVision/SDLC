@@ -50,6 +50,19 @@ export class SerenaService implements OnModuleInit, OnModuleDestroy {
     return this.state;
   }
 
+  async callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
+    if (this.client === null || this.state.status !== "connected") {
+      throw new Error("Serena is not connected");
+    }
+    const result = await this.client.callTool({ name, arguments: args });
+    if (result.isError) {
+      const errorText = extractText(result.content);
+      throw new Error(`Serena tool '${name}' failed: ${errorText}`);
+    }
+    const text = extractText(result.content);
+    return JSON.parse(text) as T;
+  }
+
   private async connect(): Promise<void> {
     this.state = { status: "connecting" };
 
@@ -78,4 +91,20 @@ export class SerenaService implements OnModuleInit, OnModuleDestroy {
       throw err;
     }
   }
+}
+
+function extractText(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return String(content);
+  }
+  const textBlocks = content.filter(
+    (block: unknown) =>
+      typeof block === "object" &&
+      block !== null &&
+      "type" in block &&
+      (block as { type: string }).type === "text",
+  );
+  return textBlocks
+    .map((block: unknown) => (block as { text: string }).text)
+    .join("\n");
 }
