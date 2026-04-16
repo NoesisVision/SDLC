@@ -1,5 +1,8 @@
 {
   "mcpServers": {
-
+    "noesis": {
+      "command": "bun",
+      "args": ["run", "mcp/noesis-graph/server.ts"]
+    }
   }
 }
