@@ -9,6 +9,7 @@ const SERVER_PATH = resolve(import.meta.dirname, "server.ts");
 
 describe("MCP server smoke test", () => {
   let tmpDir: string;
+  let projectDir: string;
   let client: Client | null = null;
   let transport: StdioClientTransport | null = null;
 
@@ -24,17 +25,21 @@ describe("MCP server smoke test", () => {
     if (tmpDir) {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+    if (projectDir) {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 
   test("responds to MCP initialize and reports server info", async () => {
     tmpDir = mkdtempSync(join(tmpdir(), "noesis-smoke-"));
 
+    projectDir = mkdtempSync(join(tmpdir(), "noesis-project-"));
+
     transport = new StdioClientTransport({
       command: "bun",
-      args: ["run", SERVER_PATH],
+      args: ["run", SERVER_PATH, tmpDir, projectDir],
       env: {
         ...process.env,
-        CLAUDE_PLUGIN_DATA: tmpDir,
         DISPLAY: "",
       } as Record<string, string>,
     });

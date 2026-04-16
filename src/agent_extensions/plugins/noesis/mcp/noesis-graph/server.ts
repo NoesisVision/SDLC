@@ -5,12 +5,21 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { AppModule } from "./app.module.js";
 
 export async function startServer(): Promise<void> {
-  const dataDir = process.env["CLAUDE_PLUGIN_DATA"];
-  if (!dataDir) {
-    throw new Error("CLAUDE_PLUGIN_DATA environment variable is required");
+  const [argDataDir, argProjectDir] = process.argv.slice(2);
+  const dataDir = argDataDir || process.env["CLAUDE_PLUGIN_DATA"];
+  const projectDir = argProjectDir;
+
+  if (!dataDir || !projectDir) {
+    throw new Error(
+      "Usage: noesis-graph <plugin-data-dir> <project-root-dir>\n" +
+        "       plugin-data-dir also reads from CLAUDE_PLUGIN_DATA env var",
+    );
   }
 
-  const app = await NestFactory.create(AppModule, { logger: false });
+  const app = await NestFactory.create(
+    AppModule.forRoot(dataDir, projectDir),
+    { logger: false },
+  );
   app.enableShutdownHooks();
   await app.listen(0);
 
