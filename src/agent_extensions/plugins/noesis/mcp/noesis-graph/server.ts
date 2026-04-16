@@ -1,10 +1,8 @@
+import "reflect-metadata";
+import { NestFactory } from "@nestjs/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { resolve } from "path";
-import { initDatabase } from "./db.js";
-import { startHttpServer } from "./http.js";
-import { initSerena, closeSerena } from "./serena.js";
-import { closeDatabase } from "./db.js";
+import { AppModule } from "./app.module.js";
 
 export async function startServer(): Promise<void> {
   const dataDir = process.env["CLAUDE_PLUGIN_DATA"];
@@ -12,34 +10,17 @@ export async function startServer(): Promise<void> {
     throw new Error("CLAUDE_PLUGIN_DATA environment variable is required");
   }
 
-  initDatabase(dataDir);
-  console.error("[noesis] LadybugDB initialized");
+  const app = await NestFactory.create(AppModule, { logger: false });
+  app.enableShutdownHooks();
+  await app.listen(0);
 
-  await initSerena(dataDir);
-
-  const staticDir = resolve(import.meta.dirname, "ui/dist");
-  const httpServer = startHttpServer({ staticDir });
-  console.error(`[noesis] Noesis Graph available at http://localhost:${httpServer.port}`);
-
-  openBrowser(`http://localhost:${httpServer.port}`);
-
-  registerShutdownHandler();
+  const url = await app.getUrl();
+  console.error(`[noesis] Noesis Graph available at ${url}`);
+  openBrowser(url);
 
   const mcp = new McpServer({ name: "noesis", version: "0.1.0" });
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
-}
-
-function registerShutdownHandler(): void {
-  const shutdown = async () => {
-    console.error("[noesis] Shutting down...");
-    await closeSerena();
-    await closeDatabase();
-    process.exit(0);
-  };
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
 }
 
 function openBrowser(url: string): void {

@@ -4,6 +4,8 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["@types/bun"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

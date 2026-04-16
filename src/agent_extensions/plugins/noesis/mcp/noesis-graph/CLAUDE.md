@@ -4,7 +4,7 @@ MCP server with a React + Vite UI for visualizing the knowledge graph.
 
 ## Stack
 
-- **Backend**: Bun, MCP server (`server.ts`)
+- **Backend**: Bun, NestJS, MCP server (`server.ts`)
 - **Frontend**: React 19, Vite, Mantine 7, React Flow (`@xyflow/react`)
 
 ## UI Design Guidelines

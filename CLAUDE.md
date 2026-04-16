@@ -22,7 +22,7 @@
 ## TypeScript
 
 1. **Bun** as runtime and package manager (`bun install`, `bun run`, `bunx`).
-2. **Next.js** for backend servers (API routes, SSR).
+2. **NestJS** for backend servers.
 3. **React + Vite** for UI applications.
 4. Strict TypeScript — no `any` types without justification.
 
