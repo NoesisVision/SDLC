@@ -53,5 +53,8 @@ describe("MCP server smoke test", () => {
     expect(serverInfo).toBeDefined();
     expect(serverInfo!.name).toBe("noesis");
     expect(serverInfo!.version).toBe("0.1.0");
-  }, 10000);
+
+    const tools = await client.listTools();
+    expect(tools.tools.map((t) => t.name)).toContain("get_domain_model");
+  }, 15000);
 });

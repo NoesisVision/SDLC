@@ -23,20 +23,17 @@ export interface NoesisConfig {
 
 export interface BoundedContext {
   name: string;
-  fullPath: string;
 }
 
 export interface Module {
   name: string;
   fullPath: string;
-  parentPath: string;
 }
 
 export interface BuildingBlock {
   id: string;
   name: string;
   type: string;
-  annotation: string;
 }
 
 export interface CodeStructure {
@@ -53,27 +50,27 @@ export interface CSharpType extends CodeStructure {
   filePath: string;
 }
 
-export interface ModelTree {
-  boundedContexts: BoundedContextBranch[];
+export interface BuildingBlockWithCode extends BuildingBlock {
+  codeStructure: CodeStructure;
 }
 
-export interface BoundedContextBranch {
-  name: string;
-  fullPath: string;
-  modules: ModuleBranch[];
-  buildingBlocks: BuildingBlockLeaf[];
+export interface DomainModelTree<Leaf extends BuildingBlock = BuildingBlock> {
+  boundedContexts: BoundedContextBranch<Leaf>[];
 }
 
-export interface ModuleBranch {
-  name: string;
-  fullPath: string;
-  modules: ModuleBranch[];
-  buildingBlocks: BuildingBlockLeaf[];
+export interface BoundedContextBranch<Leaf extends BuildingBlock = BuildingBlock>
+  extends BoundedContext {
+  modules: ModuleBranch<Leaf>[];
+  buildingBlocks: Leaf[];
 }
 
-export interface BuildingBlockLeaf {
-  name: string;
-  type: string;
-  annotation: string;
-  filePath: string;
+export interface ModuleBranch<Leaf extends BuildingBlock = BuildingBlock>
+  extends Module {
+  modules: ModuleBranch<Leaf>[];
+  buildingBlocks: Leaf[];
+}
+
+export function parentPathOf(mod: Module): string {
+  const idx = mod.fullPath.lastIndexOf(".");
+  return idx < 0 ? "" : mod.fullPath.substring(0, idx);
 }

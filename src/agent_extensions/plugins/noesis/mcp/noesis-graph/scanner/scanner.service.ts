@@ -14,7 +14,9 @@ import {
   type BuildingBlock,
   type CSharpNamespace,
   type CSharpType,
-  type ModelTree,
+  type DomainModelTree,
+  type BoundedContextBranch,
+  type ModuleBranch,
 } from "./scanner.types.js";
 
 const CONCURRENCY_LIMIT = 10;
@@ -51,6 +53,11 @@ interface KeptFile {
   matches: AnnotationMatch[];
 }
 
+export type DomainModelPart =
+  | DomainModelTree
+  | BoundedContextBranch
+  | ModuleBranch;
+
 @Injectable()
 export class ScannerService implements OnModuleInit {
   private readonly logger = new Logger(ScannerService.name);
@@ -64,11 +71,36 @@ export class ScannerService implements OnModuleInit {
     await this.repository.initSchema();
   }
 
-  async getModelTree(): Promise<ModelTree> {
-    return this.repository.getModelTree();
+  async getDomainModel(): Promise<DomainModelTree> {
+    return this.repository.getDomainModel();
   }
 
-  async scan(): Promise<ModelTree> {
+  async getDomainModelPart(filter: {
+    boundedContextName?: string;
+    modulePath?: string;
+  }): Promise<DomainModelPart> {
+    if (filter.boundedContextName && filter.modulePath) {
+      throw new Error("Pass at most one of boundedContextName or modulePath");
+    }
+
+    const tree = await this.repository.getDomainModel();
+
+    if (filter.modulePath !== undefined) {
+      const found = findModuleByPath(tree, filter.modulePath);
+      if (!found) throw new Error(`Module not found: ${filter.modulePath}`);
+      return found;
+    }
+
+    if (filter.boundedContextName !== undefined) {
+      const found = tree.boundedContexts.find((bc) => bc.name === filter.boundedContextName);
+      if (!found) throw new Error(`Bounded context not found: ${filter.boundedContextName}`);
+      return found;
+    }
+
+    return tree;
+  }
+
+  async scan(): Promise<DomainModelTree> {
     this.logger.log("Starting model scan");
     const config = await loadNoesisConfig(this.projectDir);
 
@@ -105,11 +137,11 @@ export class ScannerService implements OnModuleInit {
     );
 
     const allContainerPaths = [
-      ...boundedContexts.map((bc) => bc.fullPath),
+      ...boundedContexts.map((bc) => bc.name),
       ...modules.map((m) => m.fullPath),
     ].sort((a, b) => b.length - a.length);
 
-    const bcPaths = new Set(boundedContexts.map((bc) => bc.fullPath));
+    const bcNames = new Set(boundedContexts.map((bc) => bc.name));
     const namespacesPerContainer = groupRawNamespacesByContainer(keptFiles, allContainerPaths);
 
     for (const rawNs of new Set(keptFiles.map((f) => f.rawNamespace))) {
@@ -118,7 +150,7 @@ export class ScannerService implements OnModuleInit {
 
     for (const [containerPath, rawNamespaces] of namespacesPerContainer) {
       for (const rawNs of rawNamespaces) {
-        if (bcPaths.has(containerPath)) {
+        if (bcNames.has(containerPath)) {
           await this.repository.linkBoundedContextToCSharpNamespace(containerPath, rawNs);
         } else {
           await this.repository.linkModuleToCSharpNamespace(containerPath, rawNs);
@@ -143,7 +175,6 @@ export class ScannerService implements OnModuleInit {
           id: `${file.relativePath}:${blockName}`,
           name: blockName,
           type: annotationToBlockType(match.annotation),
-          annotation: match.annotation,
         };
         await this.repository.insertBuildingBlock(block, containerPath, csharpType.id);
         blockCount++;
@@ -151,7 +182,7 @@ export class ScannerService implements OnModuleInit {
     }
     this.logger.log(`Inserted ${blockCount} building blocks`);
 
-    const tree = await this.repository.getModelTree();
+    const tree = await this.repository.getDomainModel();
     this.logger.log("Model scan completed");
     return tree;
   }
@@ -178,6 +209,61 @@ export class ScannerService implements OnModuleInit {
   }
 }
 
+export function buildModuleHierarchy(
+  namespaces: string[],
+): { boundedContexts: BoundedContext[]; modules: Module[] } {
+  const uniquePaths = new Set<string>();
+  for (const ns of namespaces) {
+    const parts = ns.split(".");
+    for (let i = 1; i <= parts.length; i++) {
+      uniquePaths.add(parts.slice(0, i).join("."));
+    }
+  }
+
+  const sortedPaths = [...uniquePaths].sort();
+  const boundedContexts: BoundedContext[] = [];
+  const modules: Module[] = [];
+
+  for (const path of sortedPaths) {
+    const parts = path.split(".");
+    const name = parts[parts.length - 1];
+
+    if (parts.length === 1) {
+      boundedContexts.push({ name });
+    } else {
+      modules.push({ name, fullPath: path });
+    }
+  }
+
+  return { boundedContexts, modules };
+}
+
+export function extractNamespace(content: string): string | null {
+  const match = NAMESPACE_PATTERN.exec(content);
+  return match ? match[1] : null;
+}
+
+export function findModuleByPath(tree: DomainModelTree, path: string): ModuleBranch | undefined {
+  for (const bc of tree.boundedContexts) {
+    const found = findModuleInBranches(bc.modules, path);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function findModuleInBranches(modules: ModuleBranch[], path: string): ModuleBranch | undefined {
+  for (const mod of modules) {
+    if (mod.fullPath === path) return mod;
+    const found = findModuleInBranches(mod.modules, path);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+export function isExcluded(ns: string, excludePatterns: string[]): boolean {
+  return excludePatterns.some((pattern) => pattern !== "" && matchesNamespacePattern(ns, pattern));
+}
+
 export function removeSkippedParts(ns: string, partsToSkip: string[]): string {
   if (ns === "") return "";
   let parts = ns.split(".");
@@ -188,30 +274,23 @@ export function removeSkippedParts(ns: string, partsToSkip: string[]): string {
   return parts.join(".");
 }
 
-function removeContiguousSequence(parts: string[], sequence: string[]): string[] {
-  const result: string[] = [];
-  let i = 0;
-  while (i < parts.length) {
-    if (matchesAt(parts, i, sequence)) {
-      i += sequence.length;
-    } else {
-      result.push(parts[i]);
-      i++;
-    }
-  }
-  return result;
+function findContainer(namespace: string, containerPaths: string[]): string {
+  return containerPaths.find((p) => namespace.startsWith(p)) ?? "";
 }
 
-function matchesAt(parts: string[], start: number, sequence: string[]): boolean {
-  if (start + sequence.length > parts.length) return false;
-  for (let j = 0; j < sequence.length; j++) {
-    if (parts[start + j] !== sequence[j]) return false;
+function groupRawNamespacesByContainer(
+  files: KeptFile[],
+  containerPaths: string[],
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const file of files) {
+    const containerPath = findContainer(file.namespace, containerPaths);
+    if (containerPath === "") continue;
+    const set = map.get(containerPath) ?? new Set<string>();
+    set.add(file.rawNamespace);
+    map.set(containerPath, set);
   }
-  return true;
-}
-
-export function isExcluded(ns: string, excludePatterns: string[]): boolean {
-  return excludePatterns.some((pattern) => pattern !== "" && matchesNamespacePattern(ns, pattern));
+  return map;
 }
 
 function matchesNamespacePattern(ns: string, pattern: string): boolean {
@@ -239,9 +318,26 @@ function matchPatternParts(
   return matchPatternParts(patternParts, pi + 1, nsParts, ni + 1);
 }
 
-export function extractNamespace(content: string): string | null {
-  const match = NAMESPACE_PATTERN.exec(content);
-  return match ? match[1] : null;
+function removeContiguousSequence(parts: string[], sequence: string[]): string[] {
+  const result: string[] = [];
+  let i = 0;
+  while (i < parts.length) {
+    if (matchesAt(parts, i, sequence)) {
+      i += sequence.length;
+    } else {
+      result.push(parts[i]);
+      i++;
+    }
+  }
+  return result;
+}
+
+function matchesAt(parts: string[], start: number, sequence: string[]): boolean {
+  if (start + sequence.length > parts.length) return false;
+  for (let j = 0; j < sequence.length; j++) {
+    if (parts[start + j] !== sequence[j]) return false;
+  }
+  return true;
 }
 
 function parseAnnotations(content: string): AnnotationMatch[] {
@@ -258,55 +354,6 @@ function parseAnnotations(content: string): AnnotationMatch[] {
   }
 
   return matches;
-}
-
-export function buildModuleHierarchy(
-  namespaces: string[],
-): { boundedContexts: BoundedContext[]; modules: Module[] } {
-  const uniquePaths = new Set<string>();
-  for (const ns of namespaces) {
-    const parts = ns.split(".");
-    for (let i = 1; i <= parts.length; i++) {
-      uniquePaths.add(parts.slice(0, i).join("."));
-    }
-  }
-
-  const sortedPaths = [...uniquePaths].sort();
-  const boundedContexts: BoundedContext[] = [];
-  const modules: Module[] = [];
-
-  for (const path of sortedPaths) {
-    const parts = path.split(".");
-    const name = parts[parts.length - 1];
-
-    if (parts.length === 1) {
-      boundedContexts.push({ name, fullPath: path });
-    } else {
-      const parentPath = parts.slice(0, -1).join(".");
-      modules.push({ name, fullPath: path, parentPath });
-    }
-  }
-
-  return { boundedContexts, modules };
-}
-
-function findContainer(namespace: string, containerPaths: string[]): string {
-  return containerPaths.find((p) => namespace.startsWith(p)) ?? "";
-}
-
-function groupRawNamespacesByContainer(
-  files: KeptFile[],
-  containerPaths: string[],
-): Map<string, Set<string>> {
-  const map = new Map<string, Set<string>>();
-  for (const file of files) {
-    const containerPath = findContainer(file.namespace, containerPaths);
-    if (containerPath === "") continue;
-    const set = map.get(containerPath) ?? new Set<string>();
-    set.add(file.rawNamespace);
-    map.set(containerPath, set);
-  }
-  return map;
 }
 
 function toCSharpNamespace(fullName: string): CSharpNamespace {

@@ -29,35 +29,33 @@ import {
   IconTool,
 } from "@tabler/icons-react";
 
-interface BuildingBlockLeaf {
+interface BuildingBlock {
+  id: string;
   name: string;
   type: string;
-  annotation: string;
-  filePath: string;
 }
 
 interface ModuleBranch {
   name: string;
   fullPath: string;
   modules: ModuleBranch[];
-  buildingBlocks: BuildingBlockLeaf[];
+  buildingBlocks: BuildingBlock[];
 }
 
 interface BoundedContextBranch {
   name: string;
-  fullPath: string;
   modules: ModuleBranch[];
-  buildingBlocks: BuildingBlockLeaf[];
+  buildingBlocks: BuildingBlock[];
 }
 
-interface ModelTree {
+interface DomainModelTree {
   boundedContexts: BoundedContextBranch[];
 }
 
 type ScanState = "idle" | "scanning" | "done" | "error";
 
 export function ModelPage() {
-  const [model, setModel] = useState<ModelTree | null>(null);
+  const [model, setModel] = useState<DomainModelTree | null>(null);
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [treeVersion, setTreeVersion] = useState(0);
@@ -65,7 +63,7 @@ export function ModelPage() {
   const loadModel = useCallback(() => {
     fetch("/api/model")
       .then((res) => res.json())
-      .then((data: ModelTree) => {
+      .then((data: DomainModelTree) => {
         setModel(data);
         setTreeVersion((v) => v + 1);
         if (data.boundedContexts.length > 0) setScanState("done");
@@ -85,7 +83,7 @@ export function ModelPage() {
         if (!res.ok) throw new Error(`Scan failed (${res.status})`);
         return res.json();
       })
-      .then((data: ModelTree) => {
+      .then((data: DomainModelTree) => {
         setModel(data);
         setTreeVersion((v) => v + 1);
         setScanState("done");
@@ -140,11 +138,11 @@ export function ModelPage() {
   );
 }
 
-function ModelTreeView({ model }: { model: ModelTree }) {
+function ModelTreeView({ model }: { model: DomainModelTree }) {
   return (
     <Stack gap="sm">
       {model.boundedContexts.map((bc) => (
-        <BoundedContextItem key={bc.fullPath} bc={bc} />
+        <BoundedContextItem key={bc.name} bc={bc} />
       ))}
     </Stack>
   );
@@ -179,7 +177,7 @@ function BoundedContextItem({ bc }: { bc: BoundedContextBranch }) {
             <ModuleItem key={mod.fullPath} mod={mod} level={1} />
           ))}
           {bc.buildingBlocks.map((bb) => (
-            <BuildingBlockItem key={bb.filePath} bb={bb} level={1} />
+            <BuildingBlockItem key={bb.id} bb={bb} level={1} />
           ))}
         </Box>
       </Collapse>
@@ -222,7 +220,7 @@ function ModuleItem({
             <ModuleItem key={child.fullPath} mod={child} level={level + 1} />
           ))}
           {mod.buildingBlocks.map((bb) => (
-            <BuildingBlockItem key={bb.filePath} bb={bb} level={level + 1} />
+            <BuildingBlockItem key={bb.id} bb={bb} level={level + 1} />
           ))}
         </Box>
       </Collapse>
@@ -234,7 +232,7 @@ function BuildingBlockItem({
   bb,
   level,
 }: {
-  bb: BuildingBlockLeaf;
+  bb: BuildingBlock;
   level: number;
 }) {
   const { icon, color } = blockTypeStyle(bb.type);

@@ -4,7 +4,9 @@ import {
   extractNamespace,
   buildModuleHierarchy,
   isExcluded,
+  findModuleByPath,
 } from "./scanner.service.js";
+import { parentPathOf, type DomainModelTree } from "./scanner.types.js";
 
 describe("removeSkippedParts", () => {
   test("returns empty string for empty namespace", () => {
@@ -151,9 +153,9 @@ describe("buildModuleHierarchy", () => {
     expect(buildModuleHierarchy([])).toEqual({ boundedContexts: [], modules: [] });
   });
 
-  test("treats a single-part namespace as a bounded context", () => {
+  test("treats a single-part namespace as a bounded context with only a name", () => {
     const { boundedContexts, modules } = buildModuleHierarchy(["Sales"]);
-    expect(boundedContexts).toEqual([{ name: "Sales", fullPath: "Sales" }]);
+    expect(boundedContexts).toEqual([{ name: "Sales" }]);
     expect(modules).toEqual([]);
   });
 
@@ -165,21 +167,90 @@ describe("buildModuleHierarchy", () => {
     ]);
 
     expect(boundedContexts).toEqual([
-      { name: "Contacts", fullPath: "Contacts" },
-      { name: "Sales", fullPath: "Sales" },
+      { name: "Contacts" },
+      { name: "Sales" },
     ]);
 
     expect(modules).toEqual([
-      { name: "Companies", fullPath: "Contacts.Companies", parentPath: "Contacts" },
-      { name: "Orders", fullPath: "Sales.Orders", parentPath: "Sales" },
-      { name: "Pricing", fullPath: "Sales.Pricing", parentPath: "Sales" },
-      { name: "Discounts", fullPath: "Sales.Pricing.Discounts", parentPath: "Sales.Pricing" },
+      { name: "Companies", fullPath: "Contacts.Companies" },
+      { name: "Orders", fullPath: "Sales.Orders" },
+      { name: "Pricing", fullPath: "Sales.Pricing" },
+      { name: "Discounts", fullPath: "Sales.Pricing.Discounts" },
     ]);
   });
 
   test("deduplicates shared prefixes", () => {
     const { boundedContexts, modules } = buildModuleHierarchy(["Sales.A", "Sales.B"]);
-    expect(boundedContexts).toEqual([{ name: "Sales", fullPath: "Sales" }]);
+    expect(boundedContexts).toEqual([{ name: "Sales" }]);
     expect(modules.map((m) => m.fullPath).sort()).toEqual(["Sales.A", "Sales.B"]);
+  });
+});
+
+describe("parentPathOf", () => {
+  test("returns empty string for a top-level module (single segment would be a BC, this covers edge)", () => {
+    expect(parentPathOf({ name: "Solo", fullPath: "Solo" })).toBe("");
+  });
+
+  test("returns the BC name for a top-level module", () => {
+    expect(parentPathOf({ name: "Orders", fullPath: "Sales.Orders" })).toBe("Sales");
+  });
+
+  test("returns the parent module path for a nested module", () => {
+    expect(parentPathOf({ name: "PriceChanges", fullPath: "Sales.Orders.PriceChanges" })).toBe(
+      "Sales.Orders",
+    );
+  });
+});
+
+const SAMPLE_TREE: DomainModelTree = {
+  boundedContexts: [
+    {
+      name: "Sales",
+      modules: [
+        {
+          name: "Orders",
+          fullPath: "Sales.Orders",
+          modules: [
+            {
+              name: "PriceChanges",
+              fullPath: "Sales.Orders.PriceChanges",
+              modules: [],
+              buildingBlocks: [
+                { id: "a.cs:PriceChange", name: "PriceChange", type: "Entity" },
+              ],
+            },
+          ],
+          buildingBlocks: [
+            { id: "b.cs:Order", name: "Order", type: "Aggregate" },
+          ],
+        },
+      ],
+      buildingBlocks: [],
+    },
+    {
+      name: "Contacts",
+      modules: [],
+      buildingBlocks: [
+        { id: "c.cs:Company", name: "Company", type: "Entity" },
+      ],
+    },
+  ],
+};
+
+describe("findModuleByPath", () => {
+  test("finds a top-level module", () => {
+    expect(findModuleByPath(SAMPLE_TREE, "Sales.Orders")?.name).toBe("Orders");
+  });
+
+  test("finds a nested module", () => {
+    expect(findModuleByPath(SAMPLE_TREE, "Sales.Orders.PriceChanges")?.name).toBe("PriceChanges");
+  });
+
+  test("returns undefined when not found", () => {
+    expect(findModuleByPath(SAMPLE_TREE, "Sales.Missing")).toBeUndefined();
+  });
+
+  test("does not match bounded contexts", () => {
+    expect(findModuleByPath(SAMPLE_TREE, "Sales")).toBeUndefined();
   });
 });

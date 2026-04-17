@@ -4,6 +4,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AppModule } from "./app.module.js";
 import { FileLogger } from "./logging/file-logger.js";
+import { ScannerService } from "./scanner/scanner.service.js";
+import { registerScannerTools } from "./scanner/scanner.mcp.js";
 
 export async function startServer(): Promise<void> {
   const [argDataDir, argProjectDir] = process.argv.slice(2);
@@ -32,18 +34,7 @@ export async function startServer(): Promise<void> {
   logger.log(`Project dir: ${projectDir}`, "Bootstrap");
 
   const mcp = new McpServer({ name: "noesis", version: "0.1.0" });
-  const transport = new StdioServerTransport();
-  await mcp.connect(transport);
-  logger.log("MCP transport connected", "Bootstrap");
 
-  startApp(dataDir, projectDir, logger);
-}
-
-async function startApp(
-  dataDir: string,
-  projectDir: string,
-  logger: FileLogger,
-): Promise<void> {
   try {
     const app = await NestFactory.create(
       AppModule.forRoot(dataDir, projectDir),
@@ -52,6 +43,9 @@ async function startApp(
     app.enableShutdownHooks();
     await app.listen(0);
 
+    registerScannerTools(mcp, app.get(ScannerService));
+    logger.log("MCP tools registered", "Bootstrap");
+
     const url = await app.getUrl();
     logger.log(`Noesis Graph available at ${url}`, "Bootstrap");
     openBrowser(url, logger);
@@ -59,6 +53,10 @@ async function startApp(
     const message = err instanceof Error ? err.message : String(err);
     logger.error(`App startup failed: ${message}`, undefined, "Bootstrap");
   }
+
+  const transport = new StdioServerTransport();
+  await mcp.connect(transport);
+  logger.log("MCP transport connected", "Bootstrap");
 }
 
 function openBrowser(url: string, logger: FileLogger): void {

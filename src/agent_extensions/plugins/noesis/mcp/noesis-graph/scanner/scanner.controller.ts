@@ -1,18 +1,18 @@
 import { Controller, Get, Post } from "@nestjs/common";
 import { ScannerService } from "./scanner.service.js";
-import type { ModelTree } from "./scanner.types.js";
+import type { DomainModelTree } from "./scanner.types.js";
 
 @Controller("api/model")
 export class ScannerController {
   constructor(private readonly scanner: ScannerService) {}
 
   @Get()
-  async getModel(): Promise<ModelTree> {
-    return this.scanner.getModelTree();
+  async getModel(): Promise<DomainModelTree> {
+    return this.scanner.getDomainModel();
   }
 
   @Post("scan")
-  async scan(): Promise<ModelTree> {
+  async scan(): Promise<DomainModelTree> {
     return this.scanner.scan();
   }
 }

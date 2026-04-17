@@ -1,21 +1,21 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { DatabaseService } from "../database/database.service.js";
-import type {
-  BoundedContext,
-  Module,
-  BuildingBlock,
-  CSharpNamespace,
-  CSharpType,
-  ModelTree,
-  BoundedContextBranch,
-  ModuleBranch,
-  BuildingBlockLeaf,
+import {
+  parentPathOf,
+  type BoundedContext,
+  type Module,
+  type BuildingBlock,
+  type CSharpNamespace,
+  type CSharpType,
+  type DomainModelTree,
+  type BoundedContextBranch,
+  type ModuleBranch,
 } from "./scanner.types.js";
 
 const SCHEMA_STATEMENTS = [
-  "CREATE NODE TABLE IF NOT EXISTS BoundedContext(name STRING, fullPath STRING, PRIMARY KEY(fullPath))",
+  "CREATE NODE TABLE IF NOT EXISTS BoundedContext(name STRING, PRIMARY KEY(name))",
   "CREATE NODE TABLE IF NOT EXISTS Module(name STRING, fullPath STRING, PRIMARY KEY(fullPath))",
-  "CREATE NODE TABLE IF NOT EXISTS BuildingBlock(id STRING, name STRING, type STRING, annotation STRING, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS BuildingBlock(id STRING, name STRING, type STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS CSharpNamespace(name STRING, fullName STRING, PRIMARY KEY(fullName))",
   "CREATE NODE TABLE IF NOT EXISTS CSharpType(id STRING, name STRING, fullName STRING, filePath STRING, PRIMARY KEY(id))",
   "CREATE REL TABLE IF NOT EXISTS BC_CONTAINS_MODULE(FROM BoundedContext TO Module)",
@@ -59,10 +59,8 @@ export class ScannerRepository {
 
   async insertBoundedContext(bc: BoundedContext): Promise<void> {
     const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
-      "CREATE (b:BoundedContext {name: $name, fullPath: $fullPath})",
-    );
-    await conn.execute(stmt, { name: bc.name, fullPath: bc.fullPath });
+    const stmt = await conn.prepare("CREATE (b:BoundedContext {name: $name})");
+    await conn.execute(stmt, { name: bc.name });
   }
 
   async insertModule(mod: Module): Promise<void> {
@@ -77,14 +75,9 @@ export class ScannerRepository {
   async insertBuildingBlock(bb: BuildingBlock, containerPath: string, codeTypeId: string): Promise<void> {
     const conn = this.db.getConnection();
     const stmt = await conn.prepare(
-      "CREATE (b:BuildingBlock {id: $id, name: $name, type: $type, annotation: $annotation})",
+      "CREATE (b:BuildingBlock {id: $id, name: $name, type: $type})",
     );
-    await conn.execute(stmt, {
-      id: bb.id,
-      name: bb.name,
-      type: bb.type,
-      annotation: bb.annotation,
-    });
+    await conn.execute(stmt, { id: bb.id, name: bb.name, type: bb.type });
     await this.linkBuildingBlockToContainer(bb.id, containerPath);
     await this.linkBuildingBlockToCSharpType(bb.id, codeTypeId);
   }
@@ -111,12 +104,12 @@ export class ScannerRepository {
     await this.linkCSharpTypeToCSharpNamespace(t.id, namespaceFullName);
   }
 
-  async linkBoundedContextToCSharpNamespace(bcFullPath: string, nsFullName: string): Promise<void> {
+  async linkBoundedContextToCSharpNamespace(bcName: string, nsFullName: string): Promise<void> {
     const conn = this.db.getConnection();
     const stmt = await conn.prepare(
-      "MATCH (bc:BoundedContext), (n:CSharpNamespace) WHERE bc.fullPath = $bcFullPath AND n.fullName = $nsFullName CREATE (bc)-[:BC_REPRESENTED_BY_CSHARP_NAMESPACE]->(n)",
+      "MATCH (bc:BoundedContext), (n:CSharpNamespace) WHERE bc.name = $bcName AND n.fullName = $nsFullName CREATE (bc)-[:BC_REPRESENTED_BY_CSHARP_NAMESPACE]->(n)",
     );
-    await conn.execute(stmt, { bcFullPath, nsFullName });
+    await conn.execute(stmt, { bcName, nsFullName });
   }
 
   async linkModuleToCSharpNamespace(modFullPath: string, nsFullName: string): Promise<void> {
@@ -127,83 +120,65 @@ export class ScannerRepository {
     await conn.execute(stmt, { modFullPath, nsFullName });
   }
 
-  async getModelTree(): Promise<ModelTree> {
+  async getDomainModel(): Promise<DomainModelTree> {
     const conn = this.db.getConnection();
 
     const bcResult = await conn.query(
-      "MATCH (b:BoundedContext) RETURN b.name AS name, b.fullPath AS fullPath ORDER BY b.name",
+      "MATCH (b:BoundedContext) RETURN b.name AS name ORDER BY b.name",
     );
-    const boundedContexts = asArray(bcResult).getAllSync() as Array<{
-      name: string;
-      fullPath: string;
-    }>;
+    const boundedContexts = asArray(bcResult).getAllSync() as BoundedContext[];
 
     const modResult = await conn.query(
       "MATCH (m:Module) RETURN m.name AS name, m.fullPath AS fullPath ORDER BY m.name",
     );
-    const modules = asArray(modResult).getAllSync() as Array<{
-      name: string;
-      fullPath: string;
-    }>;
+    const modules = asArray(modResult).getAllSync() as Module[];
 
     const bbInModulesResult = await conn.query(
-      "MATCH (m:Module)-[:MODULE_CONTAINS_BB]->(b:BuildingBlock)-[:BB_REPRESENTED_BY_CSHARP_TYPE]->(t:CSharpType) RETURN m.fullPath AS containerPath, b.name AS name, b.type AS type, b.annotation AS annotation, t.filePath AS filePath ORDER BY b.name",
+      "MATCH (m:Module)-[:MODULE_CONTAINS_BB]->(b:BuildingBlock) RETURN m.fullPath AS containerPath, b.id AS id, b.name AS name, b.type AS type ORDER BY b.name",
     );
-    const bbInModules = asArray(bbInModulesResult).getAllSync() as Array<{
-      containerPath: string;
-      name: string;
-      type: string;
-      annotation: string;
-      filePath: string;
-    }>;
+    const bbInModules = asArray(bbInModulesResult).getAllSync() as Array<
+      BuildingBlock & { containerPath: string }
+    >;
 
     const bbInBcsResult = await conn.query(
-      "MATCH (bc:BoundedContext)-[:BC_CONTAINS_BB]->(b:BuildingBlock)-[:BB_REPRESENTED_BY_CSHARP_TYPE]->(t:CSharpType) RETURN bc.fullPath AS containerPath, b.name AS name, b.type AS type, b.annotation AS annotation, t.filePath AS filePath ORDER BY b.name",
+      "MATCH (bc:BoundedContext)-[:BC_CONTAINS_BB]->(b:BuildingBlock) RETURN bc.name AS containerPath, b.id AS id, b.name AS name, b.type AS type ORDER BY b.name",
     );
-    const bbInBcs = asArray(bbInBcsResult).getAllSync() as Array<{
-      containerPath: string;
-      name: string;
-      type: string;
-      annotation: string;
-      filePath: string;
-    }>;
+    const bbInBcs = asArray(bbInBcsResult).getAllSync() as Array<
+      BuildingBlock & { containerPath: string }
+    >;
 
     return buildTree(boundedContexts, modules, [...bbInModules, ...bbInBcs]);
   }
 
   private async linkModuleToParent(mod: Module): Promise<void> {
     const conn = this.db.getConnection();
+    const parentPath = parentPathOf(mod);
 
-    const bcStmt = await conn.prepare(
-      "MATCH (bc:BoundedContext), (m:Module) WHERE bc.fullPath = $parentPath AND m.fullPath = $childPath CREATE (bc)-[:BC_CONTAINS_MODULE]->(m)",
-    );
-    const bcResult = await conn.execute(bcStmt, {
-      parentPath: mod.parentPath,
-      childPath: mod.fullPath,
-    });
-
-    if (asArray(bcResult).getNumTuples() === 0) {
+    const parentParts = parentPath.split(".");
+    if (parentParts.length === 1) {
+      const bcStmt = await conn.prepare(
+        "MATCH (bc:BoundedContext), (m:Module) WHERE bc.name = $parentName AND m.fullPath = $childPath CREATE (bc)-[:BC_CONTAINS_MODULE]->(m)",
+      );
+      await conn.execute(bcStmt, { parentName: parentPath, childPath: mod.fullPath });
+    } else {
       const modStmt = await conn.prepare(
         "MATCH (parent:Module), (child:Module) WHERE parent.fullPath = $parentPath AND child.fullPath = $childPath CREATE (parent)-[:MODULE_CONTAINS_MODULE]->(child)",
       );
-      await conn.execute(modStmt, {
-        parentPath: mod.parentPath,
-        childPath: mod.fullPath,
-      });
+      await conn.execute(modStmt, { parentPath, childPath: mod.fullPath });
     }
   }
 
   private async linkBuildingBlockToContainer(bbId: string, containerPath: string): Promise<void> {
     const conn = this.db.getConnection();
 
-    const modStmt = await conn.prepare(
-      "MATCH (m:Module), (b:BuildingBlock) WHERE m.fullPath = $containerPath AND b.id = $id CREATE (m)-[:MODULE_CONTAINS_BB]->(b)",
-    );
-    const modResult = await conn.execute(modStmt, { containerPath, id: bbId });
-
-    if (asArray(modResult).getNumTuples() === 0) {
+    if (containerPath.includes(".")) {
+      const modStmt = await conn.prepare(
+        "MATCH (m:Module), (b:BuildingBlock) WHERE m.fullPath = $containerPath AND b.id = $id CREATE (m)-[:MODULE_CONTAINS_BB]->(b)",
+      );
+      await conn.execute(modStmt, { containerPath, id: bbId });
+    } else {
       const bcStmt = await conn.prepare(
-        "MATCH (bc:BoundedContext), (b:BuildingBlock) WHERE bc.fullPath = $containerPath AND b.id = $id CREATE (bc)-[:BC_CONTAINS_BB]->(b)",
+        "MATCH (bc:BoundedContext), (b:BuildingBlock) WHERE bc.name = $containerPath AND b.id = $id CREATE (bc)-[:BC_CONTAINS_BB]->(b)",
       );
       await conn.execute(bcStmt, { containerPath, id: bbId });
     }
@@ -232,35 +207,26 @@ function asArray(result: unknown): { getNumTuples(): number; getAllSync(): unkno
 }
 
 function buildTree(
-  boundedContexts: Array<{ name: string; fullPath: string }>,
-  modules: Array<{ name: string; fullPath: string }>,
-  buildingBlocks: Array<{
-    containerPath: string;
-    name: string;
-    type: string;
-    annotation: string;
-    filePath: string;
-  }>,
-): ModelTree {
+  boundedContexts: BoundedContext[],
+  modules: Module[],
+  buildingBlocks: Array<BuildingBlock & { containerPath: string }>,
+): DomainModelTree {
   const modulesByParent = groupModulesByParent(modules);
   const bbByContainer = groupBbByContainer(buildingBlocks);
 
   const tree: BoundedContextBranch[] = boundedContexts.map((bc) => ({
     name: bc.name,
-    fullPath: bc.fullPath,
-    modules: buildModuleSubtree(bc.fullPath, modulesByParent, bbByContainer),
-    buildingBlocks: bbByContainer.get(bc.fullPath) ?? [],
+    modules: buildModuleSubtree(bc.name, modulesByParent, bbByContainer),
+    buildingBlocks: bbByContainer.get(bc.name) ?? [],
   }));
 
   return { boundedContexts: tree };
 }
 
-function groupModulesByParent(
-  modules: Array<{ name: string; fullPath: string }>,
-): Map<string, Array<{ name: string; fullPath: string }>> {
-  const map = new Map<string, Array<{ name: string; fullPath: string }>>();
+function groupModulesByParent(modules: Module[]): Map<string, Module[]> {
+  const map = new Map<string, Module[]>();
   for (const mod of modules) {
-    const parentPath = mod.fullPath.substring(0, mod.fullPath.lastIndexOf("."));
+    const parentPath = parentPathOf(mod);
     const list = map.get(parentPath) ?? [];
     list.push(mod);
     map.set(parentPath, list);
@@ -269,24 +235,12 @@ function groupModulesByParent(
 }
 
 function groupBbByContainer(
-  blocks: Array<{
-    containerPath: string;
-    name: string;
-    type: string;
-    annotation: string;
-    filePath: string;
-  }>,
-): Map<string, BuildingBlockLeaf[]> {
-  const map = new Map<string, BuildingBlockLeaf[]>();
+  blocks: Array<BuildingBlock & { containerPath: string }>,
+): Map<string, BuildingBlock[]> {
+  const map = new Map<string, BuildingBlock[]>();
   for (const bb of blocks) {
-    const leaf: BuildingBlockLeaf = {
-      name: bb.name,
-      type: bb.type,
-      annotation: bb.annotation,
-      filePath: bb.filePath,
-    };
     const list = map.get(bb.containerPath) ?? [];
-    list.push(leaf);
+    list.push({ id: bb.id, name: bb.name, type: bb.type });
     map.set(bb.containerPath, list);
   }
   return map;
@@ -294,8 +248,8 @@ function groupBbByContainer(
 
 function buildModuleSubtree(
   parentPath: string,
-  modulesByParent: Map<string, Array<{ name: string; fullPath: string }>>,
-  bbByContainer: Map<string, BuildingBlockLeaf[]>,
+  modulesByParent: Map<string, Module[]>,
+  bbByContainer: Map<string, BuildingBlock[]>,
 ): ModuleBranch[] {
   const children = modulesByParent.get(parentPath) ?? [];
   return children.map((mod) => ({
