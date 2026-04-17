@@ -11,6 +11,7 @@ import {
   type NoesisConfig,
   type BoundedContext,
   type Module,
+  type Behavior,
   type BuildingBlock,
   type CSharpNamespace,
   type CSharpType,
@@ -34,10 +35,22 @@ const ANNOTATION_WITH_TYPE_PATTERN = new RegExp(
 
 const NAMESPACE_PATTERN = /^\s*namespace\s+([\w.]+)\s*[;{]/m;
 
+const TYPE_KIND_PATTERN = /\b(class|struct|interface|enum|record|delegate)\b/;
+
+const DISQUALIFYING_METHOD_KEYWORDS = /\b(class|struct|interface|enum|record|delegate|event|operator|namespace|using)\b/;
+
+const DOMAIN_BEHAVIOR_ATTRIBUTE_PATTERN = /\[DomainBehavior(?:Attribute)?(?:\s*\(\s*"([^"]*)"\s*\))?\s*]/;
+
+interface BehaviorMatch {
+  methodName: string;
+  nameOverride: string | null;
+}
+
 interface AnnotationMatch {
   annotation: DddAnnotation;
   nameOverride: string | null;
   typeName: string;
+  behaviors: BehaviorMatch[];
 }
 
 interface ScannedFile {
@@ -159,6 +172,7 @@ export class ScannerService implements OnModuleInit {
     }
 
     let blockCount = 0;
+    let behaviorCount = 0;
     for (const file of keptFiles) {
       const containerPath = findContainer(file.namespace, allContainerPaths);
       for (const match of file.matches) {
@@ -178,9 +192,19 @@ export class ScannerService implements OnModuleInit {
         };
         await this.repository.insertBuildingBlock(block, containerPath, csharpType.id);
         blockCount++;
+
+        for (const behaviorMatch of match.behaviors) {
+          const behaviorName = behaviorMatch.nameOverride ?? behaviorMatch.methodName;
+          const behavior: Behavior = {
+            id: `${block.id}:${behaviorMatch.methodName}`,
+            name: behaviorName,
+          };
+          await this.repository.insertBehavior(behavior, block.id);
+          behaviorCount++;
+        }
       }
     }
-    this.logger.log(`Inserted ${blockCount} building blocks`);
+    this.logger.log(`Inserted ${blockCount} building blocks and ${behaviorCount} behaviors`);
 
     const tree = await this.repository.getDomainModel();
     this.logger.log("Model scan completed");
@@ -340,7 +364,7 @@ function matchesAt(parts: string[], start: number, sequence: string[]): boolean 
   return true;
 }
 
-function parseAnnotations(content: string): AnnotationMatch[] {
+export function parseAnnotations(content: string): AnnotationMatch[] {
   const matches: AnnotationMatch[] = [];
   ANNOTATION_WITH_TYPE_PATTERN.lastIndex = 0;
 
@@ -350,10 +374,135 @@ function parseAnnotations(content: string): AnnotationMatch[] {
     const nameOverride = match[3] ?? null;
     const typeName = match[4] ?? "";
     if (typeName === "") continue;
-    matches.push({ annotation, nameOverride, typeName });
+
+    const typeKindMatch = TYPE_KIND_PATTERN.exec(match[0]);
+    const typeKind = typeKindMatch ? typeKindMatch[1] : "";
+    const behaviors = extractBehaviors(
+      content,
+      match.index + match[0].length,
+      typeName,
+      typeKind,
+    );
+    matches.push({ annotation, nameOverride, typeName, behaviors });
   }
 
   return matches;
+}
+
+export function extractBehaviors(
+  content: string,
+  searchStart: number,
+  typeName: string,
+  typeKind: string,
+): BehaviorMatch[] {
+  if (typeKind === "enum" || typeKind === "delegate" || typeKind === "") return [];
+
+  const bodyStart = findTypeBodyStart(content, searchStart);
+  if (bodyStart === -1) return [];
+  const bodyEnd = findMatchingBrace(content, bodyStart);
+  if (bodyEnd === -1) return [];
+
+  const body = content.substring(bodyStart + 1, bodyEnd);
+  return parsePublicMethods(body, typeName, typeKind);
+}
+
+function findTypeBodyStart(content: string, from: number): number {
+  for (let i = from; i < content.length; i++) {
+    const ch = content[i];
+    if (ch === "{") return i;
+    if (ch === ";") return -1;
+  }
+  return -1;
+}
+
+function findMatchingBrace(content: string, start: number): number {
+  if (content[start] !== "{") return -1;
+  let depth = 0;
+  for (let i = start; i < content.length; i++) {
+    if (content[i] === "{") depth++;
+    else if (content[i] === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function parsePublicMethods(
+  body: string,
+  typeName: string,
+  typeKind: string,
+): BehaviorMatch[] {
+  const withoutComments = stripComments(body);
+  const flattened = flattenBraceBlocks(withoutComments);
+  const statements = flattened.split(";");
+
+  const seen = new Set<string>();
+  const methods: BehaviorMatch[] = [];
+  for (const stmt of statements) {
+    const method = parseMethodStatement(stmt, typeName, typeKind);
+    if (!method) continue;
+    const key = `${method.methodName}|${method.nameOverride ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    methods.push(method);
+  }
+  return methods;
+}
+
+function stripComments(content: string): string {
+  return content
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/[^\n]*/g, " ");
+}
+
+function flattenBraceBlocks(content: string): string {
+  let result = "";
+  let depth = 0;
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (ch === "{") {
+      if (depth === 0) result += ";";
+      depth++;
+    } else if (ch === "}") {
+      if (depth > 0) depth--;
+    } else if (depth === 0) {
+      result += ch;
+    }
+  }
+  return result;
+}
+
+function parseMethodStatement(
+  stmt: string,
+  typeName: string,
+  typeKind: string,
+): BehaviorMatch | null {
+  const attrMatch = DOMAIN_BEHAVIOR_ATTRIBUTE_PATTERN.exec(stmt);
+  const nameOverride = attrMatch?.[1] ?? null;
+
+  const withoutAttrs = stmt.replace(/\[[^\]]*]/g, " ");
+
+  if (DISQUALIFYING_METHOD_KEYWORDS.test(withoutAttrs)) return null;
+
+  const isInterface = typeKind === "interface";
+  if (!isInterface && !/\bpublic\b/.test(withoutAttrs)) return null;
+  if (isInterface && /\b(private|internal|protected)\b/.test(withoutAttrs)) return null;
+
+  const parenIdx = withoutAttrs.indexOf("(");
+  if (parenIdx === -1) return null;
+
+  const beforeParen = withoutAttrs.substring(0, parenIdx);
+  if (beforeParen.includes("=")) return null;
+
+  const nameMatch = /(\w+)\s*$/.exec(beforeParen);
+  if (!nameMatch) return null;
+
+  const methodName = nameMatch[1];
+  if (methodName === typeName) return null;
+  if (methodName === "this" || methodName === "base") return null;
+
+  return { methodName, nameOverride };
 }
 
 function toCSharpNamespace(fullName: string): CSharpNamespace {

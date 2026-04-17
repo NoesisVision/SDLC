@@ -5,6 +5,7 @@ import {
   buildModuleHierarchy,
   isExcluded,
   findModuleByPath,
+  parseAnnotations,
 } from "./scanner.service.js";
 import { parentPathOf, type DomainModelTree } from "./scanner.types.js";
 
@@ -216,12 +217,12 @@ const SAMPLE_TREE: DomainModelTree = {
               fullPath: "Sales.Orders.PriceChanges",
               modules: [],
               buildingBlocks: [
-                { id: "a.cs:PriceChange", name: "PriceChange", type: "Entity" },
+                { id: "a.cs:PriceChange", name: "PriceChange", type: "Entity", behaviors: [] },
               ],
             },
           ],
           buildingBlocks: [
-            { id: "b.cs:Order", name: "Order", type: "Aggregate" },
+            { id: "b.cs:Order", name: "Order", type: "Aggregate", behaviors: [] },
           ],
         },
       ],
@@ -231,11 +232,142 @@ const SAMPLE_TREE: DomainModelTree = {
       name: "Contacts",
       modules: [],
       buildingBlocks: [
-        { id: "c.cs:Company", name: "Company", type: "Entity" },
+        { id: "c.cs:Company", name: "Company", type: "Entity", behaviors: [] },
       ],
     },
   ],
 };
+
+describe("parseAnnotations - behaviors", () => {
+  test("extracts public methods as behaviors", () => {
+    const src = `
+      namespace Sales.Orders;
+
+      [DddAggregate]
+      public class Order
+      {
+        public void Place(ClientId id) { }
+        public int Total() => 42;
+        public static Item For(ProductAmount p) => new(p);
+        private void Internal() { }
+      }
+    `;
+    const matches = parseAnnotations(src);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].typeName).toBe("Order");
+    expect(matches[0].behaviors.map((b) => b.methodName).sort()).toEqual([
+      "For",
+      "Place",
+      "Total",
+    ]);
+  });
+
+  test("uses DomainBehavior attribute name when present", () => {
+    const src = `
+      namespace Sales.Orders;
+
+      [DddAggregate]
+      public class Order
+      {
+        [DomainBehavior("Place Order")]
+        public void Place() { }
+
+        [DomainBehaviorAttribute("Cancel Order")]
+        public void Cancel() { }
+      }
+    `;
+    const matches = parseAnnotations(src);
+    const behaviors = matches[0].behaviors;
+    const byMethod = new Map(behaviors.map((b) => [b.methodName, b.nameOverride]));
+    expect(byMethod.get("Place")).toBe("Place Order");
+    expect(byMethod.get("Cancel")).toBe("Cancel Order");
+  });
+
+  test("falls back to method name when no override is provided", () => {
+    const src = `
+      namespace Sales;
+
+      [DddAggregate]
+      public class Cart
+      {
+        [DomainBehavior]
+        public void AddItem() { }
+      }
+    `;
+    const matches = parseAnnotations(src);
+    expect(matches[0].behaviors).toEqual([
+      { methodName: "AddItem", nameOverride: null },
+    ]);
+  });
+
+  test("ignores properties, fields, constructors and nested type methods", () => {
+    const src = `
+      namespace Sales;
+
+      [DddAggregate]
+      public class Order
+      {
+        public int Size { get; set; }
+        public int Counter = 0;
+        public static readonly Regex Pattern = new Regex("a");
+        public Order(int x) { }
+
+        public class Item
+        {
+          public void InnerOnly() { }
+        }
+
+        public void OuterMethod() { }
+      }
+    `;
+    const matches = parseAnnotations(src);
+    const outer = matches.find((m) => m.typeName === "Order")!;
+    expect(outer.behaviors.map((b) => b.methodName)).toEqual(["OuterMethod"]);
+  });
+
+  test("treats interface members without public modifier as behaviors", () => {
+    const src = `
+      namespace Sales;
+
+      [DddDomainService]
+      public interface PriceChangesPolicy
+      {
+        bool CanChangePrices(int oldQ, int newQ);
+        Task<int> GetAsync();
+      }
+    `;
+    const matches = parseAnnotations(src);
+    expect(matches[0].behaviors.map((b) => b.methodName).sort()).toEqual([
+      "CanChangePrices",
+      "GetAsync",
+    ]);
+  });
+
+  test("returns empty behaviors for delegates and enums", () => {
+    const src = `
+      namespace Sales;
+
+      [DddDomainEvent]
+      public delegate void OrderPlaced(int id);
+    `;
+    const matches = parseAnnotations(src);
+    expect(matches[0].behaviors).toEqual([]);
+  });
+
+  test("handles inheritance and generics in type header", () => {
+    const src = `
+      namespace Sales;
+
+      [DddAggregate]
+      public partial class Order<T> : Aggregate<T>, IEquatable<Order<T>> where T : class
+      {
+        public void Confirm() { }
+      }
+    `;
+    const matches = parseAnnotations(src);
+    expect(matches[0].behaviors.map((b) => b.methodName)).toEqual(["Confirm"]);
+  });
+});
 
 describe("findModuleByPath", () => {
   test("finds a top-level module", () => {

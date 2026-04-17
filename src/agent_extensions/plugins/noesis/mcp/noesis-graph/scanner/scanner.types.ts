@@ -36,6 +36,15 @@ export interface BuildingBlock {
   type: string;
 }
 
+export interface Behavior {
+  id: string;
+  name: string;
+}
+
+export interface BuildingBlockBranch extends BuildingBlock {
+  behaviors: Behavior[];
+}
+
 export interface CodeStructure {
   name: string;
 }
@@ -54,7 +63,7 @@ export interface BuildingBlockWithCode extends BuildingBlock {
   codeStructure: CodeStructure;
 }
 
-export interface DomainModelTree<Leaf extends BuildingBlock = BuildingBlock> {
+export interface DomainModelTree<Leaf extends BuildingBlock = BuildingBlockBranch> {
   boundedContexts: BoundedContextBranch<Leaf>[];
 }
 

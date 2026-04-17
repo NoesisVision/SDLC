@@ -4,7 +4,9 @@ import {
   parentPathOf,
   type BoundedContext,
   type Module,
+  type Behavior,
   type BuildingBlock,
+  type BuildingBlockBranch,
   type CSharpNamespace,
   type CSharpType,
   type DomainModelTree,
@@ -16,12 +18,14 @@ const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS BoundedContext(name STRING, PRIMARY KEY(name))",
   "CREATE NODE TABLE IF NOT EXISTS Module(name STRING, fullPath STRING, PRIMARY KEY(fullPath))",
   "CREATE NODE TABLE IF NOT EXISTS BuildingBlock(id STRING, name STRING, type STRING, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS Behavior(id STRING, name STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS CSharpNamespace(name STRING, fullName STRING, PRIMARY KEY(fullName))",
   "CREATE NODE TABLE IF NOT EXISTS CSharpType(id STRING, name STRING, fullName STRING, filePath STRING, PRIMARY KEY(id))",
   "CREATE REL TABLE IF NOT EXISTS BC_CONTAINS_MODULE(FROM BoundedContext TO Module)",
   "CREATE REL TABLE IF NOT EXISTS MODULE_CONTAINS_MODULE(FROM Module TO Module)",
   "CREATE REL TABLE IF NOT EXISTS BC_CONTAINS_BB(FROM BoundedContext TO BuildingBlock)",
   "CREATE REL TABLE IF NOT EXISTS MODULE_CONTAINS_BB(FROM Module TO BuildingBlock)",
+  "CREATE REL TABLE IF NOT EXISTS BB_CONTAINS_BEHAVIOR(FROM BuildingBlock TO Behavior)",
   "CREATE REL TABLE IF NOT EXISTS BC_REPRESENTED_BY_CSHARP_NAMESPACE(FROM BoundedContext TO CSharpNamespace)",
   "CREATE REL TABLE IF NOT EXISTS MODULE_REPRESENTED_BY_CSHARP_NAMESPACE(FROM Module TO CSharpNamespace)",
   "CREATE REL TABLE IF NOT EXISTS BB_REPRESENTED_BY_CSHARP_TYPE(FROM BuildingBlock TO CSharpType)",
@@ -29,6 +33,7 @@ const SCHEMA_STATEMENTS = [
 ];
 
 const CLEAR_STATEMENTS = [
+  "MATCH (n:Behavior) DETACH DELETE n",
   "MATCH (n:BuildingBlock) DETACH DELETE n",
   "MATCH (n:CSharpType) DETACH DELETE n",
   "MATCH (n:CSharpNamespace) DETACH DELETE n",
@@ -80,6 +85,18 @@ export class ScannerRepository {
     await conn.execute(stmt, { id: bb.id, name: bb.name, type: bb.type });
     await this.linkBuildingBlockToContainer(bb.id, containerPath);
     await this.linkBuildingBlockToCSharpType(bb.id, codeTypeId);
+  }
+
+  async insertBehavior(behavior: Behavior, buildingBlockId: string): Promise<void> {
+    const conn = this.db.getConnection();
+    const createStmt = await conn.prepare(
+      "CREATE (x:Behavior {id: $id, name: $name})",
+    );
+    await conn.execute(createStmt, { id: behavior.id, name: behavior.name });
+    const linkStmt = await conn.prepare(
+      "MATCH (b:BuildingBlock), (x:Behavior) WHERE b.id = $bbId AND x.id = $behaviorId CREATE (b)-[:BB_CONTAINS_BEHAVIOR]->(x)",
+    );
+    await conn.execute(linkStmt, { bbId: buildingBlockId, behaviorId: behavior.id });
   }
 
   async insertCSharpNamespace(ns: CSharpNamespace): Promise<void> {
@@ -147,7 +164,14 @@ export class ScannerRepository {
       BuildingBlock & { containerPath: string }
     >;
 
-    return buildTree(boundedContexts, modules, [...bbInModules, ...bbInBcs]);
+    const behaviorsResult = await conn.query(
+      "MATCH (b:BuildingBlock)-[:BB_CONTAINS_BEHAVIOR]->(x:Behavior) RETURN b.id AS buildingBlockId, x.id AS id, x.name AS name ORDER BY x.name",
+    );
+    const behaviorRows = asArray(behaviorsResult).getAllSync() as Array<
+      Behavior & { buildingBlockId: string }
+    >;
+
+    return buildTree(boundedContexts, modules, [...bbInModules, ...bbInBcs], behaviorRows);
   }
 
   private async linkModuleToParent(mod: Module): Promise<void> {
@@ -210,11 +234,13 @@ function buildTree(
   boundedContexts: BoundedContext[],
   modules: Module[],
   buildingBlocks: Array<BuildingBlock & { containerPath: string }>,
+  behaviors: Array<Behavior & { buildingBlockId: string }>,
 ): DomainModelTree {
   const modulesByParent = groupModulesByParent(modules);
-  const bbByContainer = groupBbByContainer(buildingBlocks);
+  const behaviorsByBb = groupBehaviorsByBb(behaviors);
+  const bbByContainer = groupBbByContainer(buildingBlocks, behaviorsByBb);
 
-  const tree: BoundedContextBranch[] = boundedContexts.map((bc) => ({
+  const tree: BoundedContextBranch<BuildingBlockBranch>[] = boundedContexts.map((bc) => ({
     name: bc.name,
     modules: buildModuleSubtree(bc.name, modulesByParent, bbByContainer),
     buildingBlocks: bbByContainer.get(bc.name) ?? [],
@@ -236,12 +262,30 @@ function groupModulesByParent(modules: Module[]): Map<string, Module[]> {
 
 function groupBbByContainer(
   blocks: Array<BuildingBlock & { containerPath: string }>,
-): Map<string, BuildingBlock[]> {
-  const map = new Map<string, BuildingBlock[]>();
+  behaviorsByBb: Map<string, Behavior[]>,
+): Map<string, BuildingBlockBranch[]> {
+  const map = new Map<string, BuildingBlockBranch[]>();
   for (const bb of blocks) {
     const list = map.get(bb.containerPath) ?? [];
-    list.push({ id: bb.id, name: bb.name, type: bb.type });
+    list.push({
+      id: bb.id,
+      name: bb.name,
+      type: bb.type,
+      behaviors: behaviorsByBb.get(bb.id) ?? [],
+    });
     map.set(bb.containerPath, list);
+  }
+  return map;
+}
+
+function groupBehaviorsByBb(
+  behaviors: Array<Behavior & { buildingBlockId: string }>,
+): Map<string, Behavior[]> {
+  const map = new Map<string, Behavior[]>();
+  for (const row of behaviors) {
+    const list = map.get(row.buildingBlockId) ?? [];
+    list.push({ id: row.id, name: row.name });
+    map.set(row.buildingBlockId, list);
   }
   return map;
 }
@@ -249,8 +293,8 @@ function groupBbByContainer(
 function buildModuleSubtree(
   parentPath: string,
   modulesByParent: Map<string, Module[]>,
-  bbByContainer: Map<string, BuildingBlock[]>,
-): ModuleBranch[] {
+  bbByContainer: Map<string, BuildingBlockBranch[]>,
+): ModuleBranch<BuildingBlockBranch>[] {
   const children = modulesByParent.get(parentPath) ?? [];
   return children.map((mod) => ({
     name: mod.name,
