@@ -34,6 +34,7 @@ function makeConversation(): Conversation {
     ],
     decisions: [
       {
+        id: "dec-1",
         title: "Use microservices",
         status: "accepted",
         context: { text: "Arch discussion", supporting_items: [] },

@@ -6,6 +6,8 @@ import { AppModule } from "./app.module.js";
 import { FileLogger } from "./logging/file-logger.js";
 import { ScannerService } from "./scanner/scanner.service.js";
 import { registerScannerTools } from "./scanner/scanner.mcp.js";
+import { KnowledgeService } from "./knowledge/knowledge.service.js";
+import { registerKnowledgeTools } from "./knowledge/knowledge.mcp.js";
 
 export async function startServer(): Promise<void> {
   const [argDataDir, argProjectDir] = process.argv.slice(2);
@@ -44,6 +46,7 @@ export async function startServer(): Promise<void> {
     await app.listen(0);
 
     registerScannerTools(mcp, app.get(ScannerService));
+    registerKnowledgeTools(mcp, app.get(KnowledgeService));
     logger.log("MCP tools registered", "Bootstrap");
 
     const url = await app.getUrl();

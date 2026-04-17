@@ -32,6 +32,7 @@ describe("saveTopicDecisions", () => {
       topic_id: "topic-1",
       decisions: [
         {
+          id: "dec-1",
           title: "Use microservices",
           status: "accepted",
           context: {
@@ -61,6 +62,7 @@ describe("saveTopicDecisions", () => {
       topic_id: "topic-1",
       decisions: [
         {
+          id: "dec-1",
           title: "Decision 1",
           status: "accepted",
           context: { text: "", supporting_items: [] },
@@ -68,6 +70,7 @@ describe("saveTopicDecisions", () => {
           alternative_options: [],
         },
         {
+          id: "dec-2",
           title: "Decision 2",
           status: "proposed",
           context: { text: "", supporting_items: [] },
@@ -85,6 +88,7 @@ describe("saveTopicDecisions", () => {
     const conv = makeConversation();
     conv.decisions = [
       {
+        id: "dec-existing",
         title: "Existing",
         status: "accepted",
         context: { text: "", supporting_items: [] },
@@ -97,6 +101,7 @@ describe("saveTopicDecisions", () => {
       topic_id: "topic-1",
       decisions: [
         {
+          id: "dec-new",
           title: "New",
           status: "accepted",
           context: { text: "", supporting_items: [] },

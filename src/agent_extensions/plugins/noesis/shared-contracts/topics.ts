@@ -40,6 +40,7 @@ export const DecisionStatusSchema = z.enum(["accepted", "proposed"]);
 export type DecisionStatus = z.infer<typeof DecisionStatusSchema>;
 
 export const DecisionSchema = z.object({
+  id: z.string().default(() => randomUUID()),
   title: z.string(),
   status: DecisionStatusSchema,
   context: DecisionContextSchema,

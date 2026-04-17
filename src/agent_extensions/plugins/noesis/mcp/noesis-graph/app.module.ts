@@ -5,6 +5,7 @@ import { ConfigModule } from "./config/config.module.js";
 import { DatabaseModule } from "./database/database.module.js";
 import { SerenaModule } from "./serena/serena.module.js";
 import { ScannerModule } from "./scanner/scanner.module.js";
+import { KnowledgeModule } from "./knowledge/knowledge.module.js";
 import { GraphModule } from "./graph/graph.module.js";
 import { HealthController } from "./health/health.controller.js";
 
@@ -22,6 +23,7 @@ export class AppModule {
         DatabaseModule,
         SerenaModule,
         ScannerModule,
+        KnowledgeModule,
         GraphModule,
       ],
       controllers: [HealthController],
