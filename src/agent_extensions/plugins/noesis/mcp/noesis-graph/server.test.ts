@@ -51,7 +51,7 @@ describe("MCP server smoke test", () => {
 
     const serverInfo = client.getServerVersion();
     expect(serverInfo).toBeDefined();
-    expect(serverInfo!.name).toBe("noesis");
+    expect(serverInfo!.name).toBe("noesis-graph");
     expect(serverInfo!.version).toBe("0.1.0");
 
     const tools = await client.listTools();

@@ -33,7 +33,7 @@ export async function startServer(): Promise<void> {
   logger.log(`Data dir: ${dataDir}`, "Bootstrap");
   logger.log(`Project dir: ${projectDir}`, "Bootstrap");
 
-  const mcp = new McpServer({ name: "noesis", version: "0.1.0" });
+  const mcp = new McpServer({ name: "noesis-graph", version: "0.1.0" });
 
   try {
     const app = await NestFactory.create(

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "noesis": {
+    "noesis-graph": {
       "command": "sh",
       "args": [
         "-c",
