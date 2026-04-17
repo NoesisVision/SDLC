@@ -60,12 +60,14 @@ export function ModelPage() {
   const [model, setModel] = useState<ModelTree | null>(null);
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [treeVersion, setTreeVersion] = useState(0);
 
   const loadModel = useCallback(() => {
     fetch("/api/model")
       .then((res) => res.json())
       .then((data: ModelTree) => {
         setModel(data);
+        setTreeVersion((v) => v + 1);
         if (data.boundedContexts.length > 0) setScanState("done");
       })
       .catch(() => {});
@@ -85,6 +87,7 @@ export function ModelPage() {
       })
       .then((data: ModelTree) => {
         setModel(data);
+        setTreeVersion((v) => v + 1);
         setScanState("done");
       })
       .catch((err: Error) => {
@@ -126,7 +129,7 @@ export function ModelPage() {
         )}
 
         {model !== null && model.boundedContexts.length > 0 ? (
-          <ModelTreeView model={model} />
+          <ModelTreeView key={treeVersion} model={model} />
         ) : scanState === "done" ? (
           <EmptyState />
         ) : scanState === "idle" ? (
@@ -191,7 +194,7 @@ function ModuleItem({
   mod: ModuleTreeNode;
   level: number;
 }) {
-  const [opened, setOpened] = useState(true);
+  const [opened, setOpened] = useState(false);
   const hasChildren = mod.modules.length > 0 || mod.buildingBlocks.length > 0;
 
   return (
@@ -241,12 +244,13 @@ function BuildingBlockItem({
       gap="xs"
       py={4}
       px="sm"
-      pl={level * 8}
+      pl={level * 8 + 12}
       style={{
         borderRadius: "var(--mantine-radius-sm)",
         transition: "background-color 150ms ease",
       }}
     >
+      <Box w={22} />
       <ThemeIcon size="sm" variant="light" color={color} radius="sm">
         {icon}
       </ThemeIcon>

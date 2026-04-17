@@ -8,17 +8,7 @@ import type {
   BoundedContextTreeNode,
   ModuleTreeNode,
   BuildingBlockLeaf,
-} from "./model-scan.types.js";
-
-const DROP_STATEMENTS = [
-  "DROP TABLE IF EXISTS MODULE_CONTAINS_BB",
-  "DROP TABLE IF EXISTS BC_CONTAINS_BB",
-  "DROP TABLE IF EXISTS MODULE_CONTAINS_MODULE",
-  "DROP TABLE IF EXISTS BC_CONTAINS_MODULE",
-  "DROP TABLE IF EXISTS BuildingBlock",
-  "DROP TABLE IF EXISTS Module",
-  "DROP TABLE IF EXISTS BoundedContext",
-];
+} from "./scanner.types.js";
 
 const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS BoundedContext(name STRING, fullPath STRING, PRIMARY KEY(fullPath))",
@@ -31,22 +21,19 @@ const SCHEMA_STATEMENTS = [
 ];
 
 const CLEAR_STATEMENTS = [
-  "MATCH (n:BuildingBlock) DELETE n",
-  "MATCH (n:Module) DELETE n",
-  "MATCH (n:BoundedContext) DELETE n",
+  "MATCH (n:BuildingBlock) DETACH DELETE n",
+  "MATCH (n:Module) DETACH DELETE n",
+  "MATCH (n:BoundedContext) DETACH DELETE n",
 ];
 
 @Injectable()
-export class ModelScanRepository {
-  private readonly logger = new Logger(ModelScanRepository.name);
+export class ScannerRepository {
+  private readonly logger = new Logger(ScannerRepository.name);
 
   constructor(private readonly db: DatabaseService) {}
 
   async initSchema(): Promise<void> {
     const conn = this.db.getConnection();
-    for (const stmt of DROP_STATEMENTS) {
-      await conn.query(stmt);
-    }
     for (const stmt of SCHEMA_STATEMENTS) {
       await conn.query(stmt);
     }
