@@ -96,6 +96,8 @@ const NODE_COLORS: Record<string, { bg: string; border: string; header: string }
   BoundedContext: { bg: "#1a2744", border: "#4f8de2", header: "#1d4ed8" },
   Module: { bg: "#1a2e1f", border: "#4ade80", header: "#22b854" },
   BuildingBlock: { bg: "#261a35", border: "#9184ec", header: "#4f46e5" },
+  CSharpNamespace: { bg: "#2b2217", border: "#d4a066", header: "#b97840" },
+  CSharpType: { bg: "#2a1e2a", border: "#d27ed2", header: "#a643a6" },
 };
 
 const DEFAULT_COLOR = { bg: "#1f2937", border: "#6b7280", header: "#374151" };

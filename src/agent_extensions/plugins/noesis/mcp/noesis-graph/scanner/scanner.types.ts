@@ -21,41 +21,53 @@ export interface NoesisConfig {
   namespacesToExclude: string[];
 }
 
-export interface BoundedContextNode {
+export interface BoundedContext {
   name: string;
   fullPath: string;
 }
 
-export interface ModuleNode {
+export interface Module {
   name: string;
   fullPath: string;
   parentPath: string;
 }
 
-export interface BuildingBlockNode {
+export interface BuildingBlock {
+  id: string;
   name: string;
   type: string;
   annotation: string;
-  namespace: string;
+}
+
+export interface CodeStructure {
+  name: string;
+}
+
+export interface CSharpNamespace extends CodeStructure {
+  fullName: string;
+}
+
+export interface CSharpType extends CodeStructure {
+  id: string;
+  fullName: string;
   filePath: string;
-  containerPath: string;
 }
 
 export interface ModelTree {
-  boundedContexts: BoundedContextTreeNode[];
+  boundedContexts: BoundedContextBranch[];
 }
 
-export interface BoundedContextTreeNode {
+export interface BoundedContextBranch {
   name: string;
   fullPath: string;
-  modules: ModuleTreeNode[];
+  modules: ModuleBranch[];
   buildingBlocks: BuildingBlockLeaf[];
 }
 
-export interface ModuleTreeNode {
+export interface ModuleBranch {
   name: string;
   fullPath: string;
-  modules: ModuleTreeNode[];
+  modules: ModuleBranch[];
   buildingBlocks: BuildingBlockLeaf[];
 }
 

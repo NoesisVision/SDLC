@@ -36,22 +36,22 @@ interface BuildingBlockLeaf {
   filePath: string;
 }
 
-interface ModuleTreeNode {
+interface ModuleBranch {
   name: string;
   fullPath: string;
-  modules: ModuleTreeNode[];
+  modules: ModuleBranch[];
   buildingBlocks: BuildingBlockLeaf[];
 }
 
-interface BoundedContextTreeNode {
+interface BoundedContextBranch {
   name: string;
   fullPath: string;
-  modules: ModuleTreeNode[];
+  modules: ModuleBranch[];
   buildingBlocks: BuildingBlockLeaf[];
 }
 
 interface ModelTree {
-  boundedContexts: BoundedContextTreeNode[];
+  boundedContexts: BoundedContextBranch[];
 }
 
 type ScanState = "idle" | "scanning" | "done" | "error";
@@ -150,7 +150,7 @@ function ModelTreeView({ model }: { model: ModelTree }) {
   );
 }
 
-function BoundedContextItem({ bc }: { bc: BoundedContextTreeNode }) {
+function BoundedContextItem({ bc }: { bc: BoundedContextBranch }) {
   const [opened, setOpened] = useState(true);
   const hasChildren = bc.modules.length > 0 || bc.buildingBlocks.length > 0;
 
@@ -191,7 +191,7 @@ function ModuleItem({
   mod,
   level,
 }: {
-  mod: ModuleTreeNode;
+  mod: ModuleBranch;
   level: number;
 }) {
   const [opened, setOpened] = useState(false);

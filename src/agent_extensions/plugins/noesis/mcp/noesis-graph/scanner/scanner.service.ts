@@ -9,9 +9,11 @@ import {
   annotationToBlockType,
   type DddAnnotation,
   type NoesisConfig,
-  type BoundedContextNode,
-  type ModuleNode,
-  type BuildingBlockNode,
+  type BoundedContext,
+  type Module,
+  type BuildingBlock,
+  type CSharpNamespace,
+  type CSharpType,
   type ModelTree,
 } from "./scanner.types.js";
 
@@ -38,6 +40,13 @@ interface AnnotationMatch {
 
 interface ScannedFile {
   relativePath: string;
+  namespace: string;
+  matches: AnnotationMatch[];
+}
+
+interface KeptFile {
+  relativePath: string;
+  rawNamespace: string;
   namespace: string;
   matches: AnnotationMatch[];
 }
@@ -72,15 +81,19 @@ export class ScannerService implements OnModuleInit {
       (f) => f.namespace !== "" && !isExcluded(f.namespace, config.namespacesToExclude),
     );
 
-    const keptFiles = notExcluded
-      .map((f) => ({ ...f, namespace: removeSkippedParts(f.namespace, config.namespacePartsToSkip) }))
+    const keptFiles: KeptFile[] = notExcluded
+      .map((f) => ({
+        relativePath: f.relativePath,
+        rawNamespace: f.namespace,
+        namespace: removeSkippedParts(f.namespace, config.namespacePartsToSkip),
+        matches: f.matches,
+      }))
       .filter((f) => f.namespace !== "");
 
-    const namespaces = [...new Set(keptFiles.map((f) => f.namespace))];
-    this.logger.log(`Found ${namespaces.length} unique namespaces`);
+    const effectiveNamespaces = [...new Set(keptFiles.map((f) => f.namespace))];
+    this.logger.log(`Found ${effectiveNamespaces.length} unique domain paths`);
 
-    const { boundedContexts, modules } = buildModuleHierarchy(namespaces);
-
+    const { boundedContexts, modules } = buildModuleHierarchy(effectiveNamespaces);
     for (const bc of boundedContexts) {
       await this.repository.insertBoundedContext(bc);
     }
@@ -96,19 +109,43 @@ export class ScannerService implements OnModuleInit {
       ...modules.map((m) => m.fullPath),
     ].sort((a, b) => b.length - a.length);
 
+    const bcPaths = new Set(boundedContexts.map((bc) => bc.fullPath));
+    const namespacesPerContainer = groupRawNamespacesByContainer(keptFiles, allContainerPaths);
+
+    for (const rawNs of new Set(keptFiles.map((f) => f.rawNamespace))) {
+      await this.repository.insertCSharpNamespace(toCSharpNamespace(rawNs));
+    }
+
+    for (const [containerPath, rawNamespaces] of namespacesPerContainer) {
+      for (const rawNs of rawNamespaces) {
+        if (bcPaths.has(containerPath)) {
+          await this.repository.linkBoundedContextToCSharpNamespace(containerPath, rawNs);
+        } else {
+          await this.repository.linkModuleToCSharpNamespace(containerPath, rawNs);
+        }
+      }
+    }
+
     let blockCount = 0;
     for (const file of keptFiles) {
       const containerPath = findContainer(file.namespace, allContainerPaths);
       for (const match of file.matches) {
-        const block: BuildingBlockNode = {
-          name: match.nameOverride ?? match.typeName,
+        const csharpType: CSharpType = {
+          id: `${file.relativePath}:${match.typeName}`,
+          name: match.typeName,
+          fullName: `${file.rawNamespace}.${match.typeName}`,
+          filePath: file.relativePath,
+        };
+        await this.repository.insertCSharpType(csharpType, file.rawNamespace);
+
+        const blockName = match.nameOverride ?? match.typeName;
+        const block: BuildingBlock = {
+          id: `${file.relativePath}:${blockName}`,
+          name: blockName,
           type: annotationToBlockType(match.annotation),
           annotation: match.annotation,
-          namespace: file.namespace,
-          filePath: file.relativePath,
-          containerPath,
         };
-        await this.repository.insertBuildingBlock(block);
+        await this.repository.insertBuildingBlock(block, containerPath, csharpType.id);
         blockCount++;
       }
     }
@@ -225,7 +262,7 @@ function parseAnnotations(content: string): AnnotationMatch[] {
 
 export function buildModuleHierarchy(
   namespaces: string[],
-): { boundedContexts: BoundedContextNode[]; modules: ModuleNode[] } {
+): { boundedContexts: BoundedContext[]; modules: Module[] } {
   const uniquePaths = new Set<string>();
   for (const ns of namespaces) {
     const parts = ns.split(".");
@@ -235,8 +272,8 @@ export function buildModuleHierarchy(
   }
 
   const sortedPaths = [...uniquePaths].sort();
-  const boundedContexts: BoundedContextNode[] = [];
-  const modules: ModuleNode[] = [];
+  const boundedContexts: BoundedContext[] = [];
+  const modules: Module[] = [];
 
   for (const path of sortedPaths) {
     const parts = path.split(".");
@@ -255,6 +292,26 @@ export function buildModuleHierarchy(
 
 function findContainer(namespace: string, containerPaths: string[]): string {
   return containerPaths.find((p) => namespace.startsWith(p)) ?? "";
+}
+
+function groupRawNamespacesByContainer(
+  files: KeptFile[],
+  containerPaths: string[],
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const file of files) {
+    const containerPath = findContainer(file.namespace, containerPaths);
+    if (containerPath === "") continue;
+    const set = map.get(containerPath) ?? new Set<string>();
+    set.add(file.rawNamespace);
+    map.set(containerPath, set);
+  }
+  return map;
+}
+
+function toCSharpNamespace(fullName: string): CSharpNamespace {
+  const parts = fullName.split(".");
+  return { name: parts[parts.length - 1], fullName };
 }
 
 async function findCsFiles(dir: string): Promise<string[]> {
