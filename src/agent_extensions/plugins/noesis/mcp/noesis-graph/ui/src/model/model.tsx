@@ -172,11 +172,11 @@ function BoundedContextItem({ bc }: { bc: BoundedContextTreeNode }) {
       />
       <Collapse in={opened}>
         <Box pl="lg" pb="xs">
-          {bc.buildingBlocks.map((bb) => (
-            <BuildingBlockItem key={bb.filePath} bb={bb} level={1} />
-          ))}
           {bc.modules.map((mod) => (
             <ModuleItem key={mod.fullPath} mod={mod} level={1} />
+          ))}
+          {bc.buildingBlocks.map((bb) => (
+            <BuildingBlockItem key={bb.filePath} bb={bb} level={1} />
           ))}
         </Box>
       </Collapse>
@@ -215,11 +215,11 @@ function ModuleItem({
       />
       <Collapse in={opened}>
         <Box pl="lg">
-          {mod.buildingBlocks.map((bb) => (
-            <BuildingBlockItem key={bb.filePath} bb={bb} level={level + 1} />
-          ))}
           {mod.modules.map((child) => (
             <ModuleItem key={child.fullPath} mod={child} level={level + 1} />
+          ))}
+          {mod.buildingBlocks.map((bb) => (
+            <BuildingBlockItem key={bb.filePath} bb={bb} level={level + 1} />
           ))}
         </Box>
       </Collapse>

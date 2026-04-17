@@ -33,10 +33,10 @@ export function ActionsGrid({ title, items, cols = 3 }: ActionsGridProps) {
             >
               <item.icon
                 color={theme.colors[item.color]?.[5] ?? theme.colors.blue[5]}
-                size={32}
+                size={40}
                 stroke={1.5}
               />
-              <Text size="xs" mt={7}>
+              <Text size="lg" fw={500} mt="sm">
                 {item.title}
               </Text>
             </UnstyledButton>
