@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { saveTopicReview } from "./save-topic-review.js";
-import type { Conversation, TopicReviewResult } from "../conversation/types.js";
-import { replacePlaceholderIds } from "./types.js";
+import type { Conversation, TopicReviewResult } from "../../shared-contracts/conversation.js";
+import { replacePlaceholderIds } from "../../shared-contracts/topics.js";
 
 function makeConversation(): Conversation {
   return {
@@ -25,9 +25,9 @@ function makeConversation(): Conversation {
         title: "Architecture",
         short_summary: "Old summary",
         long_summary: "Old long summary",
-        idea_units: [
-          { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
-          { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
+        items: [
+          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
         ],
         subtopics: [],
         reviewed: false,
@@ -109,7 +109,7 @@ describe("saveTopicReview", () => {
       title: "Performance",
       short_summary: "",
       long_summary: "",
-      idea_units: [],
+      items: [],
       subtopics: [],
       reviewed: false,
       decisions_extracted: false,
@@ -127,10 +127,18 @@ describe("saveTopicReview", () => {
 
     saveTopicReview(conv, review);
 
-    expect(conv.topics[0].idea_units).toHaveLength(1);
-    expect(conv.topics[0].idea_units[0].idea_unit_index).toBe(0);
-    expect(conv.topics[1].idea_units).toHaveLength(1);
-    expect(conv.topics[1].idea_units[0].idea_unit_index).toBe(1);
+    expect(conv.topics[0].items).toHaveLength(1);
+    const topic1Item = conv.topics[0].items[0];
+    expect(topic1Item.type).toBe("conversation_idea_unit");
+    if (topic1Item.type === "conversation_idea_unit") {
+      expect(topic1Item.idea_unit_index).toBe(0);
+    }
+    expect(conv.topics[1].items).toHaveLength(1);
+    const topic2Item = conv.topics[1].items[0];
+    expect(topic2Item.type).toBe("conversation_idea_unit");
+    if (topic2Item.type === "conversation_idea_unit") {
+      expect(topic2Item.idea_unit_index).toBe(1);
+    }
   });
 
   test("creates new topic for reassignment when target not found", () => {
@@ -159,6 +167,6 @@ describe("saveTopicReview", () => {
     expect(conv.topics).toHaveLength(2);
     expect(conv.topics[1].id).toBe("new-topic");
     expect(conv.topics[1].title).toBe("New Topic");
-    expect(conv.topics[1].idea_units).toHaveLength(1);
+    expect(conv.topics[1].items).toHaveLength(1);
   });
 });

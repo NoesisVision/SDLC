@@ -7,17 +7,17 @@ import {
   formatEnrichedTopicMarkdown,
   isIrrelevant,
   resolveIdeaUnitDetail,
-} from "../conversation/types.js";
+} from "../../shared-contracts/conversation.js";
 import type {
   Conversation,
   EnrichedTopic,
   IdeaUnitDetail,
   Turn,
-} from "../conversation/types.js";
-import { KnowledgeGraphSchema } from "../knowledge-graph/types.js";
-import type { KnowledgeGraph } from "../knowledge-graph/types.js";
-import { findTopicInHierarchy } from "./types.js";
-import type { IdeaUnitRef, Topic } from "./types.js";
+} from "../../shared-contracts/conversation.js";
+import { KnowledgeGraphSchema } from "../../shared-contracts/knowledge-graph.js";
+import type { KnowledgeGraph } from "../../shared-contracts/knowledge-graph.js";
+import { findTopicInHierarchy } from "../../shared-contracts/topics.js";
+import type { ConversationIdeaUnit, Topic } from "../../shared-contracts/topics.js";
 
 export function loadTopicForReview(
   conversation: Conversation,
@@ -29,7 +29,7 @@ export function loadTopicForReview(
   const kgTopic = findTopicInHierarchy(kg.topics, topic.id);
   const currentTurnMap = buildTurnMap(conversation.turns);
   const kgTurnMaps = buildKgTurnMaps(kg, conversation.conversation_id);
-  const allRefs = collectUniqueRefs(topic, kgTopic);
+  const allRefs = collectUniqueConversationIdeaUnits(topic, kgTopic);
 
   return enrichTopic(topic, allRefs, currentTurnMap, kgTurnMaps, conversation.conversation_id);
 }
@@ -48,32 +48,33 @@ function buildKgTurnMaps(
   return result;
 }
 
-function collectUniqueRefs(
+function collectUniqueConversationIdeaUnits(
   convTopic: Topic,
   kgTopic: Topic | null,
-): IdeaUnitRef[] {
+): ConversationIdeaUnit[] {
   const seen = new Set<string>();
-  const allRefs: IdeaUnitRef[] = [];
+  const allRefs: ConversationIdeaUnit[] = [];
 
-  const addRefs = (refs: IdeaUnitRef[]) => {
-    for (const ref of refs) {
-      const key = `${ref.conversation_id}:${ref.turn_index}:${ref.idea_unit_index}`;
+  const addRefs = (topic: Topic) => {
+    for (const item of topic.items) {
+      if (item.type !== "conversation_idea_unit") continue;
+      const key = `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
       if (!seen.has(key)) {
         seen.add(key);
-        allRefs.push(ref);
+        allRefs.push(item);
       }
     }
   };
 
-  addRefs(convTopic.idea_units);
-  if (kgTopic !== null) addRefs(kgTopic.idea_units);
+  addRefs(convTopic);
+  if (kgTopic !== null) addRefs(kgTopic);
 
   return allRefs;
 }
 
 function enrichTopic(
   topic: Topic,
-  allRefs: IdeaUnitRef[],
+  allRefs: ConversationIdeaUnit[],
   currentTurnMap: Map<number, Turn>,
   kgTurnMaps: Map<string, Map<number, Turn>>,
   conversationId: string,
@@ -132,7 +133,7 @@ async function main(): Promise<void> {
     has_topic: true,
     topic_id: topic.id,
     topic_title: topic.title,
-    num_idea_units: topic.idea_units.length,
+    num_items: topic.idea_units.length,
     has_decision_units: hasDecisionUnits,
     topic_path: topicPath,
   });

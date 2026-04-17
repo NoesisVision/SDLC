@@ -1,8 +1,8 @@
 import { outputResult, parseArgs, readJson } from "../io.js";
-import { KnowledgeGraphSchema } from "../knowledge-graph/types.js";
-import type { TopicOverview } from "../knowledge-graph/types.js";
-import { buildTopicPath, findTopicInHierarchy } from "./types.js";
-import type { Topic } from "./types.js";
+import { KnowledgeGraphSchema } from "../../shared-contracts/knowledge-graph.js";
+import type { TopicOverview } from "../../shared-contracts/knowledge-graph.js";
+import { buildTopicPath, findTopicInHierarchy } from "../../shared-contracts/topics.js";
+import type { Topic } from "../../shared-contracts/topics.js";
 
 export function listTopics(
   topics: Topic[],

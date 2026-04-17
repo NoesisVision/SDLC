@@ -7,14 +7,14 @@ import {
   formatEnrichedTopicMarkdown,
   isIrrelevant,
   resolveIdeaUnitDetail,
-} from "../conversation/types.js";
+} from "../../shared-contracts/conversation.js";
 import type {
   Conversation,
   EnrichedTopic,
   IdeaUnitDetail,
   Turn,
-} from "../conversation/types.js";
-import type { Topic } from "./types.js";
+} from "../../shared-contracts/conversation.js";
+import type { Topic } from "../../shared-contracts/topics.js";
 
 export function loadTopicForDecisions(
   conversation: Conversation,
@@ -40,9 +40,10 @@ function enrichTopicForDecisions(
 ): EnrichedTopic {
   const details: IdeaUnitDetail[] = [];
 
-  for (const ref of topic.idea_units) {
-    if (ref.conversation_id !== conversationId) continue;
-    const detail = resolveIdeaUnitDetail(ref, turnMap);
+  for (const item of topic.items) {
+    if (item.type !== "conversation_idea_unit") continue;
+    if (item.conversation_id !== conversationId) continue;
+    const detail = resolveIdeaUnitDetail(item, turnMap);
     if (detail === null || isIrrelevant(detail.categories)) continue;
     details.push(detail);
   }
@@ -84,7 +85,7 @@ async function main(): Promise<void> {
     has_topic: true,
     topic_id: topic.id,
     topic_title: topic.title,
-    num_idea_units: topic.idea_units.length,
+    num_items: topic.idea_units.length,
     topic_path: topicPath,
   });
 }

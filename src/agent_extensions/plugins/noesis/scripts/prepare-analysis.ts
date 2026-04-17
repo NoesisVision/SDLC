@@ -12,7 +12,7 @@ import {
 import { structureTranscript } from "./transcript/structure-transcript.js";
 import { RawTranscriptSchema } from "./transcript/types.js";
 import type { RawTurn } from "./transcript/types.js";
-import { ConversationSchema } from "./conversation/types.js";
+import { ConversationSchema } from "../shared-contracts/conversation.js";
 
 const DEFAULT_TOKEN_LIMIT = 8000;
 const CHARS_PER_TOKEN = 4;

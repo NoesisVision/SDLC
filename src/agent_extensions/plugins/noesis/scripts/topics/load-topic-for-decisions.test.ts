@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { loadTopicForDecisions } from "./load-topic-for-decisions.js";
-import type { Conversation } from "../conversation/types.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
 
 function makeConversation(decisionsExtracted: boolean = false): Conversation {
   return {
@@ -25,10 +25,10 @@ function makeConversation(decisionsExtracted: boolean = false): Conversation {
         title: "Architecture",
         short_summary: "Summary",
         long_summary: "Long summary",
-        idea_units: [
-          { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
-          { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
-          { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
+        items: [
+          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
+          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
         ],
         subtopics: [],
         reviewed: true,
@@ -72,7 +72,8 @@ describe("loadTopicForDecisions", () => {
 
   test("skips refs from other conversations", () => {
     const conv = makeConversation(false);
-    conv.topics[0].idea_units.push({
+    conv.topics[0].items.push({
+      type: "conversation_idea_unit",
       conversation_id: "other-conv",
       turn_index: 0,
       idea_unit_index: 0,
@@ -86,5 +87,17 @@ describe("loadTopicForDecisions", () => {
     conv.turns[0].idea_units[1].categories = ["Irrelevant", "Information"];
     const result = loadTopicForDecisions(conv, null);
     expect(result!.idea_units).toHaveLength(3);
+  });
+
+  test("ignores document_fragment items", () => {
+    const conv = makeConversation(false);
+    conv.topics[0].items.push({
+      type: "document_fragment",
+      document_id: "doc-1",
+      start_offset: 10,
+      end_offset: 50,
+    });
+    const result = loadTopicForDecisions(conv, null);
+    expect(result!.idea_units).toHaveLength(2);
   });
 });

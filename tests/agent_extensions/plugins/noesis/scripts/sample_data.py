@@ -33,13 +33,13 @@ SAMPLE_KNOWLEDGE_GRAPH = {
             "id": "topic-auth",
             "title": "Authentication",
             "summary": "Authentication and identity management",
-            "idea_units": [],
+            "items": [],
             "subtopics": [
                 {
                     "id": "topic-jwt",
                     "title": "JWT Implementation",
                     "summary": "JSON Web Token based authentication",
-                    "idea_units": [],
+                    "items": [],
                     "subtopics": [],
                 }
             ],
@@ -48,7 +48,7 @@ SAMPLE_KNOWLEDGE_GRAPH = {
             "id": "topic-api",
             "title": "API Design",
             "summary": "REST API design patterns and standards",
-            "idea_units": [],
+            "items": [],
             "subtopics": [],
         },
     ],

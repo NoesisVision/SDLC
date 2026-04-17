@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { saveChunkResult } from "./save-chunk-result.js";
-import type { Conversation, ChunkResult } from "../conversation/types.js";
-import { appendNewTopics, replacePlaceholderIds } from "./types.js";
-import type { PotentialTopic } from "./types.js";
+import type { Conversation, ChunkResult } from "../../shared-contracts/conversation.js";
+import { appendNewTopics, replacePlaceholderIds } from "../../shared-contracts/topics.js";
+import type { PotentialTopic } from "../../shared-contracts/topics.js";
 
 function makeConversation(): Conversation {
   return {
@@ -52,7 +52,7 @@ describe("saveChunkResult", () => {
     expect(conv.turns[0].speaker).toBe("Alice");
   });
 
-  test("creates topic from new_topics and assigns idea unit ref", () => {
+  test("creates topic from new_topics and assigns idea unit item", () => {
     const conv = makeConversation();
     const chunk = makeChunkResult();
     saveChunkResult(conv, chunk);
@@ -60,8 +60,9 @@ describe("saveChunkResult", () => {
     expect(conv.topics).toHaveLength(1);
     expect(conv.topics[0].id).toBe("topic-1");
     expect(conv.topics[0].title).toBe("Greetings");
-    expect(conv.topics[0].idea_units).toHaveLength(1);
-    expect(conv.topics[0].idea_units[0]).toEqual({
+    expect(conv.topics[0].items).toHaveLength(1);
+    expect(conv.topics[0].items[0]).toEqual({
+      type: "conversation_idea_unit",
       conversation_id: "conv-1",
       turn_index: 0,
       idea_unit_index: 0,
@@ -76,7 +77,7 @@ describe("saveChunkResult", () => {
         title: "Existing",
         short_summary: "",
         long_summary: "",
-        idea_units: [],
+        items: [],
         subtopics: [],
         reviewed: false,
         decisions_extracted: false,
@@ -87,7 +88,7 @@ describe("saveChunkResult", () => {
 
     expect(conv.topics).toHaveLength(1);
     expect(conv.topics[0].title).toBe("Existing");
-    expect(conv.topics[0].idea_units).toHaveLength(1);
+    expect(conv.topics[0].items).toHaveLength(1);
   });
 
   test("creates fallback topic when ID not in new_topics", () => {

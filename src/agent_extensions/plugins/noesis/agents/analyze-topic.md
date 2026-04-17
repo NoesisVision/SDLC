@@ -12,7 +12,7 @@ Review a single topic from the conversation — check idea unit coherence, gener
 ### Step 1: Load topic for review
 
 1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/load-topic-for-review.ts <working_dir> <knowledge_graph_path> > {working_dir}/tmp_review_status.json`. The enriched topic is written to `{working_dir}/review_topic.md`.
-2. Read `{working_dir}/tmp_review_status.json` using the Read tool. It contains `has_topic`, `topic_id`, `topic_title`, `num_idea_units`, `has_decision_units`, and `topic_path`.
+2. Read `{working_dir}/tmp_review_status.json` using the Read tool. It contains `has_topic`, `topic_id`, `topic_title`, `num_items`, `has_decision_units`, and `topic_path`.
 3. If `has_topic` is `false`, return `{"has_topic": false}` and stop.
 4. Read the enriched topic from `{working_dir}/review_topic.md` using the Read tool. The file is markdown:
    ```
@@ -93,14 +93,14 @@ For each identified decision, build a `Decision` object:
 - `status` — `"accepted"` for confirmed decisions, `"proposed"` if discussion was inconclusive.
 - `context` — a `DecisionContext` with:
   - `text` — one to two sentences summarizing the problem or need that prompted the decision.
-  - `supporting_idea_units` — list of `IdeaUnitRef` objects pointing to the context idea units.
+  - `supporting_items` — list of `TopicItem` objects pointing to the context. Each item is either a `ConversationIdeaUnit` (`type: "conversation_idea_unit"` with `conversation_id`, `turn_index`, `idea_unit_index`) or a `DocumentFragment` (`type: "document_fragment"` with `document_id`, `start_offset`, `end_offset`).
 - `decision` — a `DecisionOption` with:
   - `text` — what was decided.
   - `rationale` — why this option was chosen.
-  - `supporting_idea_units` — list of `IdeaUnitRef` referencing the idea units that support the final decision.
-- `alternative_options` — list of `DecisionOption` objects for rejected or superseded alternatives. Each with `text`, `rationale` (why it was considered), and `supporting_idea_units`. May be empty if no alternatives were discussed.
+  - `supporting_items` — list of `TopicItem` references that support the final decision.
+- `alternative_options` — list of `DecisionOption` objects for rejected or superseded alternatives. Each with `text`, `rationale` (why it was considered), and `supporting_items`. May be empty if no alternatives were discussed.
 
-For `IdeaUnitRef`, use the `conversation_id` from the topic's idea unit details (all belong to the current conversation).
+For each `ConversationIdeaUnit`, use the `conversation_id` from the topic's idea unit details (all belong to the current conversation).
 
 Build a `DecisionExtractionResult` JSON object with:
 - `topic_id` — the topic's `id`.

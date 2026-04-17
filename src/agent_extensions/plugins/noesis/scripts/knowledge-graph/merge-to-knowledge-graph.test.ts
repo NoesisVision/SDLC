@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mergeToKnowledgeGraph } from "./merge-to-knowledge-graph.js";
-import type { Conversation } from "../conversation/types.js";
-import type { KnowledgeGraph } from "./types.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
+import type { KnowledgeGraph } from "../../shared-contracts/knowledge-graph.js";
 
 function makeConversation(): Conversation {
   return {
@@ -24,8 +24,8 @@ function makeConversation(): Conversation {
         title: "Microservices",
         short_summary: "MS summary",
         long_summary: "MS long summary",
-        idea_units: [
-          { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+        items: [
+          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
         ],
         subtopics: [],
         reviewed: true,
@@ -36,8 +36,8 @@ function makeConversation(): Conversation {
       {
         title: "Use microservices",
         status: "accepted",
-        context: { text: "Arch discussion", supporting_idea_units: [] },
-        decision: { text: "Go micro", rationale: "Scale", supporting_idea_units: [] },
+        context: { text: "Arch discussion", supporting_items: [] },
+        decision: { text: "Go micro", rationale: "Scale", supporting_items: [] },
         alternative_options: [],
       },
     ],
@@ -84,7 +84,7 @@ describe("mergeToKnowledgeGraph", () => {
     expect(kg.topics).toHaveLength(1);
     expect(kg.topics[0].id).toBe("topic-1");
     expect(kg.topics[0].title).toBe("Microservices");
-    expect(kg.topics[0].idea_units).toHaveLength(1);
+    expect(kg.topics[0].items).toHaveLength(1);
   });
 
   test("inserts topic under parent when parent_map specifies", () => {
@@ -95,7 +95,7 @@ describe("mergeToKnowledgeGraph", () => {
       title: "Architecture",
       short_summary: "",
       long_summary: "",
-      idea_units: [],
+      items: [],
       subtopics: [],
       reviewed: false,
       decisions_extracted: false,
@@ -117,8 +117,8 @@ describe("mergeToKnowledgeGraph", () => {
       title: "Old title",
       short_summary: "Old",
       long_summary: "Old long",
-      idea_units: [
-        { conversation_id: "conv-old", turn_index: 0, idea_unit_index: 0 },
+      items: [
+        { type: "conversation_idea_unit", conversation_id: "conv-old", turn_index: 0, idea_unit_index: 0 },
       ],
       subtopics: [],
       reviewed: false,
@@ -129,7 +129,7 @@ describe("mergeToKnowledgeGraph", () => {
 
     expect(kg.topics[0].title).toBe("Microservices");
     expect(kg.topics[0].short_summary).toBe("MS summary");
-    expect(kg.topics[0].idea_units).toHaveLength(2);
+    expect(kg.topics[0].items).toHaveLength(2);
   });
 
   test("deduplicates idea unit refs when updating", () => {
@@ -140,8 +140,8 @@ describe("mergeToKnowledgeGraph", () => {
       title: "Old",
       short_summary: "",
       long_summary: "",
-      idea_units: [
-        { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+      items: [
+        { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
       ],
       subtopics: [],
       reviewed: false,
@@ -149,7 +149,34 @@ describe("mergeToKnowledgeGraph", () => {
     });
 
     mergeToKnowledgeGraph(conv, kg, new Map());
-    expect(kg.topics[0].idea_units).toHaveLength(1);
+    expect(kg.topics[0].items).toHaveLength(1);
+  });
+
+  test("deduplicates document_fragment items using offsets", () => {
+    const conv = makeConversation();
+    conv.topics[0].items.push({
+      type: "document_fragment",
+      document_id: "doc-1",
+      start_offset: 0,
+      end_offset: 50,
+    });
+    const kg = makeEmptyKg();
+    kg.topics.push({
+      id: "topic-1",
+      title: "Old",
+      short_summary: "",
+      long_summary: "",
+      items: [
+        { type: "document_fragment", document_id: "doc-1", start_offset: 0, end_offset: 50 },
+      ],
+      subtopics: [],
+      reviewed: false,
+      decisions_extracted: false,
+    });
+
+    mergeToKnowledgeGraph(conv, kg, new Map());
+    const fragments = kg.topics[0].items.filter((it) => it.type === "document_fragment");
+    expect(fragments).toHaveLength(1);
   });
 
   test("reparents topic when parent changes", () => {
@@ -161,7 +188,7 @@ describe("mergeToKnowledgeGraph", () => {
         title: "Old",
         short_summary: "",
         long_summary: "",
-        idea_units: [],
+        items: [],
         subtopics: [],
         reviewed: false,
         decisions_extracted: false,
@@ -171,7 +198,7 @@ describe("mergeToKnowledgeGraph", () => {
         title: "New Parent",
         short_summary: "",
         long_summary: "",
-        idea_units: [],
+        items: [],
         subtopics: [],
         reviewed: false,
         decisions_extracted: false,

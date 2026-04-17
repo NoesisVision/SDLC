@@ -1,7 +1,7 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { outputResult, parseArgs, readJson, requireDir } from "../io.js";
-import { PotentialTopicsSchema } from "./types.js";
+import { PotentialTopicsSchema } from "../../shared-contracts/topics.js";
 
 async function main(): Promise<void> {
   const args = parseArgs(["working_dir"]);

@@ -3,16 +3,16 @@ import { deleteFile, outputResult, parseArgs, readJson, requireDir, requireFile,
 import {
   ConversationSchema,
   TopicReviewResultSchema,
-} from "../conversation/types.js";
-import type { Conversation, TopicReviewResult } from "../conversation/types.js";
+} from "../../shared-contracts/conversation.js";
+import type { Conversation, TopicReviewResult } from "../../shared-contracts/conversation.js";
 import {
   PotentialTopicsSchema,
   appendNewTopics,
   createTopicFromPotential,
   findTopicOrFail,
   replacePlaceholderIds,
-} from "./types.js";
-import type { Topic } from "./types.js";
+} from "../../shared-contracts/topics.js";
+import type { Topic } from "../../shared-contracts/topics.js";
 
 export function saveTopicReview(
   conversation: Conversation,
@@ -37,9 +37,10 @@ function applyReassignments(
     review.reassignments.map((r) => `${r.turn_index}:${r.idea_unit_index}`),
   );
 
-  sourceTopic.idea_units = sourceTopic.idea_units.filter(
-    (ref) => !reassignedKeys.has(`${ref.turn_index}:${ref.idea_unit_index}`),
-  );
+  sourceTopic.items = sourceTopic.items.filter((item) => {
+    if (item.type !== "conversation_idea_unit") return true;
+    return !reassignedKeys.has(`${item.turn_index}:${item.idea_unit_index}`);
+  });
 
   for (const reassignment of review.reassignments) {
     let target = topicMap.get(reassignment.new_topic_id);
@@ -49,7 +50,8 @@ function applyReassignments(
       topicMap.set(target.id, target);
     }
 
-    target.idea_units.push({
+    target.items.push({
+      type: "conversation_idea_unit",
       conversation_id: conversation.conversation_id,
       turn_index: reassignment.turn_index,
       idea_unit_index: reassignment.idea_unit_index,

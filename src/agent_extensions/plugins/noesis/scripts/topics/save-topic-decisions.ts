@@ -1,9 +1,9 @@
 import { join } from "path";
 import { deleteFile, outputResult, parseArgs, readJson, requireDir, requireFile, writeJson } from "../io.js";
-import { ConversationSchema } from "../conversation/types.js";
-import type { Conversation } from "../conversation/types.js";
-import { DecisionExtractionResultSchema, findTopicOrFail } from "./types.js";
-import type { DecisionExtractionResult } from "./types.js";
+import { ConversationSchema } from "../../shared-contracts/conversation.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
+import { DecisionExtractionResultSchema, findTopicOrFail } from "../../shared-contracts/topics.js";
+import type { DecisionExtractionResult } from "../../shared-contracts/topics.js";
 
 export function saveTopicDecisions(
   conversation: Conversation,

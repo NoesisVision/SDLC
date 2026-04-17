@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { saveTopicDecisions } from "./save-topic-decisions.js";
-import type { Conversation } from "../conversation/types.js";
-import type { DecisionExtractionResult } from "./types.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
+import type { DecisionExtractionResult } from "../../shared-contracts/topics.js";
 
 function makeConversation(): Conversation {
   return {
@@ -15,7 +15,7 @@ function makeConversation(): Conversation {
         title: "Architecture",
         short_summary: "Summary",
         long_summary: "Long summary",
-        idea_units: [],
+        items: [],
         subtopics: [],
         reviewed: true,
         decisions_extracted: false,
@@ -36,12 +36,12 @@ describe("saveTopicDecisions", () => {
           status: "accepted",
           context: {
             text: "Architecture discussion",
-            supporting_idea_units: [],
+            supporting_items: [],
           },
           decision: {
             text: "Go with microservices",
             rationale: "Better scalability",
-            supporting_idea_units: [],
+            supporting_items: [],
           },
           alternative_options: [],
         },
@@ -63,15 +63,15 @@ describe("saveTopicDecisions", () => {
         {
           title: "Decision 1",
           status: "accepted",
-          context: { text: "", supporting_idea_units: [] },
-          decision: { text: "", rationale: "", supporting_idea_units: [] },
+          context: { text: "", supporting_items: [] },
+          decision: { text: "", rationale: "", supporting_items: [] },
           alternative_options: [],
         },
         {
           title: "Decision 2",
           status: "proposed",
-          context: { text: "", supporting_idea_units: [] },
-          decision: { text: "", rationale: "", supporting_idea_units: [] },
+          context: { text: "", supporting_items: [] },
+          decision: { text: "", rationale: "", supporting_items: [] },
           alternative_options: [],
         },
       ],
@@ -87,8 +87,8 @@ describe("saveTopicDecisions", () => {
       {
         title: "Existing",
         status: "accepted",
-        context: { text: "", supporting_idea_units: [] },
-        decision: { text: "", rationale: "", supporting_idea_units: [] },
+        context: { text: "", supporting_items: [] },
+        decision: { text: "", rationale: "", supporting_items: [] },
         alternative_options: [],
       },
     ];
@@ -99,8 +99,8 @@ describe("saveTopicDecisions", () => {
         {
           title: "New",
           status: "accepted",
-          context: { text: "", supporting_idea_units: [] },
-          decision: { text: "", rationale: "", supporting_idea_units: [] },
+          context: { text: "", supporting_items: [] },
+          decision: { text: "", rationale: "", supporting_items: [] },
           alternative_options: [],
         },
       ],

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { loadTopicForReview } from "./load-topic-for-review.js";
-import type { Conversation } from "../conversation/types.js";
-import type { KnowledgeGraph } from "../knowledge-graph/types.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
+import type { KnowledgeGraph } from "../../shared-contracts/knowledge-graph.js";
 
 function makeConversation(reviewed: boolean = false): Conversation {
   return {
@@ -25,8 +25,8 @@ function makeConversation(reviewed: boolean = false): Conversation {
         title: "Architecture",
         short_summary: "Arch summary",
         long_summary: "Long arch summary",
-        idea_units: [
-          { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+        items: [
+          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
         ],
         subtopics: [],
         reviewed,
@@ -85,8 +85,8 @@ describe("loadTopicForReview", () => {
           title: "Architecture",
           short_summary: "",
           long_summary: "",
-          idea_units: [
-            { conversation_id: "conv-old", turn_index: 0, idea_unit_index: 0 },
+          items: [
+            { type: "conversation_idea_unit", conversation_id: "conv-old", turn_index: 0, idea_unit_index: 0 },
           ],
           subtopics: [],
           reviewed: true,
@@ -111,8 +111,8 @@ describe("loadTopicForReview", () => {
           title: "Architecture",
           short_summary: "",
           long_summary: "",
-          idea_units: [
-            { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+          items: [
+            { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
           ],
           subtopics: [],
           reviewed: true,
@@ -131,8 +131,8 @@ describe("loadTopicForReview", () => {
     conv.turns[0].idea_units.push(
       { index: 2, sentences: ["Filler."], categories: ["Irrelevant"] },
     );
-    conv.topics[0].idea_units.push(
-      { conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
+    conv.topics[0].items.push(
+      { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
     );
 
     const result = loadTopicForReview(conv, emptyKg);
@@ -150,10 +150,24 @@ describe("loadTopicForReview", () => {
 
   test("skips refs with missing turns", () => {
     const conv = makeConversation(false);
-    conv.topics[0].idea_units.push({
+    conv.topics[0].items.push({
+      type: "conversation_idea_unit",
       conversation_id: "conv-1",
       turn_index: 99,
       idea_unit_index: 0,
+    });
+
+    const result = loadTopicForReview(conv, emptyKg);
+    expect(result!.idea_units).toHaveLength(1);
+  });
+
+  test("ignores document_fragment items during idea-unit resolution", () => {
+    const conv = makeConversation(false);
+    conv.topics[0].items.push({
+      type: "document_fragment",
+      document_id: "doc-1",
+      start_offset: 0,
+      end_offset: 42,
     });
 
     const result = loadTopicForReview(conv, emptyKg);

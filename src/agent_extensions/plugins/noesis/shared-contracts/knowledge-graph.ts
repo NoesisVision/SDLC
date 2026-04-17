@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { TurnSchema } from "../conversation/types.js";
-import { DecisionSchema, TopicSchema } from "../topics/types.js";
+import { TurnSchema } from "./conversation.js";
+import { DecisionSchema, TopicSchema } from "./topics.js";
 
 export const ConversationSummarySchema = z.object({
   conversation_id: z.string(),

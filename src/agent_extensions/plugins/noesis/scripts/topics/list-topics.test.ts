@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { listTopics } from "./list-topics.js";
-import type { Topic } from "./types.js";
+import type { Topic } from "../../shared-contracts/topics.js";
 
 function makeTopic(id: string, title: string, subtopics: Topic[] = []): Topic {
   return {
@@ -8,7 +8,7 @@ function makeTopic(id: string, title: string, subtopics: Topic[] = []): Topic {
     title,
     short_summary: `Summary of ${title}`,
     long_summary: `Long summary of ${title}`,
-    idea_units: [],
+    items: [],
     subtopics,
     reviewed: false,
     decisions_extracted: false,

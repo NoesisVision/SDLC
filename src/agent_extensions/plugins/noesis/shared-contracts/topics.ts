@@ -1,24 +1,38 @@
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { exitError } from "../io.js";
 
-export const IdeaUnitRefSchema = z.object({
+export const ConversationIdeaUnitSchema = z.object({
+  type: z.literal("conversation_idea_unit"),
   conversation_id: z.string(),
   turn_index: z.int(),
   idea_unit_index: z.int(),
 });
-export type IdeaUnitRef = z.infer<typeof IdeaUnitRefSchema>;
+export type ConversationIdeaUnit = z.infer<typeof ConversationIdeaUnitSchema>;
+
+export const DocumentFragmentSchema = z.object({
+  type: z.literal("document_fragment"),
+  document_id: z.string(),
+  start_offset: z.int(),
+  end_offset: z.int(),
+});
+export type DocumentFragment = z.infer<typeof DocumentFragmentSchema>;
+
+export const TopicItemSchema = z.discriminatedUnion("type", [
+  ConversationIdeaUnitSchema,
+  DocumentFragmentSchema,
+]);
+export type TopicItem = z.infer<typeof TopicItemSchema>;
 
 export const DecisionContextSchema = z.object({
   text: z.string(),
-  supporting_idea_units: z.array(IdeaUnitRefSchema),
+  supporting_items: z.array(TopicItemSchema),
 });
 export type DecisionContext = z.infer<typeof DecisionContextSchema>;
 
 export const DecisionOptionSchema = z.object({
   text: z.string(),
   rationale: z.string(),
-  supporting_idea_units: z.array(IdeaUnitRefSchema),
+  supporting_items: z.array(TopicItemSchema),
 });
 export type DecisionOption = z.infer<typeof DecisionOptionSchema>;
 
@@ -39,7 +53,7 @@ export const TopicSchema: z.ZodType<Topic> = z.object({
   title: z.string(),
   short_summary: z.string(),
   long_summary: z.string(),
-  idea_units: z.array(IdeaUnitRefSchema),
+  items: z.array(TopicItemSchema),
   subtopics: z.lazy(() => z.array(TopicSchema)),
   reviewed: z.boolean().default(false),
   decisions_extracted: z.boolean().default(false),
@@ -49,7 +63,7 @@ export type Topic = {
   title: string;
   short_summary: string;
   long_summary: string;
-  idea_units: IdeaUnitRef[];
+  items: TopicItem[];
   subtopics: Topic[];
   reviewed: boolean;
   decisions_extracted: boolean;
@@ -132,7 +146,7 @@ export function createTopicFromPotential(
     title: match?.title ?? "",
     short_summary: match?.short_summary ?? "",
     long_summary: "",
-    idea_units: [],
+    items: [],
     subtopics: [],
     reviewed: false,
     decisions_extracted: false,
@@ -158,7 +172,7 @@ export function findTopicInHierarchy(
 export function findTopicOrFail(topics: Topic[], topicId: string): Topic {
   const topic = topics.find((t) => t.id === topicId);
   if (topic === undefined) {
-    exitError(`Topic not found: ${topicId}`);
+    throw new Error(`Topic not found: ${topicId}`);
   }
   return topic;
 }
@@ -200,4 +214,11 @@ export function appendNewTopics(
     }
   }
   return merged;
+}
+
+export function topicItemKey(item: TopicItem): string {
+  if (item.type === "conversation_idea_unit") {
+    return `${item.type}:${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
+  }
+  return `${item.type}:${item.document_id}:${item.start_offset}:${item.end_offset}`;
 }

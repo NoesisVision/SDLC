@@ -1,15 +1,11 @@
 import { z } from "zod";
 import {
   DecisionSchema,
-  IdeaUnitRefSchema,
   IdeaUnitReassignmentSchema,
   IdeaUnitTopicAssignmentSchema,
   PotentialTopicSchema,
   TopicSchema,
-} from "../topics/types.js";
-
-export { IdeaUnitRefSchema };
-export type { IdeaUnitRef } from "../topics/types.js";
+} from "./topics.js";
 
 export const IdeaUnitCategory = z.enum([
   "Information",

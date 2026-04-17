@@ -3,15 +3,15 @@ import { deleteFile, outputResult, parseArgs, readJson, requireDir, requireFile,
 import {
   ConversationSchema,
   ChunkResultSchema,
-} from "../conversation/types.js";
-import type { Conversation, ChunkResult } from "../conversation/types.js";
+} from "../../shared-contracts/conversation.js";
+import type { Conversation, ChunkResult } from "../../shared-contracts/conversation.js";
 import {
   PotentialTopicsSchema,
   appendNewTopics,
   createTopicFromPotential,
   replacePlaceholderIds,
-} from "./types.js";
-import type { Topic } from "./types.js";
+} from "../../shared-contracts/topics.js";
+import type { Topic } from "../../shared-contracts/topics.js";
 
 export function saveChunkResult(
   conversation: Conversation,
@@ -39,7 +39,8 @@ function applyAssignments(
       topicMap.set(topic.id, topic);
     }
 
-    topic.idea_units.push({
+    topic.items.push({
+      type: "conversation_idea_unit",
       conversation_id: conversation.conversation_id,
       turn_index: assignment.turn_index,
       idea_unit_index: assignment.idea_unit_index,

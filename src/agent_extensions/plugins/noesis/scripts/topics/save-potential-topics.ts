@@ -1,7 +1,7 @@
 import { unlinkSync } from "fs";
 import { join } from "path";
 import { outputResult, parseArgs, readJson, requireDir, requireFile, writeJson } from "../io.js";
-import { PotentialTopicsSchema, replacePlaceholderIds } from "./types.js";
+import { PotentialTopicsSchema, replacePlaceholderIds } from "../../shared-contracts/topics.js";
 
 async function main(): Promise<void> {
   const args = parseArgs(["working_dir", "input_file"]);

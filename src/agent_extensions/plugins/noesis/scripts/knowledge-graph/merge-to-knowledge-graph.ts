@@ -1,12 +1,16 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { outputResult, parseArgs, readJson, requireDir, writeJson } from "../io.js";
-import { ConversationSchema } from "../conversation/types.js";
-import type { Conversation } from "../conversation/types.js";
-import { PotentialTopicsSchema, findTopicInHierarchy } from "../topics/types.js";
-import type { Topic } from "../topics/types.js";
-import { KnowledgeGraphSchema } from "./types.js";
-import type { ConversationSummary, KnowledgeGraph } from "./types.js";
+import { ConversationSchema } from "../../shared-contracts/conversation.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
+import {
+  PotentialTopicsSchema,
+  findTopicInHierarchy,
+  topicItemKey,
+} from "../../shared-contracts/topics.js";
+import type { Topic } from "../../shared-contracts/topics.js";
+import { KnowledgeGraphSchema } from "../../shared-contracts/knowledge-graph.js";
+import type { ConversationSummary, KnowledgeGraph } from "../../shared-contracts/knowledge-graph.js";
 
 const NOT_FOUND = Symbol("NOT_FOUND");
 
@@ -28,7 +32,7 @@ function buildKgTopic(convTopic: Topic): Topic {
     title: convTopic.title,
     short_summary: convTopic.short_summary,
     long_summary: convTopic.long_summary,
-    idea_units: [...convTopic.idea_units],
+    items: [...convTopic.items],
     subtopics: [],
     reviewed: false,
     decisions_extracted: false,
@@ -170,16 +174,11 @@ function updateExistingTopic(existing: Topic, convTopic: Topic): void {
   existing.short_summary = convTopic.short_summary;
   existing.long_summary = convTopic.long_summary;
 
-  const existingKeys = new Set(
-    existing.idea_units.map(
-      (ref) => `${ref.conversation_id}:${ref.turn_index}:${ref.idea_unit_index}`,
-    ),
-  );
+  const existingKeys = new Set(existing.items.map(topicItemKey));
 
-  for (const ref of convTopic.idea_units) {
-    const key = `${ref.conversation_id}:${ref.turn_index}:${ref.idea_unit_index}`;
-    if (!existingKeys.has(key)) {
-      existing.idea_units.push(ref);
+  for (const item of convTopic.items) {
+    if (!existingKeys.has(topicItemKey(item))) {
+      existing.items.push(item);
     }
   }
 }
