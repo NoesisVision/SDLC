@@ -32,6 +32,7 @@ export class InvocationsService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
+    await this.scannerRepo.initSchema();
     await this.repo.initSchema();
   }
 
