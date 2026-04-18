@@ -8,6 +8,31 @@ export interface InheritanceSourceFile {
 const TYPE_DECLARATION_PATTERN =
   /\b(?:class|struct|interface|record)\s+(\w+)\s*(?:<[^>]*>)?\s*(?::\s*([^{]+))?\s*\{/g;
 
+export function ancestorsOf(map: InheritanceMap, typeName: string): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  let current: string | undefined = typeName;
+
+  while (current !== undefined && !seen.has(current)) {
+    seen.add(current);
+    const headers = map.byTypeName.get(current);
+    if (!headers || headers.length === 0) break;
+    const header = headers[0];
+    if (header.kind === "interface") break;
+    for (const intf of header.interfaceTypeNames) {
+      if (!result.includes(intf)) result.push(intf);
+    }
+    if (header.baseTypeNames.length === 0) break;
+    const next = header.baseTypeNames[0];
+    if (!result.includes(next)) result.push(next);
+    const nextHeaders = map.byTypeName.get(next);
+    if (nextHeaders && nextHeaders[0].kind === "interface") break;
+    current = next;
+  }
+
+  return result;
+}
+
 export function extractInheritanceMap(
   files: InheritanceSourceFile[],
 ): InheritanceMap {
@@ -111,29 +136,4 @@ function splitAncestors(
 function stripGenericArgs(name: string): string {
   const idx = name.indexOf("<");
   return idx === -1 ? name : name.substring(0, idx);
-}
-
-export function ancestorsOf(map: InheritanceMap, typeName: string): string[] {
-  const result: string[] = [];
-  const seen = new Set<string>();
-  let current: string | undefined = typeName;
-
-  while (current !== undefined && !seen.has(current)) {
-    seen.add(current);
-    const headers = map.byTypeName.get(current);
-    if (!headers || headers.length === 0) break;
-    const header = headers[0];
-    if (header.kind === "interface") break;
-    for (const intf of header.interfaceTypeNames) {
-      if (!result.includes(intf)) result.push(intf);
-    }
-    if (header.baseTypeNames.length === 0) break;
-    const next = header.baseTypeNames[0];
-    if (!result.includes(next)) result.push(next);
-    const nextHeaders = map.byTypeName.get(next);
-    if (nextHeaders && nextHeaders[0].kind === "interface") break;
-    current = next;
-  }
-
-  return result;
 }
