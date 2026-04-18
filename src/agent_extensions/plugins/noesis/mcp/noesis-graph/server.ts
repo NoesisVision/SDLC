@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { AppModule } from "./app.module.js";
 import { FileLogger } from "./logging/file-logger.js";
 import { ScannerService } from "./scanner/scanner.service.js";
+import { InvocationsService } from "./scanner/invocations/invocations.service.js";
 import { registerScannerTools } from "./scanner/scanner.mcp.js";
 import { KnowledgeService } from "./knowledge/knowledge.service.js";
 import { registerKnowledgeTools } from "./knowledge/knowledge.mcp.js";
@@ -45,7 +46,7 @@ export async function startServer(): Promise<void> {
     app.enableShutdownHooks();
     await app.listen(0);
 
-    registerScannerTools(mcp, app.get(ScannerService));
+    registerScannerTools(mcp, app.get(ScannerService), app.get(InvocationsService));
     registerKnowledgeTools(mcp, app.get(KnowledgeService));
     logger.log("MCP tools registered", "Bootstrap");
 
