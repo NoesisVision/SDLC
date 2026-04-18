@@ -227,4 +227,33 @@ describe("computeInvocations", () => {
       { source: "OrderBase.cs:OrderBase:Place", destination: "Order.cs:Order:Notify" },
     ]);
   });
+
+  test("D4: call to OrderBase.Notify does not also emit Order.Notify", async () => {
+    const rows = [
+      { id: "OrderBase.cs:OrderBase:Notify", filePath: "OrderBase.cs", typeName: "OrderBase", methodName: "Notify" },
+      { id: "Order.cs:Order:Notify", filePath: "Order.cs", typeName: "Order", methodName: "Notify" },
+      { id: "Order.cs:Order:Place", filePath: "Order.cs", typeName: "Order", methodName: "Place" },
+    ];
+    const inv = behaviorsOf(rows);
+    const inheritance = extractInheritanceMap([
+      { relativePath: "OrderBase.cs", content: `public class OrderBase {}` },
+      { relativePath: "Order.cs", content: `public class Order : OrderBase {}` },
+    ]);
+    const serena = makeFakeSerena({
+      "OrderBase/Notify|OrderBase.cs": [ref("Order.cs", "Order", "Place")],
+      "Order/Notify|Order.cs": [],
+      "Order/Place|Order.cs": [],
+    });
+
+    const edges = await computeInvocations({ behaviors: rows, inv, inheritance, serena });
+
+    expect(edges).toContainEqual({
+      source: "Order.cs:Order:Place",
+      destination: "OrderBase.cs:OrderBase:Notify",
+    });
+    expect(edges).not.toContainEqual({
+      source: "Order.cs:Order:Place",
+      destination: "Order.cs:Order:Notify",
+    });
+  });
 });
