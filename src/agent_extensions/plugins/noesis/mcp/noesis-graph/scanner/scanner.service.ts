@@ -4,6 +4,8 @@ import { existsSync } from "fs";
 import { join, relative } from "path";
 import { PROJECT_DIR } from "../config/config.module.js";
 import { ScannerRepository } from "./scanner.repository.js";
+import { InvocationsService } from "./invocations/invocations.service.js";
+import { extractInheritanceMap } from "./inheritance/inheritance.js";
 import {
   DDD_ANNOTATIONS,
   annotationToBlockType,
@@ -57,6 +59,7 @@ interface ScannedFile {
   relativePath: string;
   namespace: string;
   matches: AnnotationMatch[];
+  content: string;
 }
 
 interface KeptFile {
@@ -64,6 +67,7 @@ interface KeptFile {
   rawNamespace: string;
   namespace: string;
   matches: AnnotationMatch[];
+  content: string;
 }
 
 export type DomainModelPart =
@@ -77,6 +81,7 @@ export class ScannerService implements OnModuleInit {
 
   constructor(
     private readonly repository: ScannerRepository,
+    private readonly invocations: InvocationsService,
     @Inject(PROJECT_DIR) private readonly projectDir: string,
   ) {}
 
@@ -132,6 +137,7 @@ export class ScannerService implements OnModuleInit {
         rawNamespace: f.namespace,
         namespace: removeSkippedParts(f.namespace, config.namespacePartsToSkip),
         matches: f.matches,
+        content: f.content,
       }))
       .filter((f) => f.namespace !== "");
 
@@ -206,6 +212,12 @@ export class ScannerService implements OnModuleInit {
     }
     this.logger.log(`Inserted ${blockCount} building blocks and ${behaviorCount} behaviors`);
 
+    this.logger.log("Starting invocations analysis");
+    const inheritance = extractInheritanceMap(
+      keptFiles.map((f) => ({ relativePath: f.relativePath, content: f.content })),
+    );
+    await this.invocations.rebuildInvocations(inheritance);
+
     const tree = await this.repository.getDomainModel();
     this.logger.log("Model scan completed");
     return tree;
@@ -223,7 +235,7 @@ export class ScannerService implements OnModuleInit {
           const namespace = extractNamespace(content) ?? "";
           const matches = parseAnnotations(content);
           const relativePath = relative(this.projectDir, absPath);
-          return { relativePath, namespace, matches };
+          return { relativePath, namespace, matches, content };
         }),
       );
       results.push(...batchResults);
