@@ -32,12 +32,12 @@ export class InvocationsRepository {
         : filter?.destinationBehaviorId !== undefined
         ? "WHERE d.id = $id"
         : "";
-    const params =
-      filter?.sourceBehaviorId !== undefined
-        ? { id: filter.sourceBehaviorId }
-        : filter?.destinationBehaviorId !== undefined
-        ? { id: filter.destinationBehaviorId }
-        : {};
+    const params: Record<string, string> = {};
+    if (filter?.sourceBehaviorId !== undefined) {
+      params["id"] = filter.sourceBehaviorId;
+    } else if (filter?.destinationBehaviorId !== undefined) {
+      params["id"] = filter.destinationBehaviorId;
+    }
 
     const stmt = await conn.prepare(
       `MATCH (s:Behavior)-[:BEHAVIOR_INVOKES_BEHAVIOR]->(d:Behavior) ${where} ` +
