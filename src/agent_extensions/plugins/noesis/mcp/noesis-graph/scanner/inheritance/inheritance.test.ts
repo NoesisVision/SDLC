@@ -100,3 +100,40 @@ describe("extractInheritanceMap", () => {
     expect(map.byTypeName.get("Ok")).toBeDefined();
   });
 });
+
+import { ancestorsOf } from "./inheritance.js";
+
+describe("ancestorsOf", () => {
+  const files = [
+    { relativePath: "IEntity.cs", content: `public interface IEntity {}` },
+    { relativePath: "IOrder.cs", content: `public interface IOrder : IEntity {}` },
+    { relativePath: "OrderBase.cs", content: `public class OrderBase : IOrder {}` },
+    { relativePath: "Order.cs", content: `public class Order : OrderBase, IMarker {}` },
+    { relativePath: "IMarker.cs", content: `public interface IMarker {}` },
+  ];
+  const map = extractInheritanceMap(files);
+
+  test("returns directly-declared interfaces on the class", () => {
+    const ancestors = ancestorsOf(map, "Order");
+    expect(ancestors).toContain("IMarker");
+  });
+
+  test("walks the class base chain transitively (S3)", () => {
+    const ancestors = ancestorsOf(map, "Order");
+    expect(ancestors).toContain("OrderBase");
+  });
+
+  test("includes interfaces declared on base classes (S2 + S3)", () => {
+    const ancestors = ancestorsOf(map, "Order");
+    expect(ancestors).toContain("IOrder");
+  });
+
+  test("does NOT traverse interface parents (S5)", () => {
+    const ancestors = ancestorsOf(map, "Order");
+    expect(ancestors).not.toContain("IEntity");
+  });
+
+  test("returns empty list for unknown type", () => {
+    expect(ancestorsOf(map, "Unknown")).toEqual([]);
+  });
+});
