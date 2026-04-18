@@ -35,4 +35,68 @@ describe("extractInheritanceMap", () => {
     const map = extractInheritanceMap(files);
     expect(map.byTypeId.get("src/Order.cs:Order")).toBeDefined();
   });
+
+  test("strips generic args from ancestor names (G1)", () => {
+    const files = [
+      {
+        relativePath: "src/OrderRepository.cs",
+        content: `public class OrderRepository : IRepository<Order>, IDisposable {}`,
+      },
+    ];
+    const h = extractInheritanceMap(files).byTypeName.get("OrderRepository")![0];
+    expect(h.baseTypeNames).toEqual(["IRepository"]);
+    expect(h.interfaceTypeNames).toEqual(["IDisposable"]);
+  });
+
+  test("records and structs are parsed", () => {
+    const files = [
+      { relativePath: "src/Money.cs", content: `public record Money : IEquatable<Money> {}` },
+      { relativePath: "src/Point.cs", content: `public struct Point : IComparable {}` },
+    ];
+    const map = extractInheritanceMap(files);
+    expect(map.byTypeName.get("Money")![0].baseTypeNames).toEqual(["IEquatable"]);
+    expect(map.byTypeName.get("Point")![0].baseTypeNames).toEqual(["IComparable"]);
+  });
+
+  test("multiple top-level types in one file", () => {
+    const files = [
+      {
+        relativePath: "src/Mix.cs",
+        content:
+          `public class A : IA {}\n\npublic interface IA {}\n\npublic class B : A {}`,
+      },
+    ];
+    const map = extractInheritanceMap(files);
+    expect(map.byTypeName.get("A")![0].interfaceTypeNames).toEqual(["IA"]);
+    expect(map.byTypeName.get("IA")![0].baseTypeNames).toEqual([]);
+    expect(map.byTypeName.get("B")![0].baseTypeNames).toEqual(["A"]);
+  });
+
+  test("interface inheriting interfaces", () => {
+    const files = [
+      { relativePath: "src/IChild.cs", content: `public interface IChild : IBase, IMarker {}` },
+    ];
+    const h = extractInheritanceMap(files).byTypeName.get("IChild")![0];
+    expect(h.baseTypeNames).toEqual(["IBase"]);
+    expect(h.interfaceTypeNames).toEqual(["IMarker"]);
+  });
+
+  test("same type name from different files produces two entries in byTypeName", () => {
+    const files = [
+      { relativePath: "src/A/Order.cs", content: `public class Order {}` },
+      { relativePath: "src/B/Order.cs", content: `public class Order {}` },
+    ];
+    const list = extractInheritanceMap(files).byTypeName.get("Order")!;
+    expect(list.length).toBe(2);
+    expect(list[0].filePath).not.toBe(list[1].filePath);
+  });
+
+  test("malformed declaration is skipped without throwing", () => {
+    const files = [
+      { relativePath: "src/Broken.cs", content: `public class Broken : // unterminated` },
+      { relativePath: "src/Ok.cs", content: `public class Ok {}` },
+    ];
+    const map = extractInheritanceMap(files);
+    expect(map.byTypeName.get("Ok")).toBeDefined();
+  });
 });

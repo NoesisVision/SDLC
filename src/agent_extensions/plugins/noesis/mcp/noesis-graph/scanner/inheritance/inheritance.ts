@@ -29,13 +29,26 @@ export function extractInheritanceMap(
 function extractTypeHeadersFromFile(
   file: InheritanceSourceFile,
 ): TypeHeader[] {
-  const results: TypeHeader[] = [];
+  // First pass: collect all type kinds (interface, class, struct, record)
+  const typeKinds = new Map<string, string>();
   TYPE_DECLARATION_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = TYPE_DECLARATION_PATTERN.exec(file.content)) !== null) {
+    const kind = extractTypeKind(match);
+    const typeName = match[1];
+    typeKinds.set(typeName, kind);
+  }
+
+  // Second pass: extract headers with interface classification
+  const results: TypeHeader[] = [];
+  TYPE_DECLARATION_PATTERN.lastIndex = 0;
+  while ((match = TYPE_DECLARATION_PATTERN.exec(file.content)) !== null) {
     const typeName = match[1];
     const ancestorsFragment = match[2] ?? "";
-    const { baseTypeNames, interfaceTypeNames } = splitAncestors(ancestorsFragment);
+    const { baseTypeNames, interfaceTypeNames } = splitAncestors(
+      ancestorsFragment,
+      typeKinds,
+    );
     results.push({
       typeId: `${file.relativePath}:${typeName}`,
       typeName,
@@ -47,7 +60,18 @@ function extractTypeHeadersFromFile(
   return results;
 }
 
-function splitAncestors(fragment: string): {
+function extractTypeKind(match: RegExpExecArray): string {
+  const fullMatch = match[0];
+  if (fullMatch.includes("interface")) return "interface";
+  if (fullMatch.includes("struct")) return "struct";
+  if (fullMatch.includes("record")) return "record";
+  return "class";
+}
+
+function splitAncestors(
+  fragment: string,
+  typeKinds: Map<string, string>,
+): {
   baseTypeNames: string[];
   interfaceTypeNames: string[];
 } {
@@ -60,10 +84,27 @@ function splitAncestors(fragment: string): {
     .filter((n) => n !== "");
 
   if (names.length === 0) return { baseTypeNames: [], interfaceTypeNames: [] };
-  return {
-    baseTypeNames: [names[0]],
-    interfaceTypeNames: names.slice(1),
-  };
+
+  const baseTypeNames: string[] = [];
+  const interfaceTypeNames: string[] = [];
+
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    const kind = typeKinds.get(name);
+
+    // If the type is declared in this file as an interface, treat it as interface
+    if (kind === "interface") {
+      interfaceTypeNames.push(name);
+    }
+    // For external types, use position: first is base, rest are interfaces
+    else if (i === 0) {
+      baseTypeNames.push(name);
+    } else {
+      interfaceTypeNames.push(name);
+    }
+  }
+
+  return { baseTypeNames, interfaceTypeNames };
 }
 
 function stripGenericArgs(name: string): string {
