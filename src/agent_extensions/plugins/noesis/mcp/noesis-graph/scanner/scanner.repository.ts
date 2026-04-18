@@ -137,6 +137,29 @@ export class ScannerRepository {
     await conn.execute(stmt, { modFullPath, nsFullName });
   }
 
+  async getBehaviorsWithLocations(): Promise<
+    Array<{ id: string; filePath: string; typeName: string; methodName: string }>
+  > {
+    const conn = this.db.getConnection();
+    const result = await conn.query(
+      "MATCH (b:BuildingBlock)-[:BB_REPRESENTED_BY_CSHARP_TYPE]->(t:CSharpType), " +
+        "(b)-[:BB_CONTAINS_BEHAVIOR]->(x:Behavior) " +
+        "RETURN x.id AS id, t.filePath AS filePath, t.name AS typeName " +
+        "ORDER BY x.id",
+    );
+    const rows = asArray(result).getAllSync() as Array<{
+      id: string;
+      filePath: string;
+      typeName: string;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      filePath: r.filePath,
+      typeName: r.typeName,
+      methodName: extractMethodNameFromBehaviorId(r.id),
+    }));
+  }
+
   async getDomainModel(): Promise<DomainModelTree> {
     const conn = this.db.getConnection();
 
@@ -228,6 +251,11 @@ export class ScannerRepository {
 function asArray(result: unknown): { getNumTuples(): number; getAllSync(): unknown[] } {
   if (Array.isArray(result)) return result[0];
   return result as { getNumTuples(): number; getAllSync(): unknown[] };
+}
+
+function extractMethodNameFromBehaviorId(id: string): string {
+  const idx = id.lastIndexOf(":");
+  return idx === -1 ? id : id.substring(idx + 1);
 }
 
 function buildTree(
