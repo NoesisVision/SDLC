@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -11,7 +11,7 @@ describe("InvocationsRepository", () => {
   let repo: InvocationsRepository;
   let tmpDir: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), "noesis-invrepo-"));
     db = new DatabaseService(tmpDir);
     db.onModuleInit();
@@ -28,9 +28,13 @@ describe("InvocationsRepository", () => {
     }
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await db.onModuleDestroy();
     rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  beforeEach(async () => {
+    await repo.clearInvocations();
   });
 
   test("writes and reads an invocation edge", async () => {
@@ -44,5 +48,32 @@ describe("InvocationsRepository", () => {
     await repo.insertInvocation({ source: "B", destination: "C" });
     await repo.clearInvocations();
     expect(await repo.getInvocations()).toEqual([]);
+  });
+
+  test("filter by sourceBehaviorId", async () => {
+    await repo.insertInvocation({ source: "A", destination: "B" });
+    await repo.insertInvocation({ source: "A", destination: "C" });
+    await repo.insertInvocation({ source: "B", destination: "C" });
+    const rows = await repo.getInvocations({ sourceBehaviorId: "A" });
+    expect(rows).toEqual([
+      { source: "A", destination: "B" },
+      { source: "A", destination: "C" },
+    ]);
+  });
+
+  test("filter by destinationBehaviorId", async () => {
+    await repo.insertInvocation({ source: "A", destination: "C" });
+    await repo.insertInvocation({ source: "B", destination: "C" });
+    const rows = await repo.getInvocations({ destinationBehaviorId: "C" });
+    expect(rows).toEqual([
+      { source: "A", destination: "C" },
+      { source: "B", destination: "C" },
+    ]);
+  });
+
+  test("both filters throws", async () => {
+    await expect(
+      repo.getInvocations({ sourceBehaviorId: "A", destinationBehaviorId: "B" }),
+    ).rejects.toThrow(/at most one/);
   });
 });
