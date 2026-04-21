@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionIcon,
   Badge,
@@ -6,8 +6,6 @@ import {
   Button,
   Card,
   Collapse,
-  Container,
-  Grid,
   Group,
   Loader,
   Stack,
@@ -16,20 +14,18 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import {
+  IconArrowLeft,
   IconBolt,
-  IconBox,
   IconChevronDown,
   IconChevronRight,
   IconCube,
-  IconDatabase,
   IconLayoutGrid,
   IconPackage,
   IconRefresh,
-  IconServer,
-  IconShape,
-  IconStar,
-  IconTool,
 } from "@tabler/icons-react";
+import { blockTypeStyle, type BehaviorMeta } from "./block-type.js";
+import { InvocationFlow } from "./invocation-flow.js";
+import classes from "./model.module.css";
 
 interface Behavior {
   id: string;
@@ -60,19 +56,85 @@ interface DomainModelTree {
   boundedContexts: BoundedContextBranch[];
 }
 
-type Selection =
+type View =
   | { kind: "boundedContext"; name: string }
   | { kind: "module"; name: string; fullPath: string }
-  | { kind: "buildingBlock"; buildingBlock: BuildingBlock };
+  | { kind: "buildingBlock"; buildingBlock: BuildingBlock }
+  | { kind: "behavior"; buildingBlock: BuildingBlock; behaviorId: string };
 
 type ScanState = "idle" | "scanning" | "done" | "error";
+
+type BuildingBlockView = Extract<View, { kind: "buildingBlock" }>;
+
+interface NavState {
+  current: View | null;
+  bbStack: BuildingBlockView[];
+}
 
 export function ModelPage() {
   const [model, setModel] = useState<DomainModelTree | null>(null);
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [treeVersion, setTreeVersion] = useState(0);
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [nav, setNav] = useState<NavState>({ current: null, bbStack: [] });
+
+  const current = nav.current;
+  const canGoBack =
+    current !== null &&
+    (current.kind === "behavior" ||
+      (current.kind === "buildingBlock" && nav.bbStack.length > 0));
+
+  const pushView = useCallback((view: View) => {
+    setNav((prev) => {
+      if (prev.current !== null && isSameView(prev.current, view)) return prev;
+
+      if (view.kind === "boundedContext" || view.kind === "module") {
+        return { current: view, bbStack: [] };
+      }
+
+      if (view.kind === "behavior") {
+        return { current: view, bbStack: prev.bbStack };
+      }
+
+      const prevBB = currentBuildingBlock(prev.current);
+      if (
+        prevBB !== null &&
+        prevBB.buildingBlock.id !== view.buildingBlock.id
+      ) {
+        return { current: view, bbStack: [...prev.bbStack, prevBB] };
+      }
+      return { current: view, bbStack: prev.bbStack };
+    });
+  }, []);
+
+  const goBack = useCallback(() => {
+    setNav((prev) => {
+      if (prev.current === null) return prev;
+
+      if (prev.current.kind === "behavior") {
+        return {
+          current: {
+            kind: "buildingBlock",
+            buildingBlock: prev.current.buildingBlock,
+          },
+          bbStack: prev.bbStack,
+        };
+      }
+
+      if (prev.current.kind === "buildingBlock") {
+        if (prev.bbStack.length === 0) return prev;
+        const next = prev.bbStack[prev.bbStack.length - 1];
+        return { current: next, bbStack: prev.bbStack.slice(0, -1) };
+      }
+
+      return prev;
+    });
+  }, []);
+
+  const behaviorIndex = useMemo(
+    () => (model !== null ? buildBehaviorIndex(model) : new Map<string, BehaviorMeta>()),
+    [model],
+  );
 
   const loadModel = useCallback(() => {
     fetch("/api/model")
@@ -101,7 +163,7 @@ export function ModelPage() {
         setModel(data);
         setTreeVersion((v) => v + 1);
         setScanState("done");
-        setSelection(null);
+        setNav({ current: null, bbStack: [] });
       })
       .catch((err: Error) => {
         setError(err.message);
@@ -109,70 +171,114 @@ export function ModelPage() {
       });
   }, []);
 
+  const hasModel = model !== null && model.boundedContexts.length > 0;
+
   return (
-    <Container size="xl" py="xl">
-      <Stack gap="xl">
-        <Group justify="space-between" align="center">
-          <Text component="h1" size="xl" fw={700} c="gray.1">
-            Model
+    <Box className={classes.page}>
+      <Box className={classes.topBar}>
+        <Text component="h1" size="xl" fw={700} c="gray.1">
+          Model
+        </Text>
+        <Button
+          leftSection={
+            scanState === "scanning" ? (
+              <Loader size={16} color="white" />
+            ) : (
+              <IconRefresh size={16} stroke={1.5} />
+            )
+          }
+          onClick={handleScan}
+          disabled={scanState === "scanning"}
+          variant="light"
+          color="noesisBlue"
+        >
+          {scanState === "scanning" ? "Scanning..." : "Scan Repository"}
+        </Button>
+      </Box>
+
+      {error && (
+        <Box className={classes.errorBar}>
+          <Text size="sm" c="red.4">
+            {error}
           </Text>
-          <Button
-            leftSection={
-              scanState === "scanning" ? (
-                <Loader size={16} color="white" />
-              ) : (
-                <IconRefresh size={16} stroke={1.5} />
-              )
-            }
-            onClick={handleScan}
-            disabled={scanState === "scanning"}
-            variant="light"
-            color="noesisBlue"
-          >
-            {scanState === "scanning" ? "Scanning..." : "Scan Repository"}
-          </Button>
-        </Group>
+        </Box>
+      )}
 
-        {error && (
-          <Card withBorder radius="md" bg="dark.6" p="md">
-            <Text size="sm" c="red.4">
-              {error}
-            </Text>
-          </Card>
-        )}
-
-        {model !== null && model.boundedContexts.length > 0 ? (
-          <Grid gutter="lg" align="flex-start">
-            <Grid.Col span={{ base: 12, md: 6 }}>
+      {hasModel ? (
+        <Box className={classes.workspace}>
+          <Box className={classes.treeColumn}>
+            <Box className={classes.columnHeader}>
+              <Text
+                size="xs"
+                fw={700}
+                c="dimmed"
+                style={{ letterSpacing: "0.22em", textTransform: "uppercase" }}
+              >
+                Elements
+              </Text>
+            </Box>
+            <Box className={classes.scrollArea}>
               <ModelTreeView
                 key={treeVersion}
                 model={model}
-                selection={selection}
-                onSelect={setSelection}
+                current={current}
+                onSelect={pushView}
               />
-            </Grid.Col>
-            <Grid.Col span={{ base: 12, md: 6 }}>
-              <DetailsPanel selection={selection} />
-            </Grid.Col>
-          </Grid>
-        ) : scanState === "done" ? (
-          <EmptyState />
-        ) : scanState === "idle" ? (
-          <ScanPrompt />
-        ) : null}
-      </Stack>
-    </Container>
+            </Box>
+          </Box>
+
+          <Box className={classes.detailsColumn}>
+            <DetailsPanel
+              current={current}
+              canGoBack={canGoBack}
+              onBack={goBack}
+              onNavigate={pushView}
+              behaviorIndex={behaviorIndex}
+            />
+          </Box>
+        </Box>
+      ) : scanState === "done" ? (
+        <EmptyState />
+      ) : scanState === "idle" ? (
+        <ScanPrompt />
+      ) : null}
+    </Box>
   );
+}
+
+function currentBuildingBlock(view: View | null): BuildingBlockView | null {
+  if (view === null) return null;
+  if (view.kind === "buildingBlock") return view;
+  if (view.kind === "behavior") {
+    return { kind: "buildingBlock", buildingBlock: view.buildingBlock };
+  }
+  return null;
+}
+
+function isSameView(a: View, b: View): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "boundedContext" && b.kind === "boundedContext")
+    return a.name === b.name;
+  if (a.kind === "module" && b.kind === "module")
+    return a.fullPath === b.fullPath;
+  if (a.kind === "buildingBlock" && b.kind === "buildingBlock")
+    return a.buildingBlock.id === b.buildingBlock.id;
+  if (a.kind === "behavior" && b.kind === "behavior")
+    return (
+      a.behaviorId === b.behaviorId &&
+      a.buildingBlock.id === b.buildingBlock.id
+    );
+  return false;
 }
 
 function ModelTreeView({
   model,
-  selection,
+  current,
   onSelect,
 }: {
   model: DomainModelTree;
-  selection: Selection | null;
-  onSelect: (s: Selection) => void;
+  current: View | null;
+  onSelect: (v: View) => void;
 }) {
   return (
     <Stack gap="sm">
@@ -180,7 +286,7 @@ function ModelTreeView({
         <BoundedContextItem
           key={bc.name}
           bc={bc}
-          selection={selection}
+          current={current}
           onSelect={onSelect}
         />
       ))}
@@ -190,17 +296,17 @@ function ModelTreeView({
 
 function BoundedContextItem({
   bc,
-  selection,
+  current,
   onSelect,
 }: {
   bc: BoundedContextBranch;
-  selection: Selection | null;
-  onSelect: (s: Selection) => void;
+  current: View | null;
+  onSelect: (v: View) => void;
 }) {
   const [opened, setOpened] = useState(true);
   const hasChildren = bc.modules.length > 0 || bc.buildingBlocks.length > 0;
   const active =
-    selection?.kind === "boundedContext" && selection.name === bc.name;
+    current?.kind === "boundedContext" && current.name === bc.name;
 
   return (
     <Card withBorder radius="md" bg="dark.6" p={0}>
@@ -218,19 +324,19 @@ function BoundedContextItem({
         label={bc.name}
         badge={
           <Badge size="xs" variant="light" color="noesisIndigo" radius="xl">
-            Bounded Context
+            BC
           </Badge>
         }
         level={0}
       />
       <Collapse in={opened}>
-        <Box pl="lg" pb="xs">
+        <Box pl="md" pb="xs">
           {bc.modules.map((mod) => (
             <ModuleItem
               key={mod.fullPath}
               mod={mod}
               level={1}
-              selection={selection}
+              current={current}
               onSelect={onSelect}
             />
           ))}
@@ -239,7 +345,7 @@ function BoundedContextItem({
               key={bb.id}
               bb={bb}
               level={1}
-              selection={selection}
+              current={current}
               onSelect={onSelect}
             />
           ))}
@@ -252,18 +358,18 @@ function BoundedContextItem({
 function ModuleItem({
   mod,
   level,
-  selection,
+  current,
   onSelect,
 }: {
   mod: ModuleBranch;
   level: number;
-  selection: Selection | null;
-  onSelect: (s: Selection) => void;
+  current: View | null;
+  onSelect: (v: View) => void;
 }) {
   const [opened, setOpened] = useState(false);
   const hasChildren = mod.modules.length > 0 || mod.buildingBlocks.length > 0;
   const active =
-    selection?.kind === "module" && selection.fullPath === mod.fullPath;
+    current?.kind === "module" && current.fullPath === mod.fullPath;
 
   return (
     <Box>
@@ -281,21 +387,17 @@ function ModuleItem({
           </ThemeIcon>
         }
         label={mod.name}
-        badge={
-          <Badge size="xs" variant="light" color="noesisBlue" radius="xl">
-            Module
-          </Badge>
-        }
+        badge={null}
         level={level}
       />
       <Collapse in={opened}>
-        <Box pl="lg">
+        <Box pl="md">
           {mod.modules.map((child) => (
             <ModuleItem
               key={child.fullPath}
               mod={child}
               level={level + 1}
-              selection={selection}
+              current={current}
               onSelect={onSelect}
             />
           ))}
@@ -304,7 +406,7 @@ function ModuleItem({
               key={bb.id}
               bb={bb}
               level={level + 1}
-              selection={selection}
+              current={current}
               onSelect={onSelect}
             />
           ))}
@@ -317,41 +419,40 @@ function ModuleItem({
 function BuildingBlockItem({
   bb,
   level,
-  selection,
+  current,
   onSelect,
 }: {
   bb: BuildingBlock;
   level: number;
-  selection: Selection | null;
-  onSelect: (s: Selection) => void;
+  current: View | null;
+  onSelect: (v: View) => void;
 }) {
   const { icon, color } = blockTypeStyle(bb.type);
-  const active = selection?.kind === "buildingBlock" && selection.buildingBlock.id === bb.id;
+  const active =
+    (current?.kind === "buildingBlock" && current.buildingBlock.id === bb.id) ||
+    (current?.kind === "behavior" && current.buildingBlock.id === bb.id);
 
   return (
     <UnstyledButton
       onClick={() => onSelect({ kind: "buildingBlock", buildingBlock: bb })}
       w="100%"
       py={4}
-      px="sm"
-      pl={level * 8 + 12}
+      px="xs"
+      pl={level * 8 + 8}
       style={(theme) => ({
         borderRadius: theme.radius.sm,
         backgroundColor: active ? "rgba(79, 141, 226, 0.12)" : "transparent",
         transition: "background-color 150ms ease",
       })}
     >
-      <Group gap="xs">
-        <Box w={22} />
+      <Group gap={6} wrap="nowrap">
+        <Box w={16} />
         <ThemeIcon size="sm" variant="light" color={color} radius="sm">
           {icon}
         </ThemeIcon>
-        <Text size="sm" c="gray.2" fw={active ? 600 : 400}>
+        <Text size="sm" c="gray.2" fw={active ? 600 : 400} lineClamp={1} style={{ flex: 1 }}>
           {bb.name}
         </Text>
-        <Badge size="xs" variant="light" color={color} radius="xl">
-          {bb.type}
-        </Badge>
       </Group>
     </UnstyledButton>
   );
@@ -382,16 +483,16 @@ function TreeNodeButton({
     <UnstyledButton
       onClick={onSelect}
       w="100%"
-      py={8}
-      px="sm"
-      pl={level * 8 + 12}
+      py={6}
+      px="xs"
+      pl={level * 8 + 8}
       style={(theme) => ({
         borderRadius: theme.radius.sm,
         backgroundColor: active ? "rgba(79, 141, 226, 0.12)" : "transparent",
         transition: "background-color 150ms ease",
       })}
     >
-      <Group gap="xs">
+      <Group gap={6} wrap="nowrap">
         {hasChildren ? (
           <ActionIcon
             variant="subtle"
@@ -410,10 +511,10 @@ function TreeNodeButton({
             )}
           </ActionIcon>
         ) : (
-          <Box w={22} />
+          <Box w={16} />
         )}
         {icon}
-        <Text size="sm" fw={600} c="gray.1">
+        <Text size="sm" fw={600} c="gray.1" lineClamp={1} style={{ flex: 1 }}>
           {label}
         </Text>
         {badge}
@@ -422,40 +523,98 @@ function TreeNodeButton({
   );
 }
 
-function DetailsPanel({ selection }: { selection: Selection | null }) {
-  if (selection === null) {
+function DetailsPanel({
+  current,
+  canGoBack,
+  onBack,
+  onNavigate,
+  behaviorIndex,
+}: {
+  current: View | null;
+  canGoBack: boolean;
+  onBack: () => void;
+  onNavigate: (v: View) => void;
+  behaviorIndex: Map<string, BehaviorMeta>;
+}) {
+  if (current === null) {
     return (
-      <Card withBorder radius="md" bg="dark.6" p="lg">
+      <Box className={classes.detailsEmpty}>
         <Text size="sm" c="dimmed">
           Select an item on the left to see details.
         </Text>
-      </Card>
+      </Box>
     );
   }
 
-  if (selection.kind === "boundedContext") {
-    return (
-      <PlaceholderDetails
-        title={selection.name}
-        subtitle="Bounded Context"
-        color="noesisIndigo"
-        icon={<IconLayoutGrid size={16} stroke={1.5} />}
-      />
-    );
-  }
+  return (
+    <Box className={classes.detailsShell}>
+      <Box className={classes.detailsHeader}>
+        <BackButton canGoBack={canGoBack} onBack={onBack} />
+      </Box>
+      <Box
+        className={
+          current.kind === "behavior"
+            ? `${classes.detailsBody} ${classes.detailsBodyFlow}`
+            : classes.detailsBody
+        }
+      >
+        {current.kind === "boundedContext" && (
+          <PlaceholderDetails
+            title={current.name}
+            subtitle="Bounded Context"
+            color="noesisIndigo"
+            icon={<IconLayoutGrid size={18} stroke={1.5} />}
+          />
+        )}
+        {current.kind === "module" && (
+          <PlaceholderDetails
+            title={current.name}
+            subtitle={`Module · ${current.fullPath}`}
+            color="noesisBlue"
+            icon={<IconPackage size={18} stroke={1.5} />}
+          />
+        )}
+        {current.kind === "buildingBlock" && (
+          <BuildingBlockDetails
+            buildingBlock={current.buildingBlock}
+            onSelectBehavior={(behaviorId) =>
+              onNavigate({
+                kind: "behavior",
+                buildingBlock: current.buildingBlock,
+                behaviorId,
+              })
+            }
+          />
+        )}
+        {current.kind === "behavior" && (
+          <BehaviorDetails
+            view={current}
+            behaviorIndex={behaviorIndex}
+          />
+        )}
+      </Box>
+    </Box>
+  );
+}
 
-  if (selection.kind === "module") {
-    return (
-      <PlaceholderDetails
-        title={selection.name}
-        subtitle={`Module · ${selection.fullPath}`}
-        color="noesisBlue"
-        icon={<IconPackage size={16} stroke={1.5} />}
-      />
-    );
-  }
-
-  return <BuildingBlockDetails buildingBlock={selection.buildingBlock} />;
+function BackButton({
+  canGoBack,
+  onBack,
+}: {
+  canGoBack: boolean;
+  onBack: () => void;
+}) {
+  return (
+    <UnstyledButton
+      onClick={onBack}
+      disabled={!canGoBack}
+      className={classes.backButton}
+      data-disabled={!canGoBack}
+    >
+      <IconArrowLeft size={14} stroke={1.75} />
+      <span>Back</span>
+    </UnstyledButton>
+  );
 }
 
 function PlaceholderDetails({
@@ -470,41 +629,45 @@ function PlaceholderDetails({
   icon: React.ReactNode;
 }) {
   return (
-    <Card withBorder radius="md" bg="dark.6" p="lg">
-      <Stack gap="md">
-        <Group gap="xs">
-          <ThemeIcon size="md" variant="light" color={color} radius="sm">
-            {icon}
-          </ThemeIcon>
-          <Stack gap={0}>
-            <Text size="lg" fw={700} c="gray.1">
-              {title}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {subtitle}
-            </Text>
-          </Stack>
-        </Group>
-        <Text size="sm" c="dimmed">
-          Details coming soon.
-        </Text>
-      </Stack>
-    </Card>
+    <Box p="lg">
+      <Group gap="sm" align="center">
+        <ThemeIcon size="lg" variant="light" color={color} radius="sm">
+          {icon}
+        </ThemeIcon>
+        <Stack gap={2}>
+          <Text size="xl" fw={700} c="gray.1">
+            {title}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {subtitle}
+          </Text>
+        </Stack>
+      </Group>
+      <Text size="sm" c="dimmed" mt="lg">
+        Details coming soon.
+      </Text>
+    </Box>
   );
 }
 
-function BuildingBlockDetails({ buildingBlock }: { buildingBlock: BuildingBlock }) {
+function BuildingBlockDetails({
+  buildingBlock,
+  onSelectBehavior,
+}: {
+  buildingBlock: BuildingBlock;
+  onSelectBehavior: (behaviorId: string) => void;
+}) {
   const { icon, color } = blockTypeStyle(buildingBlock.type);
 
   return (
-    <Card withBorder radius="md" bg="dark.6" p="lg">
+    <Box p="lg">
       <Stack gap="md">
-        <Group gap="xs">
-          <ThemeIcon size="md" variant="light" color={color} radius="sm">
+        <Group gap="sm" align="center">
+          <ThemeIcon size="lg" variant="light" color={color} radius="sm">
             {icon}
           </ThemeIcon>
-          <Stack gap={0}>
-            <Text size="lg" fw={700} c="gray.1">
+          <Stack gap={2}>
+            <Text size="xl" fw={700} c="gray.1">
               {buildingBlock.name}
             </Text>
             <Group gap={6}>
@@ -519,9 +682,16 @@ function BuildingBlockDetails({ buildingBlock }: { buildingBlock: BuildingBlock 
         </Group>
 
         <Stack gap="xs">
-          <Text size="sm" fw={600} c="gray.2">
-            Behaviors
-          </Text>
+          <Group gap={8} align="center" justify="space-between">
+            <Text size="sm" fw={600} c="gray.2">
+              Behaviors
+            </Text>
+            {buildingBlock.behaviors.length > 0 && (
+              <Text size="xs" c="dimmed">
+                Click to open a behavior
+              </Text>
+            )}
+          </Group>
           {buildingBlock.behaviors.length === 0 ? (
             <Text size="sm" c="dimmed">
               No behaviors discovered.
@@ -529,40 +699,108 @@ function BuildingBlockDetails({ buildingBlock }: { buildingBlock: BuildingBlock 
           ) : (
             <Stack gap={4}>
               {buildingBlock.behaviors.map((behavior) => (
-                <BehaviorRow key={behavior.id} behavior={behavior} />
+                <BehaviorRow
+                  key={behavior.id}
+                  behavior={behavior}
+                  onSelect={() => onSelectBehavior(behavior.id)}
+                />
               ))}
             </Stack>
           )}
         </Stack>
       </Stack>
-    </Card>
+    </Box>
   );
 }
 
-function BehaviorRow({ behavior }: { behavior: Behavior }) {
+function BehaviorRow({
+  behavior,
+  onSelect,
+}: {
+  behavior: Behavior;
+  onSelect: () => void;
+}) {
   return (
-    <Group
-      gap="xs"
-      py={6}
+    <UnstyledButton
+      onClick={onSelect}
+      py={8}
       px="sm"
-      style={(theme) => ({
-        borderRadius: theme.radius.sm,
-        backgroundColor: "rgba(255,255,255,0.02)",
-      })}
+      w="100%"
+      className={classes.behaviorRow}
     >
-      <ThemeIcon size="sm" variant="light" color="yellow" radius="sm">
-        <IconBolt size={14} stroke={1.5} />
-      </ThemeIcon>
-      <Text size="sm" c="gray.2">
-        {behavior.name}
-      </Text>
-    </Group>
+      <Group gap="xs" justify="space-between" wrap="nowrap">
+        <Group gap="xs" wrap="nowrap">
+          <ThemeIcon size="sm" variant="light" color="yellow" radius="sm">
+            <IconBolt size={14} stroke={1.5} />
+          </ThemeIcon>
+          <Text size="sm" c="gray.2">
+            {behavior.name}
+          </Text>
+        </Group>
+        <IconChevronRight
+          size={14}
+          stroke={1.5}
+          color="var(--mantine-color-dark-2)"
+        />
+      </Group>
+    </UnstyledButton>
+  );
+}
+
+function BehaviorDetails({
+  view,
+  behaviorIndex,
+}: {
+  view: Extract<View, { kind: "behavior" }>;
+  behaviorIndex: Map<string, BehaviorMeta>;
+}) {
+  const focus = behaviorIndex.get(view.behaviorId) ?? {
+    id: view.behaviorId,
+    name: view.behaviorId,
+    blockId: view.buildingBlock.id,
+    blockName: view.buildingBlock.name,
+    blockType: view.buildingBlock.type,
+  };
+  const { icon, color } = blockTypeStyle(focus.blockType);
+
+  return (
+    <Box className={classes.behaviorDetails}>
+      <Box className={classes.behaviorHeader}>
+        <Group gap="sm" align="center" wrap="nowrap">
+          <ThemeIcon size="lg" variant="light" color="yellow" radius="sm">
+            <IconBolt size={18} stroke={1.5} />
+          </ThemeIcon>
+          <Stack gap={2} style={{ minWidth: 0 }}>
+            <Text size="xl" fw={700} c="gray.1" lineClamp={1}>
+              {focus.name}
+            </Text>
+            <Group gap={6} align="center">
+              <ThemeIcon size={14} variant="light" color={color} radius="sm">
+                {icon}
+              </ThemeIcon>
+              <Text size="xs" c="dimmed">
+                {focus.blockType}
+              </Text>
+              <Text size="xs" c="dimmed">
+                ·
+              </Text>
+              <Text size="xs" c="dark.1">
+                {focus.blockName}
+              </Text>
+            </Group>
+          </Stack>
+        </Group>
+      </Box>
+      <Box className={classes.behaviorFlow}>
+        <InvocationFlow focus={focus} behaviorIndex={behaviorIndex} />
+      </Box>
+    </Box>
   );
 }
 
 function EmptyState() {
   return (
-    <Card withBorder radius="md" bg="dark.6" p="xl">
+    <Card withBorder radius="md" bg="dark.6" p="xl" m="lg">
       <Stack align="center" gap="sm">
         <IconCube size={40} stroke={1} color="var(--mantine-color-gray-5)" />
         <Text size="sm" c="dimmed">
@@ -575,7 +813,7 @@ function EmptyState() {
 
 function ScanPrompt() {
   return (
-    <Card withBorder radius="md" bg="dark.6" p="xl">
+    <Card withBorder radius="md" bg="dark.6" p="xl" m="lg">
       <Stack align="center" gap="sm">
         <IconCube size={40} stroke={1} color="var(--mantine-color-gray-5)" />
         <Text size="sm" c="dimmed">
@@ -586,33 +824,34 @@ function ScanPrompt() {
   );
 }
 
-function blockTypeStyle(type: string): {
-  icon: React.ReactNode;
-  color: string;
-} {
-  switch (type) {
-    case "Aggregate":
-      return { icon: <IconStar size={14} stroke={1.5} />, color: "orange" };
-    case "Entity":
-      return { icon: <IconCube size={14} stroke={1.5} />, color: "teal" };
-    case "ValueObject":
-      return { icon: <IconShape size={14} stroke={1.5} />, color: "cyan" };
-    case "DomainEvent":
-      return { icon: <IconBox size={14} stroke={1.5} />, color: "grape" };
-    case "DomainService":
-      return { icon: <IconServer size={14} stroke={1.5} />, color: "violet" };
-    case "ApplicationService":
-      return { icon: <IconTool size={14} stroke={1.5} />, color: "blue" };
-    case "Repository":
-      return { icon: <IconDatabase size={14} stroke={1.5} />, color: "green" };
-    case "Factory":
-      return { icon: <IconTool size={14} stroke={1.5} />, color: "lime" };
-    case "BoundedContext":
-      return {
-        icon: <IconLayoutGrid size={14} stroke={1.5} />,
-        color: "noesisIndigo",
-      };
-    default:
-      return { icon: <IconCube size={14} stroke={1.5} />, color: "gray" };
+function buildBehaviorIndex(tree: DomainModelTree): Map<string, BehaviorMeta> {
+  const index = new Map<string, BehaviorMeta>();
+
+  const visitBlocks = (blocks: BuildingBlock[]) => {
+    for (const block of blocks) {
+      for (const behavior of block.behaviors) {
+        index.set(behavior.id, {
+          id: behavior.id,
+          name: behavior.name,
+          blockId: block.id,
+          blockName: block.name,
+          blockType: block.type,
+        });
+      }
+    }
+  };
+
+  const visitModules = (modules: ModuleBranch[]) => {
+    for (const mod of modules) {
+      visitBlocks(mod.buildingBlocks);
+      visitModules(mod.modules);
+    }
+  };
+
+  for (const bc of tree.boundedContexts) {
+    visitBlocks(bc.buildingBlocks);
+    visitModules(bc.modules);
   }
+
+  return index;
 }
