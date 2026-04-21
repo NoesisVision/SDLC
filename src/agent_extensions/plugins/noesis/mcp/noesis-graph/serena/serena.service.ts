@@ -55,12 +55,18 @@ export class SerenaService implements OnModuleInit, OnModuleDestroy {
       throw new Error("Serena is not connected");
     }
     const result = await this.client.callTool({ name, arguments: args });
-    if (result.isError) {
-      const errorText = extractText(result.content);
-      throw new Error(`Serena tool '${name}' failed: ${errorText}`);
-    }
     const text = extractText(result.content);
-    return JSON.parse(text) as T;
+    if (result.isError) {
+      throw new Error(`Serena tool '${name}' failed: ${text}`);
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      const snippet = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+      throw new Error(
+        `Serena tool '${name}' returned non-JSON response: ${snippet}`,
+      );
+    }
   }
 
   private async connect(): Promise<void> {

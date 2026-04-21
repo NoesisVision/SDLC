@@ -43,6 +43,17 @@ const DISQUALIFYING_METHOD_KEYWORDS = /\b(class|struct|interface|enum|record|del
 
 const DOMAIN_BEHAVIOR_ATTRIBUTE_PATTERN = /\[DomainBehavior(?:Attribute)?(?:\s*\(\s*"([^"]*)"\s*\))?\s*]/;
 
+const TECHNICAL_METHOD_NAMES = new Set([
+  "Equals",
+  "GetHashCode",
+  "GetType",
+  "ToString",
+  "Finalize",
+  "MemberwiseClone",
+  "Deconstruct",
+  "PrintMembers",
+]);
+
 interface BehaviorMatch {
   methodName: string;
   nameOverride: string | null;
@@ -513,6 +524,7 @@ function parseMethodStatement(
   const methodName = nameMatch[1];
   if (methodName === typeName) return null;
   if (methodName === "this" || methodName === "base") return null;
+  if (TECHNICAL_METHOD_NAMES.has(methodName)) return null;
 
   return { methodName, nameOverride };
 }

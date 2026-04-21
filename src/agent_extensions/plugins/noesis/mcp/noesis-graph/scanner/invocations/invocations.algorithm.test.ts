@@ -256,4 +256,92 @@ describe("computeInvocations", () => {
       destination: "Order.cs:Order:Notify",
     });
   });
+
+  test("parallel workers produce the same edges as sequential", async () => {
+    const rows: BehaviorRow[] = [
+      { id: "A.cs:A:a1", filePath: "A.cs", typeName: "A", methodName: "a1" },
+      { id: "A.cs:A:a2", filePath: "A.cs", typeName: "A", methodName: "a2" },
+      { id: "B.cs:B:b1", filePath: "B.cs", typeName: "B", methodName: "b1" },
+      { id: "B.cs:B:b2", filePath: "B.cs", typeName: "B", methodName: "b2" },
+    ];
+    const inv = behaviorsOf(rows);
+    const inheritance = extractInheritanceMap([
+      { relativePath: "A.cs", content: `public class A {}` },
+      { relativePath: "B.cs", content: `public class B {}` },
+    ]);
+    const serenaSpec = {
+      "A/a1|A.cs": [ref("A.cs", "A", "a2")],
+      "A/a2|A.cs": [ref("B.cs", "B", "b1")],
+      "B/b1|B.cs": [ref("B.cs", "B", "b2")],
+      "B/b2|B.cs": [],
+    };
+    const serena = makeFakeSerena(serenaSpec);
+    const input = { behaviors: rows, inv, inheritance, serena };
+    const sequential = await computeInvocations({ ...input, concurrency: 1 });
+    const parallel = await computeInvocations({ ...input, concurrency: 4 });
+    expect(sortEdges(parallel)).toEqual(sortEdges(sequential));
+  });
+
+  test("onProgress fires once per behavior", async () => {
+    const rows: BehaviorRow[] = [
+      { id: "A.cs:A:a1", filePath: "A.cs", typeName: "A", methodName: "a1" },
+      { id: "A.cs:A:a2", filePath: "A.cs", typeName: "A", methodName: "a2" },
+      { id: "A.cs:A:a3", filePath: "A.cs", typeName: "A", methodName: "a3" },
+    ];
+    const inv = behaviorsOf(rows);
+    const inheritance = extractInheritanceMap([
+      { relativePath: "A.cs", content: `public class A {}` },
+    ]);
+    const serena = makeFakeSerena({
+      "A/a1|A.cs": [],
+      "A/a2|A.cs": [],
+      "A/a3|A.cs": [],
+    });
+    const progress: Array<[number, number]> = [];
+    await computeInvocations({
+      behaviors: rows,
+      inv,
+      inheritance,
+      serena,
+      concurrency: 2,
+      onProgress: (done, total) => progress.push([done, total]),
+    });
+    expect(progress).toHaveLength(3);
+    expect(progress.map(([d]) => d).sort()).toEqual([1, 2, 3]);
+    expect(progress.every(([, t]) => t === 3)).toBe(true);
+  });
+
+  test("respects maxQueueStepsPerBehavior to bound pathological walks", async () => {
+    const rows: BehaviorRow[] = [
+      { id: "A.cs:A:root", filePath: "A.cs", typeName: "A", methodName: "root" },
+    ];
+    const inv = behaviorsOf(rows);
+    const inheritance = extractInheritanceMap([
+      { relativePath: "A.cs", content: `public class A {}` },
+    ]);
+    const chain: Record<string, SerenaReference[]> = { "A/root|A.cs": [ref("A.cs", "A", "h0")] };
+    for (let i = 0; i < 50; i++) {
+      chain[`A/h${i}|A.cs`] = [ref("A.cs", "A", `h${i + 1}`)];
+    }
+    const serena = makeFakeSerena(chain);
+    const calls: string[] = [];
+    const countingSerena = {
+      findReferencingSymbols: async (namePath: string, filePath: string) => {
+        calls.push(`${namePath}|${filePath}`);
+        return serena.findReferencingSymbols(namePath, filePath);
+      },
+    };
+    await computeInvocations({
+      behaviors: rows,
+      inv,
+      inheritance,
+      serena: countingSerena,
+      maxQueueStepsPerBehavior: 5,
+    });
+    expect(calls.length).toBeLessThanOrEqual(5);
+  });
 });
+
+function sortEdges(edges: Array<{ source: string; destination: string }>): Array<{ source: string; destination: string }> {
+  return [...edges].sort((a, b) => (a.source + a.destination).localeCompare(b.source + b.destination));
+}
