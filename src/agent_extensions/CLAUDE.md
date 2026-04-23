@@ -3,6 +3,8 @@
 ## General
 
 1. Agents read data via the Read tool. When a script produces output larger than 10 KB or needs to surface only a subset of a file, write the content to a tmp file and let the agent read it instead of returning it via stdout.
+2. Scripts and mcp tools should produce Markdown and accept JSON. Structure data as tool's input, compact and easy to read Markdown as an output consumed by agent.  
+3. If agent add data to mcp server the server is responsible for validating the input and returning errors. Agent must fix errors and add corrected data once again. Do not validate data in scripts outside mcp server in such cases.
 
 ## TypeScript scripts (Bun)
 
