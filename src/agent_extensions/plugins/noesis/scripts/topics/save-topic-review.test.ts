@@ -29,12 +29,11 @@ function makeConversation(): Conversation {
           { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
           { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
         ],
-        subtopics: [],
+        decisions: [],
         reviewed: false,
         decisions_extracted: false,
       },
     ],
-    decisions: [],
   };
 }
 
@@ -110,7 +109,7 @@ describe("saveTopicReview", () => {
       short_summary: "",
       long_summary: "",
       items: [],
-      subtopics: [],
+      decisions: [],
       reviewed: false,
       decisions_extracted: false,
     });

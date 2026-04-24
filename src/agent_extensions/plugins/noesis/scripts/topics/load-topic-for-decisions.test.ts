@@ -30,12 +30,11 @@ function makeConversation(decisionsExtracted: boolean = false): Conversation {
           { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
           { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
         ],
-        subtopics: [],
+        decisions: [],
         reviewed: true,
         decisions_extracted: decisionsExtracted,
       },
     ],
-    decisions: [],
   };
 }
 

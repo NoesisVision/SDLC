@@ -42,7 +42,7 @@ describe("initConversation", () => {
     expect(data.main_topic).toBe("Architecture review");
     expect(data.turns).toEqual([]);
     expect(data.topics).toEqual([]);
-    expect(data.decisions).toEqual([]);
+    expect(data.decisions).toBeUndefined();
   });
 });
 
@@ -79,12 +79,10 @@ describe("generateChunks", () => {
 
   test("creates multiple chunks when turns exceed limit", () => {
     const turns = makeTurns(10);
-    // Very small token limit to force multiple chunks
     const chunks = generateChunks(turns, tmpDir, 10);
 
     expect(chunks.length).toBeGreaterThan(1);
 
-    // Verify all turns are accounted for
     let totalTurns = 0;
     for (const chunk of chunks) {
       totalTurns += chunk.num_turns;
@@ -92,7 +90,6 @@ describe("generateChunks", () => {
     }
     expect(totalTurns).toBe(10);
 
-    // Verify sequential chunk IDs
     for (let i = 0; i < chunks.length; i++) {
       expect(chunks[i].chunk_id).toBe(i);
     }
@@ -118,10 +115,8 @@ describe("generateChunks", () => {
       { speaker: "A", time: "00:00:00", sentences: ["x".repeat(200)] },
       { speaker: "B", time: "00:01:00", sentences: ["y".repeat(200)] },
     ];
-    // Token limit of 1 is impossibly small
     const chunks = generateChunks(turns, tmpDir, 1);
 
-    // Each turn should still get its own chunk
     expect(chunks.length).toBe(2);
     expect(chunks[0].num_turns).toBe(1);
     expect(chunks[1].num_turns).toBe(1);
@@ -149,41 +144,8 @@ describe("prepareAnalysis", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("returns ConversationAlreadyAdded when ID exists in knowledge graph", async () => {
-    const transcriptPath = join(tmpDir, "meeting.md");
-    const kgPath = join(tmpDir, "kg.json");
-
-    writeFileSync(
-      transcriptPath,
-      '<!-- conversation_id: existing-id -->\n**00:01**\nAlice\nHello world.\n',
-      "utf-8",
-    );
-    writeFileSync(
-      kgPath,
-      JSON.stringify({
-        conversations: [{ conversation_id: "existing-id", time: "2026-01-01 10:00:00", main_topic: "Test", turns: [] }],
-        topics: [],
-        decisions: [],
-      }, null, 2),
-      "utf-8",
-    );
-
-    const result = await prepareAnalysis(
-      transcriptPath,
-      kgPath,
-      "2026-01-15 10:00:00",
-      "Test topic",
-    );
-
-    expect(result.status).toBe("ConversationAlreadyAdded");
-    expect(result.conversation_id).toBe("existing-id");
-    expect(result.chunks).toBeUndefined();
-    expect(result.structured_transcript_path).toBeUndefined();
-  });
-
   test("full pipeline: generates working dir, transcript, conversation, and chunks", async () => {
     const transcriptPath = join(tmpDir, "meeting.md");
-    const kgPath = join(tmpDir, "kg.json");
 
     writeFileSync(
       transcriptPath,
@@ -206,7 +168,6 @@ describe("prepareAnalysis", () => {
 
     const result = await prepareAnalysis(
       transcriptPath,
-      kgPath,
       "2026-01-15 10:00:00",
       "Architecture discussion",
     );
@@ -214,11 +175,9 @@ describe("prepareAnalysis", () => {
     expect(result.status).toBe("Ok");
     expect(result.working_dir).toContain("meeting_work");
     expect(result.conversation_id).toBeTruthy();
-    expect(result.chunks).toBeDefined();
-    expect(result.chunks!.length).toBeGreaterThan(0);
-    expect(result.structured_transcript_path).toBeDefined();
+    expect(result.chunks.length).toBeGreaterThan(0);
+    expect(result.structured_transcript_path).toBeTruthy();
 
-    // Verify conversation.json was created
     const convPath = join(result.working_dir, "conversation.json");
     expect(existsSync(convPath)).toBe(true);
     const conv = JSON.parse(readFileSync(convPath, "utf-8"));
@@ -226,23 +185,19 @@ describe("prepareAnalysis", () => {
     expect(conv.time).toBe("2026-01-15 10:00:00");
     expect(conv.main_topic).toBe("Architecture discussion");
 
-    // Verify chunks were written as markdown
-    for (const chunk of result.chunks!) {
+    for (const chunk of result.chunks) {
       expect(existsSync(chunk.file)).toBe(true);
       expect(chunk.file).toEndWith(".md");
     }
 
-    // Verify total turns across chunks equals transcript turns
-    const totalTurns = result.chunks!.reduce((sum, c) => sum + c.num_turns, 0);
+    const totalTurns = result.chunks.reduce((sum, c) => sum + c.num_turns, 0);
     expect(totalTurns).toBe(3);
 
-    // Cleanup generated working dir
     rmSync(result.working_dir, { recursive: true, force: true });
   });
 
   test("generates conversation ID when transcript has none", async () => {
     const transcriptPath = join(tmpDir, "no_id.md");
-    const kgPath = join(tmpDir, "kg.json");
 
     writeFileSync(
       transcriptPath,
@@ -252,7 +207,6 @@ describe("prepareAnalysis", () => {
 
     const result = await prepareAnalysis(
       transcriptPath,
-      kgPath,
       "2026-01-15 10:00:00",
       "Greeting",
     );
@@ -260,9 +214,29 @@ describe("prepareAnalysis", () => {
     expect(result.status).toBe("Ok");
     expect(result.conversation_id).toBeTruthy();
 
-    // Verify ID was prepended to transcript
     const content = readFileSync(transcriptPath, "utf-8");
     expect(content.startsWith("<!-- conversation_id:")).toBe(true);
+
+    rmSync(result.working_dir, { recursive: true, force: true });
+  });
+
+  test("reuses existing conversation id embedded in the transcript", async () => {
+    const transcriptPath = join(tmpDir, "has_id.md");
+
+    writeFileSync(
+      transcriptPath,
+      "<!-- conversation_id: existing-id -->\n**00:01**\nAlice\nHello world.\n",
+      "utf-8",
+    );
+
+    const result = await prepareAnalysis(
+      transcriptPath,
+      "2026-01-15 10:00:00",
+      "Test topic",
+    );
+
+    expect(result.status).toBe("Ok");
+    expect(result.conversation_id).toBe("existing-id");
 
     rmSync(result.working_dir, { recursive: true, force: true });
   });

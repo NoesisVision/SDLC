@@ -4,10 +4,12 @@ import type {
   Decision,
   DecisionOption,
   TopicItem,
+  TopicOverview,
 } from "../../../shared-contracts/topics.js";
 import type {
   Conversation,
   IdeaUnit,
+  IdeaUnitDetail,
   Turn,
 } from "../../../shared-contracts/conversation.js";
 import type { Document } from "../../../shared-contracts/documents.js";
@@ -20,7 +22,7 @@ import {
 } from "./knowledge.types.js";
 
 const SCHEMA_STATEMENTS = [
-  "CREATE NODE TABLE IF NOT EXISTS Topic(id STRING, title STRING, short_summary STRING, long_summary STRING, reviewed BOOL, decisions_extracted BOOL, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS Topic(id STRING, title STRING, short_summary STRING, long_summary STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS Decision(id STRING, title STRING, status STRING, context_text STRING, decision_text STRING, decision_rationale STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS AlternativeOption(id STRING, option_index INT64, text STRING, rationale STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS Document(id STRING, title STRING, date STRING, content STRING, PRIMARY KEY(id))",
@@ -49,8 +51,14 @@ export interface NewTopicInput {
   title: string;
   short_summary: string;
   long_summary: string;
-  reviewed: boolean;
-  decisions_extracted: boolean;
+}
+
+export interface TopicDetail {
+  id: string;
+  title: string;
+  short_summary: string;
+  long_summary: string;
+  path: string[];
 }
 
 @Injectable()
@@ -121,6 +129,7 @@ export class KnowledgeRepository {
           item.turn_index,
           item.idea_unit_index,
         );
+        if (await this.edgeExists("TOPIC_HAS_IDEA_UNIT", "Topic", topicId, "IdeaUnit", iuId)) continue;
         await this.linkTopicToIdeaUnit(topicId, iuId);
       } else {
         const fragId = await this.ensureDocumentFragmentNode(
@@ -128,6 +137,7 @@ export class KnowledgeRepository {
           item.start_offset,
           item.end_offset,
         );
+        if (await this.edgeExists("TOPIC_HAS_DOCUMENT_FRAGMENT", "Topic", topicId, "DocumentFragment", fragId)) continue;
         await this.linkTopicToDocumentFragment(topicId, fragId);
       }
     }
@@ -143,6 +153,10 @@ export class KnowledgeRepository {
     await this.ensureTopicDoesNotExist(topic.id);
     await this.insertTopicNode(topic);
     await this.linkTopicToSubtopic(parentTopicId, topic.id);
+  }
+
+  async hasConversation(conversationId: string): Promise<boolean> {
+    return this.nodeExists("Conversation", conversationId);
   }
 
   async insertConversation(conversation: Conversation): Promise<void> {
@@ -175,6 +189,83 @@ export class KnowledgeRepository {
     this.logger.log("Knowledge graph schema initialized");
   }
 
+  async listTopics(parentId: string | null): Promise<TopicOverview[]> {
+    const rows = parentId === null
+      ? await this.queryRootTopics()
+      : await this.querySubtopics(parentId);
+    const result: TopicOverview[] = [];
+    for (const row of rows) {
+      const path = await this.getTopicPath(row.id);
+      const has_subtopics = await this.hasSubtopics(row.id);
+      result.push({
+        id: row.id,
+        title: row.title,
+        short_summary: row.short_summary,
+        long_summary: row.long_summary,
+        has_subtopics,
+        path,
+      });
+    }
+    return result;
+  }
+
+  async readTopic(topicId: string): Promise<TopicDetail | null> {
+    const conn = this.db.getConnection();
+    const stmt = await conn.prepare(
+      "MATCH (t:Topic) WHERE t.id = $id RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary LIMIT 1",
+    );
+    const result = await conn.execute(stmt, { id: topicId });
+    const rows = asArray(result).getAllSync() as Array<{
+      id: string;
+      title: string;
+      short_summary: string;
+      long_summary: string;
+    }>;
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    const path = await this.getTopicPath(topicId);
+    return {
+      id: row.id,
+      title: row.title,
+      short_summary: row.short_summary,
+      long_summary: row.long_summary,
+      path,
+    };
+  }
+
+  async getPriorIdeaUnits(
+    topicId: string,
+    excludeConversationId: string,
+  ): Promise<IdeaUnitDetail[]> {
+    const conn = this.db.getConnection();
+    const stmt = await conn.prepare(
+      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn) " +
+        "WHERE t.id = $topicId AND u.conversation_id <> $excludeConversationId " +
+        "RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, " +
+        "u.sentences AS sentences, u.categories AS categories, turn.speaker AS speaker, turn.time AS time " +
+        "ORDER BY u.conversation_id, u.turn_index, u.idea_unit_index",
+    );
+    const result = await conn.execute(stmt, { topicId, excludeConversationId });
+    const rows = asArray(result).getAllSync() as Array<{
+      conversation_id: string;
+      turn_index: number | bigint;
+      idea_unit_index: number | bigint;
+      sentences: string[];
+      categories: string[];
+      speaker: string;
+      time: string;
+    }>;
+    return rows.map((r) => ({
+      conversation_id: r.conversation_id,
+      turn_index: Number(r.turn_index),
+      idea_unit_index: Number(r.idea_unit_index),
+      speaker: r.speaker,
+      time: r.time,
+      sentences: r.sentences,
+      categories: r.categories as IdeaUnitDetail["categories"],
+    }));
+  }
+
   async reparentTopic(
     topicId: string,
     newParentTopicId: string | null,
@@ -192,12 +283,47 @@ export class KnowledgeRepository {
     }
   }
 
+  async topicExists(topicId: string): Promise<boolean> {
+    return this.nodeExists("Topic", topicId);
+  }
+
+  async updateTopicFields(
+    topicId: string,
+    fields: { title: string; short_summary: string; long_summary: string },
+  ): Promise<void> {
+    const conn = this.db.getConnection();
+    const stmt = await conn.prepare(
+      "MATCH (t:Topic) WHERE t.id = $id SET t.title = $title, t.short_summary = $short_summary, t.long_summary = $long_summary",
+    );
+    await conn.execute(stmt, {
+      id: topicId,
+      title: fields.title,
+      short_summary: fields.short_summary,
+      long_summary: fields.long_summary,
+    });
+  }
+
   private async deleteParentEdgeOf(topicId: string): Promise<void> {
     const conn = this.db.getConnection();
     const stmt = await conn.prepare(
       "MATCH (:Topic)-[r:TOPIC_HAS_SUBTOPIC]->(c:Topic) WHERE c.id = $id DELETE r",
     );
     await conn.execute(stmt, { id: topicId });
+  }
+
+  private async edgeExists(
+    relName: string,
+    fromLabel: string,
+    fromId: string,
+    toLabel: string,
+    toId: string,
+  ): Promise<boolean> {
+    const conn = this.db.getConnection();
+    const stmt = await conn.prepare(
+      `MATCH (a:${fromLabel})-[:${relName}]->(b:${toLabel}) WHERE a.id = $fromId AND b.id = $toId RETURN a.id AS id LIMIT 1`,
+    );
+    const result = await conn.execute(stmt, { fromId, toId });
+    return asArray(result).getAllSync().length > 0;
   }
 
   private async ensureConversationDoesNotExist(id: string): Promise<void> {
@@ -251,6 +377,45 @@ export class KnowledgeRepository {
     if (await this.nodeExists("Topic", id)) {
       throw new Error(`Topic already exists: ${id}`);
     }
+  }
+
+  private async getTopicPath(topicId: string): Promise<string[]> {
+    const titles: string[] = [];
+    let currentId: string | null = topicId;
+    const visited = new Set<string>();
+    while (currentId !== null) {
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
+      const conn = this.db.getConnection();
+      const stmt = await conn.prepare(
+        "MATCH (t:Topic) WHERE t.id = $id RETURN t.title AS title LIMIT 1",
+      );
+      const result = await conn.execute(stmt, { id: currentId });
+      const rows = asArray(result).getAllSync() as Array<{ title: string }>;
+      if (rows.length === 0) break;
+      titles.unshift(rows[0].title);
+      currentId = await this.findParentTopicId(currentId);
+    }
+    return titles;
+  }
+
+  private async findParentTopicId(topicId: string): Promise<string | null> {
+    const conn = this.db.getConnection();
+    const stmt = await conn.prepare(
+      "MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(c:Topic) WHERE c.id = $id RETURN p.id AS id LIMIT 1",
+    );
+    const result = await conn.execute(stmt, { id: topicId });
+    const rows = asArray(result).getAllSync() as Array<{ id: string }>;
+    return rows.length === 0 ? null : rows[0].id;
+  }
+
+  private async hasSubtopics(topicId: string): Promise<boolean> {
+    const conn = this.db.getConnection();
+    const stmt = await conn.prepare(
+      "MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(:Topic) WHERE p.id = $id RETURN p.id AS id LIMIT 1",
+    );
+    const result = await conn.execute(stmt, { id: topicId });
+    return asArray(result).getAllSync().length > 0;
   }
 
   private async insertAlternativeOptionNode(
@@ -323,15 +488,13 @@ export class KnowledgeRepository {
   private async insertTopicNode(topic: NewTopicInput): Promise<void> {
     const conn = this.db.getConnection();
     const stmt = await conn.prepare(
-      "CREATE (t:Topic {id: $id, title: $title, short_summary: $short_summary, long_summary: $long_summary, reviewed: $reviewed, decisions_extracted: $decisions_extracted})",
+      "CREATE (t:Topic {id: $id, title: $title, short_summary: $short_summary, long_summary: $long_summary})",
     );
     await conn.execute(stmt, {
       id: topic.id,
       title: topic.title,
       short_summary: topic.short_summary,
       long_summary: topic.long_summary,
-      reviewed: topic.reviewed,
-      decisions_extracted: topic.decisions_extracted,
     });
   }
 
@@ -487,6 +650,39 @@ export class KnowledgeRepository {
     const result = await conn.execute(stmt, { id });
     const rows = asArray(result).getAllSync();
     return rows.length > 0;
+  }
+
+  private async queryRootTopics(): Promise<Array<{ id: string; title: string; short_summary: string; long_summary: string }>> {
+    const conn = this.db.getConnection();
+    const result = await conn.query(
+      "MATCH (t:Topic) WHERE NOT EXISTS { MATCH (:Topic)-[:TOPIC_HAS_SUBTOPIC]->(t) } " +
+        "RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary " +
+        "ORDER BY t.title",
+    );
+    return asArray(result).getAllSync() as Array<{
+      id: string;
+      title: string;
+      short_summary: string;
+      long_summary: string;
+    }>;
+  }
+
+  private async querySubtopics(
+    parentId: string,
+  ): Promise<Array<{ id: string; title: string; short_summary: string; long_summary: string }>> {
+    const conn = this.db.getConnection();
+    const stmt = await conn.prepare(
+      "MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(t:Topic) WHERE p.id = $parentId " +
+        "RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary " +
+        "ORDER BY t.title",
+    );
+    const result = await conn.execute(stmt, { parentId });
+    return asArray(result).getAllSync() as Array<{
+      id: string;
+      title: string;
+      short_summary: string;
+      long_summary: string;
+    }>;
   }
 
   private async requireAlternative(

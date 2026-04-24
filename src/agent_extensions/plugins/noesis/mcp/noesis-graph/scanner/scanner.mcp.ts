@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ScannerService } from "./scanner.service.js";
 import { InvocationsService } from "./invocations/invocations.service.js";
+import { runFileOutputTool } from "../mcp-tool-output.js";
 
 export function registerScannerTools(
   mcp: McpServer,
@@ -14,7 +15,8 @@ export function registerScannerTools(
       description:
         "Returns the domain model from the knowledge graph (Bounded Contexts, Modules, Building Blocks). " +
         "Optionally filter to a specific Bounded Context (by name) or Module (by full path, e.g. 'Sales.Orders'). " +
-        "If no filter is given the full tree is returned.",
+        "If no filter is given the full tree is returned. " +
+        "Writes JSON to a tmp file and returns the file path — read it with the Read tool.",
       inputSchema: {
         boundedContextName: z
           .string()
@@ -26,15 +28,13 @@ export function registerScannerTools(
           .describe("Full dotted path of the Module to return. Mutually exclusive with boundedContextName."),
       },
     },
-    async ({ boundedContextName, modulePath }) => {
-      try {
-        const part = await scanner.getDomainModelPart({ boundedContextName, modulePath });
-        return { content: [{ type: "text", text: JSON.stringify(part, null, 2) }] };
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: "text", text: message }], isError: true };
-      }
-    },
+    async ({ boundedContextName, modulePath }) =>
+      runFileOutputTool(
+        "get_domain_model",
+        () => scanner.getDomainModelPart({ boundedContextName, modulePath }),
+        (part) => JSON.stringify(part, null, 2),
+        "json",
+      ),
   );
 
   mcp.registerTool(
@@ -42,7 +42,8 @@ export function registerScannerTools(
     {
       description:
         "Returns Invokes relations between domain behaviors. Each edge connects a source behavior to a destination behavior. " +
-        "Optionally filter by source or destination behavior id (mutually exclusive).",
+        "Optionally filter by source or destination behavior id (mutually exclusive). " +
+        "Writes JSON to a tmp file and returns the file path — read it with the Read tool.",
       inputSchema: {
         sourceBehaviorId: z
           .string()
@@ -54,19 +55,16 @@ export function registerScannerTools(
           .describe("Return only invocations incoming to this behavior. Mutually exclusive with sourceBehaviorId."),
       },
     },
-    async ({ sourceBehaviorId, destinationBehaviorId }) => {
-      try {
-        const edges = await invocations.getBehaviorInvocations({
-          sourceBehaviorId,
-          destinationBehaviorId,
-        });
-        return {
-          content: [{ type: "text", text: JSON.stringify({ invocations: edges }, null, 2) }],
-        };
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: "text", text: message }], isError: true };
-      }
-    },
+    async ({ sourceBehaviorId, destinationBehaviorId }) =>
+      runFileOutputTool(
+        "get_behavior_invocations",
+        () =>
+          invocations.getBehaviorInvocations({
+            sourceBehaviorId,
+            destinationBehaviorId,
+          }),
+        (edges) => JSON.stringify({ invocations: edges }, null, 2),
+        "json",
+      ),
   );
 }

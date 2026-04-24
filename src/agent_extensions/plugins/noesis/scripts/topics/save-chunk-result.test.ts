@@ -11,7 +11,6 @@ function makeConversation(): Conversation {
     main_topic: "Test",
     turns: [],
     topics: [],
-    decisions: [],
   };
 }
 
@@ -78,7 +77,7 @@ describe("saveChunkResult", () => {
         short_summary: "",
         long_summary: "",
         items: [],
-        subtopics: [],
+        decisions: [],
         reviewed: false,
         decisions_extracted: false,
       },

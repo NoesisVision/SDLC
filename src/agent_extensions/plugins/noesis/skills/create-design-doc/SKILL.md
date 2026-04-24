@@ -11,6 +11,7 @@ description: Create a design document (specification) for codebase changes based
 - Ground the design in existing domain knowledge from the knowledge graph.
 - Produce a precise, actionable design doc — not a vague overview.
 - Use ChangeSet semantics: first iteration puts everything in `added`; subsequent iterations use `added`/`removed`/`modified` as diffs.
+- Query the knowledge graph ONLY via `noesis-graph` MCP tools.
 
 ## Environment
 
@@ -21,20 +22,16 @@ description: Create a design document (specification) for codebase changes based
 ## Setup
 
 - **Input path:** Get from `$ARGUMENTS`. A file or directory containing input documents (requirements, specs, notes, etc.). Ask user if missing.
-- **Knowledge graph path:** Get from `$ARGUMENTS`. Try to find a `knowledge-graph.json` file in the workspace if not provided. Ask user if cannot find.
 - **Output path:** Get from `$ARGUMENTS`. Path for the output JSON file. Ask user if missing — suggest locations like `work_items/` or next to input files.
 
 ## Workflow
 
 ### Step 1: Get current design from knowledge graph
 
-1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/list-topics.ts <knowledge_graph_path> > <tmp_file>`.
-2. Read `<tmp_file>` using the Read tool.
-3. Identify root topics that relate to the input subject area.
-4. For each related root topic with `has_subtopics: true`, drill down:
-   - Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/list-topics.ts <knowledge_graph_path> --parent_id <topic_id> > <tmp_file>`.
-   - Read `<tmp_file>`.
-5. Collect IDs of all relevant topics (prefer mid-level topics that cover the area comprehensively).
+1. Call MCP tool `noesis-graph:list_topics` with no `parent_topic_id`. The response is JSON `{ "file": "<path>.md", ... }` — read that file with the Read tool to see the topic list.
+2. Identify root topics that relate to the input subject area.
+3. For each related root topic with `has_subtopics: yes`, drill down by calling `noesis-graph:list_topics` with `parent_topic_id: <topic_id>` (again, read the returned file path with the Read tool).
+4. Collect IDs of all relevant topics (prefer mid-level topics that cover the area comprehensively).
 
 ### Step 2: Parse and classify input
 
@@ -49,11 +46,7 @@ description: Create a design document (specification) for codebase changes based
 
 ### Step 3: Get relevant topic details from knowledge graph
 
-For each relevant topic ID collected in Step 1:
-
-1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/read-node.ts <knowledge_graph_path> <topic_id> > <tmp_file>`.
-2. Read `<tmp_file>`.
-3. Extract domain context: existing bounded contexts, building blocks, patterns, decisions, and terminology.
+For each relevant topic ID collected in Step 1, call MCP tool `noesis-graph:read_topic` with `topic_id: <id>`. The response is JSON `{ "file": "<path>.md", ... }` — read that file with the Read tool. Extract domain context from the long summary: existing bounded contexts, building blocks, patterns, decisions, and terminology.
 
 ### Step 4: Design analysis
 
@@ -107,7 +100,7 @@ All collection fields use `ChangeSet` wrappers. For first-time design, put all i
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/<path>.ts`.
 - NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Use `>` ONLY to capture script stdout to `<tmp_file>`. Use the Write tool for all other file writes.
-- Use Read tool ONLY for `<tmp_file>` and input documents. NEVER use Read or Bash to inspect the knowledge graph file directly.
+- Query the knowledge graph ONLY via `noesis-graph` MCP tools. Read-style tools (`list_topics`, `read_topic`) return a tmp file path in their JSON response — always read that file with the Read tool to see the actual content.
 - NEVER write inline code in Bash. Use only the provided scripts.
 - For first-time designs (no existing design to diff against), put everything in `added` arrays within ChangeSets.
 - Reuse terminology and naming from the knowledge graph to maintain consistency.

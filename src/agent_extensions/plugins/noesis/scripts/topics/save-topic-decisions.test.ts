@@ -16,17 +16,16 @@ function makeConversation(): Conversation {
         short_summary: "Summary",
         long_summary: "Long summary",
         items: [],
-        subtopics: [],
+        decisions: [],
         reviewed: true,
         decisions_extracted: false,
       },
     ],
-    decisions: [],
   };
 }
 
 describe("saveTopicDecisions", () => {
-  test("appends decisions and marks topic as extracted", () => {
+  test("appends decisions to the topic and marks it as extracted", () => {
     const conv = makeConversation();
     const result: DecisionExtractionResult = {
       topic_id: "topic-1",
@@ -51,8 +50,8 @@ describe("saveTopicDecisions", () => {
 
     saveTopicDecisions(conv, result);
 
-    expect(conv.decisions).toHaveLength(1);
-    expect(conv.decisions[0].title).toBe("Use microservices");
+    expect(conv.topics[0].decisions).toHaveLength(1);
+    expect(conv.topics[0].decisions[0].title).toBe("Use microservices");
     expect(conv.topics[0].decisions_extracted).toBe(true);
   });
 
@@ -81,12 +80,12 @@ describe("saveTopicDecisions", () => {
     };
 
     saveTopicDecisions(conv, result);
-    expect(conv.decisions).toHaveLength(2);
+    expect(conv.topics[0].decisions).toHaveLength(2);
   });
 
-  test("preserves existing decisions", () => {
+  test("preserves previously extracted decisions on the topic", () => {
     const conv = makeConversation();
-    conv.decisions = [
+    conv.topics[0].decisions = [
       {
         id: "dec-existing",
         title: "Existing",
@@ -112,8 +111,8 @@ describe("saveTopicDecisions", () => {
     };
 
     saveTopicDecisions(conv, result);
-    expect(conv.decisions).toHaveLength(2);
-    expect(conv.decisions[0].title).toBe("Existing");
-    expect(conv.decisions[1].title).toBe("New");
+    expect(conv.topics[0].decisions).toHaveLength(2);
+    expect(conv.topics[0].decisions[0].title).toBe("Existing");
+    expect(conv.topics[0].decisions[1].title).toBe("New");
   });
 });

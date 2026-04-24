@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  DecisionSchema,
   IdeaUnitReassignmentSchema,
   IdeaUnitTopicAssignmentSchema,
   PotentialTopicSchema,
@@ -37,7 +36,6 @@ export const ConversationSchema = z.object({
   main_topic: z.string(),
   turns: z.array(TurnSchema),
   topics: z.array(TopicSchema),
-  decisions: z.array(DecisionSchema),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 

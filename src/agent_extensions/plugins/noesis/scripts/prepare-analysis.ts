@@ -1,16 +1,11 @@
-import { mkdirSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { exitError, outputResult, parseArgs, readJson, requireFile } from "./io.js";
 import { getWorkingDir } from "./transcript/working-dir.js";
-import {
-  extractConversationId,
-  isIdInKnowledgeGraph,
-  prependConversationId,
-} from "./transcript/check-conversation-id.js";
 import { structureTranscript } from "./transcript/structure-transcript.js";
-import { RawTranscriptSchema } from "./transcript/types.js";
+import { CONVERSATION_ID_PATTERN, RawTranscriptSchema } from "./transcript/types.js";
 import type { RawTurn } from "./transcript/types.js";
 import { ConversationSchema } from "../shared-contracts/conversation.js";
 
@@ -24,11 +19,11 @@ const ChunkInfoSchema = z.object({
 });
 
 const PrepareResultSchema = z.object({
-  status: z.enum(["Ok", "ConversationAlreadyAdded"]),
+  status: z.literal("Ok"),
   working_dir: z.string(),
   conversation_id: z.string(),
-  chunks: z.array(ChunkInfoSchema).optional(),
-  structured_transcript_path: z.string().optional(),
+  chunks: z.array(ChunkInfoSchema),
+  structured_transcript_path: z.string(),
 });
 type PrepareResult = z.infer<typeof PrepareResultSchema>;
 
@@ -76,7 +71,6 @@ export function initConversation(
     main_topic: mainTopic,
     turns: [],
     topics: [],
-    decisions: [],
   };
 
   ConversationSchema.parse(conversation);
@@ -89,7 +83,6 @@ export function initConversation(
 
 export async function prepareAnalysis(
   transcriptPath: string,
-  knowledgeGraphPath: string,
   conversationTime: string,
   mainTopic: string,
   tokenLimit: number = DEFAULT_TOKEN_LIMIT,
@@ -97,18 +90,7 @@ export async function prepareAnalysis(
   const workingDir = getWorkingDir(transcriptPath);
   mkdirSync(workingDir, { recursive: true });
 
-  const { conversationId, alreadyAdded } = resolveConversationId(
-    transcriptPath,
-    knowledgeGraphPath,
-  );
-
-  if (alreadyAdded) {
-    return {
-      status: "ConversationAlreadyAdded",
-      working_dir: workingDir,
-      conversation_id: conversationId,
-    };
-  }
+  const conversationId = resolveConversationId(transcriptPath);
 
   const structureResult = structureTranscript(transcriptPath, conversationId);
   if (structureResult.status === "Error") {
@@ -153,23 +135,19 @@ function estimateTurnChars(turn: RawTurn): number {
   );
 }
 
-function resolveConversationId(
-  transcriptPath: string,
-  knowledgeGraphPath: string,
-): { conversationId: string; alreadyAdded: boolean } {
-  const existing = extractConversationId(transcriptPath);
+function resolveConversationId(transcriptPath: string): string {
+  const content = readFileSync(transcriptPath, "utf-8");
+  const firstLine = content.split("\n", 1)[0];
+  const match = CONVERSATION_ID_PATTERN.exec(firstLine);
+  if (match !== null) return match[1];
 
-  if (existing === null) {
-    const newId = randomUUID();
-    prependConversationId(newId, transcriptPath);
-    return { conversationId: newId, alreadyAdded: false };
-  }
-
-  if (isIdInKnowledgeGraph(existing, knowledgeGraphPath)) {
-    return { conversationId: existing, alreadyAdded: true };
-  }
-
-  return { conversationId: existing, alreadyAdded: false };
+  const newId = randomUUID();
+  writeFileSync(
+    transcriptPath,
+    `<!-- conversation_id: ${newId} -->\n${content}`,
+    "utf-8",
+  );
+  return newId;
 }
 
 function selectTurnsWithinLimit(
@@ -196,7 +174,7 @@ function selectTurnsWithinLimit(
 
 async function main(): Promise<void> {
   const args = parseArgs(
-    ["transcript_path", "knowledge_graph_path", "conversation_time", "main_topic"],
+    ["transcript_path", "conversation_time", "main_topic"],
     ["token_limit"],
   );
   requireFile(args["transcript_path"]);
@@ -211,7 +189,6 @@ async function main(): Promise<void> {
 
   const result = await prepareAnalysis(
     args["transcript_path"],
-    args["knowledge_graph_path"],
     args["conversation_time"],
     args["main_topic"],
     tokenLimit,

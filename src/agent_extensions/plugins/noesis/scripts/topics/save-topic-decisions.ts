@@ -10,7 +10,7 @@ export function saveTopicDecisions(
   result: DecisionExtractionResult,
 ): void {
   const topic = findTopicOrFail(conversation.topics, result.topic_id);
-  conversation.decisions.push(...result.decisions);
+  topic.decisions.push(...result.decisions);
   topic.decisions_extracted = true;
 }
 

@@ -5,31 +5,33 @@ Review a single topic from the conversation — check idea unit coherence, gener
 ## Input
 
 - `<working_dir>` — path to the working directory.
-- `<knowledge_graph_path>` — path to the knowledge graph JSON file.
 
 ## Workflow
 
 ### Step 1: Load topic for review
 
-1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/load-topic-for-review.ts <working_dir> <knowledge_graph_path> > {working_dir}/tmp_review_status.json`. The enriched topic is written to `{working_dir}/review_topic.md`.
-2. Read `{working_dir}/tmp_review_status.json` using the Read tool. It contains `has_topic`, `topic_id`, `topic_title`, `num_items`, `has_decision_units`, and `topic_path`.
-3. If `has_topic` is `false`, return `{"has_topic": false}` and stop.
-4. Read the enriched topic from `{working_dir}/review_topic.md` using the Read tool. The file is markdown:
-   ```
-   # <topic title>
-   - **ID:** <topic_id>
-   - **Conversation:** <conversation_id>
-   - **Summary:** <short_summary>
-   - **Long summary:** <long_summary>
+1. Call MCP tool `noesis-graph:get_topic_for_review` with `conversation_path: {working_dir}/conversation.json`. The response is JSON:
+   - If it is `{ "status": "Done" }`, return `{"has_topic": false}` and stop.
+   - Otherwise it is `{ "status": "Ok", "file": "<path>.md", ... }`. Read the `file` path with the Read tool. The file starts with HTML-comment metadata (`topic_id`, `num_items`, `has_decision_units`) followed by the enriched topic Markdown:
+     ```
+     <!-- topic_id: <id> -->
+     <!-- num_items: <n> -->
+     <!-- has_decision_units: true|false -->
 
-   ## Idea Units
+     # <topic title>
+     - **ID:** <topic_id>
+     - **Conversation:** <conversation_id>
+     - **Summary:** <short_summary>
+     - **Long summary:** <long_summary>
 
-   ### [T<turn_index>:IU<idea_unit_index>] <time> — <speaker> [<categories>]
-   <sentences joined as text>
-   ```
-   Purely Irrelevant units are already filtered out. Idea units marked `[prior conversation]` come from the knowledge graph — use them for context when generating summaries, but do NOT reassign them (they belong to a different conversation).
-5. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/read-potential-topics.ts <working_dir> > {working_dir}/tmp_potential_topics.json`.
-6. Read `{working_dir}/tmp_potential_topics.json` using the Read tool. It contains `{"status": "Ok", "topics": [{"id", "title", "short_summary", "path", "is_new", "parent_id"}, ...]}` — a flat list of all known topics with their hierarchy paths.
+     ## Idea Units
+
+     ### [T<turn_index>:IU<idea_unit_index>] <time> — <speaker> [<categories>]
+     <sentences joined as text>
+     ```
+   - Purely Irrelevant units are already filtered out. Idea units marked `[prior conversation]` come from the knowledge graph — use them for context when generating summaries, but do NOT reassign them (they belong to a different conversation).
+2. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/read-potential-topics.ts <working_dir> > {working_dir}/tmp_potential_topics.json`.
+3. Read `{working_dir}/tmp_potential_topics.json` using the Read tool. It contains `{"status": "Ok", "topics": [{"id", "title", "short_summary", "path", "is_new", "parent_id"}, ...]}` — a flat list of all known topics with their hierarchy paths.
 
 ### Step 2: Evaluate idea unit coherence
 
@@ -70,11 +72,11 @@ Write the JSON to `{working_dir}/topic_review_tmp.json` using the Write tool, th
 
 ### Step 5: Extract decisions (conditional)
 
-If `has_decision_units` from Step 1 is `false`, skip to Step 7.
+If `has_decision_units` (from the HTML-comment metadata in Step 1) is `false`, skip to Step 7.
 
 1. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/topics/load-topic-for-decisions.ts <working_dir> --topic_id <topic_id> > {working_dir}/tmp_decisions_status.json`. The enriched topic is written to `{working_dir}/decisions_topic.md`.
 2. Read `{working_dir}/tmp_decisions_status.json` using the Read tool.
-3. Read the enriched topic from `{working_dir}/decisions_topic.md` using the Read tool. Same markdown format as `review_topic.md`, but contains only idea units from the current conversation (non-Irrelevant).
+3. Read the enriched topic from `{working_dir}/decisions_topic.md` using the Read tool. Same markdown format as review output, but contains only idea units from the current conversation (non-Irrelevant).
 
 ### Step 6: Identify and save decisions
 
@@ -116,7 +118,8 @@ Return `{"has_topic": true, "topic_id": "<reviewed topic's id>"}` to the caller.
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/<path>.ts`.
 - NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Use `>` ONLY to capture script stdout to tmp files. Use the Write tool for all other file writes.
-- Use Read tool ONLY for data files explicitly listed in this workflow (`review_topic.md`, `decisions_topic.md`, `tmp_review_status.json`, `tmp_potential_topics.json`, `tmp_decisions_status.json`). NEVER use Read or Bash to inspect other working directory files.
+- Use Read tool ONLY for data files explicitly listed in this workflow (`decisions_topic.md`, `tmp_decisions_status.json`, `tmp_potential_topics.json`) and for paths returned in MCP tool responses. NEVER use Read or Bash to inspect other working directory files.
+- Query the knowledge graph ONLY via `noesis-graph` MCP tools. Read-style tools return a tmp file path in their JSON response — always read that file with the Read tool to see the actual content.
 - NEVER write inline code in Bash. Use only the provided scripts.
 - Write only temporary JSON files (e.g. `topic_review_tmp.json`, `decisions_tmp.json`) via the Write tool — scripts handle validation and persistence.
 - Only reassign an idea unit when the mismatch is clear. When in doubt, keep it in the current topic.

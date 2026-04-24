@@ -49,26 +49,27 @@ export const DecisionSchema = z.object({
 });
 export type Decision = z.infer<typeof DecisionSchema>;
 
-export const TopicSchema: z.ZodType<Topic> = z.object({
+export const TopicSchema = z.object({
   id: z.string(),
   title: z.string(),
   short_summary: z.string(),
   long_summary: z.string(),
   items: z.array(TopicItemSchema),
-  subtopics: z.lazy(() => z.array(TopicSchema)),
+  decisions: z.array(DecisionSchema).default(() => []),
   reviewed: z.boolean().default(false),
   decisions_extracted: z.boolean().default(false),
 });
-export type Topic = {
-  id: string;
-  title: string;
-  short_summary: string;
-  long_summary: string;
-  items: TopicItem[];
-  subtopics: Topic[];
-  reviewed: boolean;
-  decisions_extracted: boolean;
-};
+export type Topic = z.infer<typeof TopicSchema>;
+
+export const TopicOverviewSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  short_summary: z.string(),
+  long_summary: z.string(),
+  has_subtopics: z.boolean(),
+  path: z.array(z.string()),
+});
+export type TopicOverview = z.infer<typeof TopicOverviewSchema>;
 
 export const PotentialTopicSchema = z.object({
   id: z.string(),
@@ -109,32 +110,6 @@ export type DecisionExtractionResult = z.infer<
   typeof DecisionExtractionResultSchema
 >;
 
-// --- Path functions ---
-
-export function buildTopicPath(roots: Topic[], targetId: string): string[] {
-  const path: string[] = [];
-  findPathRecursive(roots, targetId, path);
-  return path;
-}
-
-function findPathRecursive(
-  topics: Topic[],
-  targetId: string,
-  path: string[],
-): boolean {
-  for (const topic of topics) {
-    path.push(topic.title);
-    if (topic.id === targetId) {
-      return true;
-    }
-    if (findPathRecursive(topic.subtopics, targetId, path)) {
-      return true;
-    }
-    path.pop();
-  }
-  return false;
-}
-
 // --- Domain functions ---
 
 export function createTopicFromPotential(
@@ -148,26 +123,10 @@ export function createTopicFromPotential(
     short_summary: match?.short_summary ?? "",
     long_summary: "",
     items: [],
-    subtopics: [],
+    decisions: [],
     reviewed: false,
     decisions_extracted: false,
   };
-}
-
-export function findTopicInHierarchy(
-  topics: Topic[],
-  topicId: string,
-): Topic | null {
-  for (const topic of topics) {
-    if (topic.id === topicId) {
-      return topic;
-    }
-    const found = findTopicInHierarchy(topic.subtopics, topicId);
-    if (found !== null) {
-      return found;
-    }
-  }
-  return null;
 }
 
 export function findTopicOrFail(topics: Topic[], topicId: string): Topic {
@@ -217,9 +176,3 @@ export function appendNewTopics(
   return merged;
 }
 
-export function topicItemKey(item: TopicItem): string {
-  if (item.type === "conversation_idea_unit") {
-    return `${item.type}:${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
-  }
-  return `${item.type}:${item.document_id}:${item.start_offset}:${item.end_offset}`;
-}

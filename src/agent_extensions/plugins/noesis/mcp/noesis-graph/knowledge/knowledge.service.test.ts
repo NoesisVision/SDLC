@@ -436,6 +436,231 @@ describe("KnowledgeService", () => {
     });
   });
 
+  describe("listTopics", () => {
+    test("lists root topics with path and has_subtopics flag", async () => {
+      await service.addTopic({ id: "r1", title: "Alpha", short_summary: "a" });
+      await service.addTopic({ id: "r2", title: "Beta", short_summary: "b" });
+      await service.addSubtopic("r1", { id: "r1c", title: "Alpha-child", short_summary: "c" });
+
+      const topics = await service.listTopics(null);
+      expect(topics.map((t) => t.id).sort()).toEqual(["r1", "r2"]);
+      const alpha = topics.find((t) => t.id === "r1")!;
+      expect(alpha.has_subtopics).toBe(true);
+      expect(alpha.path).toEqual(["Alpha"]);
+      const beta = topics.find((t) => t.id === "r2")!;
+      expect(beta.has_subtopics).toBe(false);
+    });
+
+    test("lists direct subtopics when parent is provided", async () => {
+      await service.addTopic({ id: "r1", title: "Root", short_summary: "" });
+      await service.addSubtopic("r1", { id: "c1", title: "Child", short_summary: "" });
+
+      const topics = await service.listTopics("r1");
+      expect(topics.map((t) => t.id)).toEqual(["c1"]);
+      expect(topics[0].path).toEqual(["Root", "Child"]);
+    });
+  });
+
+  describe("readTopic", () => {
+    test("returns topic detail with hierarchical path", async () => {
+      await service.addTopic({ id: "r", title: "Root", short_summary: "short", long_summary: "long" });
+      await service.addSubtopic("r", { id: "c", title: "Child", short_summary: "cs", long_summary: "cl" });
+
+      const detail = await service.readTopic("c");
+      expect(detail).not.toBeNull();
+      expect(detail!.id).toBe("c");
+      expect(detail!.path).toEqual(["Root", "Child"]);
+      expect(detail!.short_summary).toBe("cs");
+      expect(detail!.long_summary).toBe("cl");
+    });
+
+    test("returns null for unknown topic", async () => {
+      const detail = await service.readTopic("missing");
+      expect(detail).toBeNull();
+    });
+  });
+
+  describe("hasConversation", () => {
+    test("returns true for existing conversation and false otherwise", async () => {
+      const path = join(tmpDir, "conv.json");
+      await writeFile(path, JSON.stringify(sampleConversation("conv-1")));
+      expect(await service.hasConversation("conv-1")).toBe(false);
+      await service.addConversationFromFile(path);
+      expect(await service.hasConversation("conv-1")).toBe(true);
+    });
+  });
+
+  describe("mergeConversation", () => {
+    test("inserts conversation, upserts topics, and adds nested decisions", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-merge-"));
+      try {
+        const conv = {
+          conversation_id: "m1",
+          time: "2026-04-17T10:00:00Z",
+          main_topic: "Merge",
+          turns: [
+            {
+              index: 0,
+              speaker: "alice",
+              time: "2026-04-17T10:00:00Z",
+              idea_units: [
+                { index: 0, sentences: ["hello"], categories: ["Information"] },
+              ],
+            },
+          ],
+          topics: [
+            {
+              id: "m-topic-1",
+              title: "Merged Topic",
+              short_summary: "s",
+              long_summary: "l",
+              items: [
+                {
+                  type: "conversation_idea_unit",
+                  conversation_id: "m1",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+              ],
+              decisions: [
+                {
+                  id: "m-dec-1",
+                  title: "Pick A",
+                  status: "accepted",
+                  context: { text: "", supporting_items: [] },
+                  decision: { text: "", rationale: "", supporting_items: [] },
+                  alternative_options: [],
+                },
+              ],
+              reviewed: true,
+              decisions_extracted: true,
+            },
+          ],
+        };
+
+        await writeFile(join(workingDir, "conversation.json"), JSON.stringify(conv));
+        await writeFile(
+          join(workingDir, "potential_topics.json"),
+          JSON.stringify({
+            topics: [
+              {
+                id: "m-topic-1",
+                title: "Merged Topic",
+                short_summary: "s",
+                path: ["Merged Topic"],
+                is_new: true,
+                parent_id: null,
+              },
+            ],
+          }),
+        );
+
+        const result = await service.mergeConversation(workingDir);
+        expect(result).toEqual({
+          conversation_id: "m1",
+          topics_added: 1,
+          topics_updated: 0,
+          decisions_added: 1,
+        });
+
+        expect(await countNodes("Conversation")).toBe(1);
+        expect(await countNodes("Topic")).toBe(1);
+        expect(await countNodes("Decision")).toBe(1);
+        expect(await countRels("TOPIC_HAS_IDEA_UNIT")).toBe(1);
+        expect(await countRels("TOPIC_HAS_DECISION")).toBe(1);
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("getTopicForReview", () => {
+    test("returns the first unreviewed topic with combined idea units", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
+      try {
+        const conv = {
+          conversation_id: "rev-1",
+          time: "2026-04-17T10:00:00Z",
+          main_topic: "Review",
+          turns: [
+            {
+              index: 0,
+              speaker: "alice",
+              time: "2026-04-17T10:00:00Z",
+              idea_units: [
+                { index: 0, sentences: ["hello"], categories: ["Information"] },
+              ],
+            },
+          ],
+          topics: [
+            {
+              id: "r-topic",
+              title: "Topic",
+              short_summary: "s",
+              long_summary: "",
+              items: [
+                {
+                  type: "conversation_idea_unit",
+                  conversation_id: "rev-1",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+              ],
+              decisions: [],
+              reviewed: false,
+              decisions_extracted: false,
+            },
+          ],
+        };
+        await writeFile(join(workingDir, "conversation.json"), JSON.stringify(conv));
+
+        const review = await service.getTopicForReview(
+          join(workingDir, "conversation.json"),
+        );
+        expect(review).not.toBeNull();
+        expect(review!.topic_id).toBe("r-topic");
+        expect(review!.num_items).toBe(1);
+        expect(review!.has_decision_units).toBe(false);
+        expect(review!.markdown).toContain("# Topic");
+        expect(review!.markdown).toContain("hello");
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+
+    test("returns null when all topics are reviewed", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
+      try {
+        const conv = {
+          conversation_id: "rev-2",
+          time: "2026-04-17T10:00:00Z",
+          main_topic: "Review",
+          turns: [],
+          topics: [
+            {
+              id: "t",
+              title: "T",
+              short_summary: "",
+              long_summary: "",
+              items: [],
+              decisions: [],
+              reviewed: true,
+              decisions_extracted: true,
+            },
+          ],
+        };
+        await writeFile(join(workingDir, "conversation.json"), JSON.stringify(conv));
+
+        const review = await service.getTopicForReview(
+          join(workingDir, "conversation.json"),
+        );
+        expect(review).toBeNull();
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("addItemsToDecisionSlot", () => {
     test("routes items to the correct slot", async () => {
       const convPath = join(tmpDir, "conv.json");
