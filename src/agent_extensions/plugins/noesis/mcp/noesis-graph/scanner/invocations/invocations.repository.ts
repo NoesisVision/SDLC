@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { z } from "zod";
 import { DatabaseService } from "../../database/database.service.js";
 import type { Invocation } from "./invocation-graph.js";
 
@@ -6,13 +7,18 @@ const SCHEMA_STATEMENTS = [
   "CREATE REL TABLE IF NOT EXISTS BEHAVIOR_INVOKES_BEHAVIOR(FROM Behavior TO Behavior)",
 ];
 
+const InvocationRowSchema = z.object({
+  source: z.string(),
+  destination: z.string(),
+});
+type InvocationRow = z.infer<typeof InvocationRowSchema>;
+
 @Injectable()
 export class InvocationsRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async clearInvocations(): Promise<void> {
-    const conn = this.db.getConnection();
-    await conn.query("MATCH ()-[r:BEHAVIOR_INVOKES_BEHAVIOR]->() DELETE r");
+    await this.db.query("MATCH ()-[r:BEHAVIOR_INVOKES_BEHAVIOR]->() DELETE r");
   }
 
   async getInvocations(filter?: {
@@ -25,7 +31,6 @@ export class InvocationsRepository {
       );
     }
 
-    const conn = this.db.getConnection();
     const where =
       filter?.sourceBehaviorId !== undefined
         ? "WHERE s.id = $id"
@@ -39,36 +44,28 @@ export class InvocationsRepository {
       params["id"] = filter.destinationBehaviorId;
     }
 
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<InvocationRow>(
       `MATCH (s:Behavior)-[:BEHAVIOR_INVOKES_BEHAVIOR]->(d:Behavior) ${where} ` +
         "RETURN s.id AS source, d.id AS destination ORDER BY s.id, d.id",
+      params,
     );
-    const result = await conn.execute(stmt, params);
-    const rows = asArray(result).getAllSync() as Invocation[];
-    return rows;
+    return z.array(InvocationRowSchema).parse(rawRows);
   }
 
   async initSchema(): Promise<void> {
-    const conn = this.db.getConnection();
     for (const stmt of SCHEMA_STATEMENTS) {
-      await conn.query(stmt);
+      await this.db.query(stmt);
     }
   }
 
   async insertInvocation(invocation: Invocation): Promise<void> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    await this.db.query(
       "MATCH (s:Behavior), (d:Behavior) WHERE s.id = $sourceId AND d.id = $destinationId " +
         "CREATE (s)-[:BEHAVIOR_INVOKES_BEHAVIOR]->(d)",
+      {
+        sourceId: invocation.source,
+        destinationId: invocation.destination,
+      },
     );
-    await conn.execute(stmt, {
-      sourceId: invocation.source,
-      destinationId: invocation.destination,
-    });
   }
-}
-
-function asArray(result: unknown): { getAllSync(): unknown[] } {
-  if (Array.isArray(result)) return result[0];
-  return result as { getAllSync(): unknown[] };
 }

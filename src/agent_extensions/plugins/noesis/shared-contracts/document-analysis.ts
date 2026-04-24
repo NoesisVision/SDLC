@@ -40,7 +40,6 @@ export interface SectionNode {
 }
 
 export const DecisionSlotSchema = z.enum(["context", "decision", "alternative"]);
-export type DecisionSlot = z.infer<typeof DecisionSlotSchema>;
 
 export const AttachToDecisionSchema = z.object({
   decision_id: z.string(),

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { z } from "zod";
 import { DatabaseService } from "../database/database.service.js";
 import type {
   DesignDoc,
@@ -49,6 +50,89 @@ const SCHEMA_STATEMENTS = [
   "CREATE REL TABLE IF NOT EXISTS DBH_TRIGGERED_BY(FROM DesignedBehaviour TO DesignedActor)",
 ];
 
+// Row schemas describe the literal column shape as returned by Cypher queries.
+// They are intentionally separate from the domain contracts, which use nested
+// ChangeSets; mapping between the two happens in rowTo* / applyStringChangeSet
+// / (de)serializeProperties below.
+
+const DesignDocRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+});
+type DesignDocRow = z.infer<typeof DesignDocRowSchema>;
+
+const ActorRowSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+type ActorRow = z.infer<typeof ActorRowSchema>;
+
+const QualityAttributeRowSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  description: z.string(),
+});
+type QualityAttributeRow = z.infer<typeof QualityAttributeRowSchema>;
+
+const BoundedContextRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+});
+type BoundedContextRow = z.infer<typeof BoundedContextRowSchema>;
+
+const DomainModuleRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+});
+type DomainModuleRow = z.infer<typeof DomainModuleRowSchema>;
+
+const BuildingBlockRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  description: z.string(),
+  properties: z.string(),
+});
+type BuildingBlockRow = z.infer<typeof BuildingBlockRowSchema>;
+
+const BehaviourRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  description: z.string(),
+  is_public: z.boolean(),
+  input: z.array(z.string()),
+  output: z.array(z.string()),
+  used: z.array(z.string()),
+  actor_name: z.string(),
+});
+type BehaviourRow = z.infer<typeof BehaviourRowSchema>;
+
+const RuleRowSchema = z.object({
+  name: z.string(),
+  rule_type: z.string(),
+  description: z.string(),
+});
+type RuleRow = z.infer<typeof RuleRowSchema>;
+
+const ScenarioRowSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  given: z.string(),
+  when_clause: z.string(),
+  then_clause: z.string(),
+});
+type ScenarioRow = z.infer<typeof ScenarioRowSchema>;
+
+const IdRowSchema = z.object({ id: z.string() });
+type IdRow = z.infer<typeof IdRowSchema>;
+
+const CountRowSchema = z.object({ c: z.union([z.number(), z.bigint()]) });
+type CountRow = z.infer<typeof CountRowSchema>;
+
 export interface ApplyResult {
   design_doc_id: string;
   actors_added: number;
@@ -75,9 +159,8 @@ export class DesignDocRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async initSchema(): Promise<void> {
-    const conn = this.db.getConnection();
     for (const stmt of SCHEMA_STATEMENTS) {
-      await conn.query(stmt);
+      await this.db.query(stmt);
     }
     this.logger.log("DesignDoc schema initialized");
   }
@@ -117,17 +200,12 @@ export class DesignDocRepository {
   }
 
   async listDesignDocs(): Promise<DesignDocOverview[]> {
-    const conn = this.db.getConnection();
-    const docResult = await conn.query(
+    const rawRows = await this.db.query<DesignDocRow>(
       "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description ORDER BY d.name",
     );
-    const docRows = asArray(docResult).getAllSync() as Array<{
-      id: string;
-      name: string;
-      description: string;
-    }>;
+    const rows = z.array(DesignDocRowSchema).parse(rawRows);
     const out: DesignDocOverview[] = [];
-    for (const row of docRows) {
+    for (const row of rows) {
       out.push({
         id: row.id,
         name: row.name,
@@ -153,12 +231,10 @@ export class DesignDocRepository {
     relName: string,
     childLabel: string,
   ): Promise<number> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rows = await this.db.query<CountRow>(
       `MATCH (d:DesignDoc)-[:${relName}]->(c:${childLabel}) WHERE d.id = $id RETURN COUNT(c) AS c`,
+      { id: designDocId },
     );
-    const result = await conn.execute(stmt, { id: designDocId });
-    const rows = asArray(result).getAllSync() as Array<{ c: number | bigint }>;
     return rows.length === 0 ? 0 : Number(rows[0].c);
   }
 
@@ -185,7 +261,6 @@ export class DesignDocRepository {
   }
 
   async deleteDesignDoc(designDocId: string): Promise<void> {
-    const conn = this.db.getConnection();
     const labels = [
       "DesignedScenario",
       "DesignedRule",
@@ -197,15 +272,15 @@ export class DesignDocRepository {
       "DesignedQualityAttribute",
     ];
     for (const label of labels) {
-      const stmt = await conn.prepare(
+      await this.db.query(
         `MATCH (n:${label}) WHERE n.id STARTS WITH $prefix DETACH DELETE n`,
+        { prefix: `${designDocId}|` },
       );
-      await conn.execute(stmt, { prefix: `${designDocId}|` });
     }
-    const docStmt = await conn.prepare(
+    await this.db.query(
       "MATCH (d:DesignDoc) WHERE d.id = $id DETACH DELETE d",
+      { id: designDocId },
     );
-    await conn.execute(docStmt, { id: designDocId });
   }
 
   private async applyActorChangeSet(
@@ -281,15 +356,10 @@ export class DesignDocRepository {
       });
       return;
     }
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    await this.db.query(
       "CREATE (d:DesignDoc {id: $id, name: $name, description: $description})",
+      { id: doc.id, name: doc.name, description: doc.description },
     );
-    await conn.execute(stmt, {
-      id: doc.id,
-      name: doc.name,
-      description: doc.description,
-    });
   }
 
   private async upsertActor(
@@ -307,15 +377,10 @@ export class DesignDocRepository {
       await this.updateNodeFields("DesignedActor", id, fields);
       return;
     }
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    await this.db.query(
       "CREATE (a:DesignedActor {id: $id, name: $name, description: $description})",
+      { id, name: actor.name, description: actor.description ?? "" },
     );
-    await conn.execute(stmt, {
-      id,
-      name: actor.name,
-      description: actor.description ?? "",
-    });
     await this.linkParentToChild(
       "DesignDoc",
       designDocId,
@@ -345,16 +410,15 @@ export class DesignDocRepository {
       await this.updateNodeFields("DesignedQualityAttribute", id, fields);
       return;
     }
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    await this.db.query(
       "CREATE (q:DesignedQualityAttribute {id: $id, name: $name, type: $type, description: $description})",
+      {
+        id,
+        name: qa.name,
+        type: qa.type ?? "",
+        description: qa.description ?? "",
+      },
     );
-    await conn.execute(stmt, {
-      id,
-      name: qa.name,
-      type: qa.type ?? "",
-      description: qa.description ?? "",
-    });
     await this.linkParentToChild(
       "DesignDoc",
       designDocId,
@@ -371,15 +435,10 @@ export class DesignDocRepository {
   ): Promise<void> {
     const id = boundedContextNodeId(designDocId, bc.name);
     if (!(await this.nodeExists("DesignedBoundedContext", id))) {
-      const conn = this.db.getConnection();
-      const stmt = await conn.prepare(
+      await this.db.query(
         "CREATE (b:DesignedBoundedContext {id: $id, name: $name, description: $description})",
+        { id, name: bc.name, description: bc.description ?? "" },
       );
-      await conn.execute(stmt, {
-        id,
-        name: bc.name,
-        description: bc.description ?? "",
-      });
       await this.linkParentToChild(
         "DesignDoc",
         designDocId,
@@ -428,16 +487,15 @@ export class DesignDocRepository {
     const fullPath = `${bcName}.${mod.name}`;
     const id = moduleNodeId(bcId, fullPath);
     if (!(await this.nodeExists("DesignedDomainModule", id))) {
-      const conn = this.db.getConnection();
-      const stmt = await conn.prepare(
+      await this.db.query(
         "CREATE (m:DesignedDomainModule {id: $id, name: $name, full_path: $full_path, description: $description})",
+        {
+          id,
+          name: mod.name,
+          full_path: fullPath,
+          description: mod.description ?? "",
+        },
       );
-      await conn.execute(stmt, {
-        id,
-        name: mod.name,
-        full_path: fullPath,
-        description: mod.description ?? "",
-      });
       await this.linkParentToChild(
         "DesignedBoundedContext",
         bcId,
@@ -478,17 +536,16 @@ export class DesignDocRepository {
     const id = buildingBlockNodeId(containerId, bb.name);
     const propertiesJson = serializeProperties(bb.properties);
     if (!(await this.nodeExists("DesignedBuildingBlock", id))) {
-      const conn = this.db.getConnection();
-      const stmt = await conn.prepare(
+      await this.db.query(
         "CREATE (b:DesignedBuildingBlock {id: $id, name: $name, type: $type, description: $description, properties: $properties})",
+        {
+          id,
+          name: bb.name,
+          type: bb.type ?? "",
+          description: bb.description ?? "",
+          properties: propertiesJson,
+        },
       );
-      await conn.execute(stmt, {
-        id,
-        name: bb.name,
-        type: bb.type ?? "",
-        description: bb.description ?? "",
-        properties: propertiesJson,
-      });
       const relName =
         containerLabel === "DesignedBoundedContext"
           ? "DBC_HAS_BB"
@@ -563,21 +620,20 @@ export class DesignDocRepository {
     const output = applyStringChangeSet(bh.output);
     const used = applyStringChangeSet(bh.usedBuildingBlocks);
     if (!(await this.nodeExists("DesignedBehaviour", id))) {
-      const conn = this.db.getConnection();
-      const stmt = await conn.prepare(
+      await this.db.query(
         "CREATE (h:DesignedBehaviour {id: $id, name: $name, type: $type, description: $description, is_public: $is_public, input: $input, output: $output, used_building_blocks: $used, actor_name: $actor_name})",
+        {
+          id,
+          name: bh.name,
+          type: bh.type ?? "",
+          description: bh.description ?? "",
+          is_public: bh.isPublic,
+          input,
+          output,
+          used,
+          actor_name: bh.actor ?? "",
+        },
       );
-      await conn.execute(stmt, {
-        id,
-        name: bh.name,
-        type: bh.type ?? "",
-        description: bh.description ?? "",
-        is_public: bh.isPublic,
-        input,
-        output,
-        used,
-        actor_name: bh.actor ?? "",
-      });
       await this.linkParentToChild(
         "DesignedBuildingBlock",
         bbId,
@@ -647,16 +703,15 @@ export class DesignDocRepository {
   ): Promise<void> {
     const id = ruleNodeId(parentId, rule.name);
     if (!(await this.nodeExists("DesignedRule", id))) {
-      const conn = this.db.getConnection();
-      const stmt = await conn.prepare(
+      await this.db.query(
         "CREATE (r:DesignedRule {id: $id, name: $name, rule_type: $rule_type, description: $description})",
+        {
+          id,
+          name: rule.name,
+          rule_type: rule.ruleType ?? "",
+          description: rule.description ?? "",
+        },
       );
-      await conn.execute(stmt, {
-        id,
-        name: rule.name,
-        rule_type: rule.ruleType ?? "",
-        description: rule.description ?? "",
-      });
       const relName =
         parentLabel === "DesignedBuildingBlock"
           ? "DBB_HAS_RULE"
@@ -691,18 +746,17 @@ export class DesignDocRepository {
   ): Promise<void> {
     const id = scenarioNodeId(parentId, scenario.name);
     if (!(await this.nodeExists("DesignedScenario", id))) {
-      const conn = this.db.getConnection();
-      const stmt = await conn.prepare(
+      await this.db.query(
         "CREATE (s:DesignedScenario {id: $id, name: $name, description: $description, given: $given, when_clause: $when_clause, then_clause: $then_clause})",
+        {
+          id,
+          name: scenario.name,
+          description: scenario.description,
+          given: scenario.given,
+          when_clause: scenario.when,
+          then_clause: scenario.then,
+        },
       );
-      await conn.execute(stmt, {
-        id,
-        name: scenario.name,
-        description: scenario.description,
-        given: scenario.given,
-        when_clause: scenario.when,
-        then_clause: scenario.then,
-      });
       const relName =
         parentLabel === "DesignedBuildingBlock"
           ? "DBB_HAS_SCENARIO"
@@ -737,12 +791,10 @@ export class DesignDocRepository {
     behaviourId: string,
     actorName: string,
   ): Promise<void> {
-    const conn = this.db.getConnection();
-    const lookup = await conn.prepare(
+    const rows = await this.db.query<IdRow>(
       "MATCH (a:DesignedActor) WHERE a.name = $name RETURN a.id AS id LIMIT 1",
+      { name: actorName },
     );
-    const result = await conn.execute(lookup, { name: actorName });
-    const rows = asArray(result).getAllSync() as Array<{ id: string }>;
     if (rows.length === 0) return;
     const actorId = rows[0].id;
     if (
@@ -756,10 +808,10 @@ export class DesignDocRepository {
     ) {
       return;
     }
-    const linkStmt = await conn.prepare(
+    await this.db.query(
       "MATCH (h:DesignedBehaviour), (a:DesignedActor) WHERE h.id = $hId AND a.id = $aId CREATE (h)-[:DBH_TRIGGERED_BY]->(a)",
+      { hId: behaviourId, aId: actorId },
     );
-    await conn.execute(linkStmt, { hId: behaviourId, aId: actorId });
   }
 
   private async deleteActor(
@@ -791,13 +843,11 @@ export class DesignDocRepository {
   }
 
   private async deleteModule(bcId: string, moduleName: string): Promise<void> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rows = await this.db.query<IdRow>(
       "MATCH (b:DesignedBoundedContext)-[:DBC_HAS_MODULE]->(m:DesignedDomainModule) " +
         "WHERE b.id = $bcId AND m.name = $name RETURN m.id AS id LIMIT 1",
+      { bcId, name: moduleName },
     );
-    const result = await conn.execute(stmt, { bcId, name: moduleName });
-    const rows = asArray(result).getAllSync() as Array<{ id: string }>;
     if (rows.length === 0) return;
     await this.deleteSubtree("DesignedDomainModule", rows[0].id);
   }
@@ -833,90 +883,60 @@ export class DesignDocRepository {
   }
 
   private async deleteSubtree(label: string, id: string): Promise<void> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    await this.db.query(
       `MATCH (n:${label})-[*]->(child) WHERE n.id = $id DETACH DELETE child`,
+      { id },
     );
-    await conn.execute(stmt, { id });
     await this.deleteNodeById(label, id);
   }
 
   private async deleteNodeById(label: string, id: string): Promise<void> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    await this.db.query(
       `MATCH (n:${label}) WHERE n.id = $id DETACH DELETE n`,
+      { id },
     );
-    await conn.execute(stmt, { id });
   }
 
   private async fetchDesignDocRow(
     designDocId: string,
-  ): Promise<{ id: string; name: string; description: string } | null> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+  ): Promise<DesignDocRow | null> {
+    const rawRows = await this.db.query<DesignDocRow>(
       "MATCH (d:DesignDoc) WHERE d.id = $id RETURN d.id AS id, d.name AS name, d.description AS description LIMIT 1",
+      { id: designDocId },
     );
-    const result = await conn.execute(stmt, { id: designDocId });
-    const rows = asArray(result).getAllSync() as Array<{
-      id: string;
-      name: string;
-      description: string;
-    }>;
-    return rows.length === 0 ? null : rows[0];
+    if (rawRows.length === 0) return null;
+    return DesignDocRowSchema.parse(rawRows[0]);
   }
 
   private async fetchActors(designDocId: string): Promise<DesignedActor[]> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<ActorRow>(
       "MATCH (d:DesignDoc)-[:DD_HAS_ACTOR]->(a:DesignedActor) WHERE d.id = $id " +
         "RETURN a.name AS name, a.description AS description ORDER BY a.name",
+      { id: designDocId },
     );
-    const result = await conn.execute(stmt, { id: designDocId });
-    const rows = asArray(result).getAllSync() as Array<{
-      name: string;
-      description: string;
-    }>;
-    return rows.map((r) => ({
-      name: r.name,
-      description: emptyToNull(r.description),
-    }));
+    return z.array(ActorRowSchema).parse(rawRows).map(rowToActor);
   }
 
   private async fetchQualityAttributes(
     designDocId: string,
   ): Promise<DesignedQualityAttribute[]> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<QualityAttributeRow>(
       "MATCH (d:DesignDoc)-[:DD_HAS_QA]->(q:DesignedQualityAttribute) WHERE d.id = $id " +
         "RETURN q.name AS name, q.type AS type, q.description AS description ORDER BY q.name",
+      { id: designDocId },
     );
-    const result = await conn.execute(stmt, { id: designDocId });
-    const rows = asArray(result).getAllSync() as Array<{
-      name: string;
-      type: string;
-      description: string;
-    }>;
-    return rows.map((r) => ({
-      name: r.name,
-      type: emptyToNull(r.type) as DesignedQualityAttribute["type"],
-      description: emptyToNull(r.description),
-    }));
+    return z.array(QualityAttributeRowSchema).parse(rawRows).map(rowToQualityAttribute);
   }
 
   private async fetchBoundedContexts(
     designDocId: string,
   ): Promise<DesignedBoundedContext[]> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<BoundedContextRow>(
       "MATCH (d:DesignDoc)-[:DD_HAS_BC]->(b:DesignedBoundedContext) WHERE d.id = $id " +
         "RETURN b.id AS id, b.name AS name, b.description AS description ORDER BY b.name",
+      { id: designDocId },
     );
-    const result = await conn.execute(stmt, { id: designDocId });
-    const rows = asArray(result).getAllSync() as Array<{
-      id: string;
-      name: string;
-      description: string;
-    }>;
+    const rows = z.array(BoundedContextRowSchema).parse(rawRows);
     const out: DesignedBoundedContext[] = [];
     for (const r of rows) {
       const modules = await this.fetchModules(r.id);
@@ -934,17 +954,12 @@ export class DesignDocRepository {
   private async fetchModules(
     bcId: string,
   ): Promise<DesignedDomainModule[]> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<DomainModuleRow>(
       "MATCH (b:DesignedBoundedContext)-[:DBC_HAS_MODULE]->(m:DesignedDomainModule) WHERE b.id = $id " +
         "RETURN m.id AS id, m.name AS name, m.description AS description ORDER BY m.name",
+      { id: bcId },
     );
-    const result = await conn.execute(stmt, { id: bcId });
-    const rows = asArray(result).getAllSync() as Array<{
-      id: string;
-      name: string;
-      description: string;
-    }>;
+    const rows = z.array(DomainModuleRowSchema).parse(rawRows);
     const out: DesignedDomainModule[] = [];
     for (const r of rows) {
       const buildingBlocks = await this.fetchBuildingBlocksOfModule(r.id);
@@ -979,20 +994,13 @@ export class DesignDocRepository {
     matchClause: string,
     parentId: string,
   ): Promise<DesignedBuildingBlock[]> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<BuildingBlockRow>(
       matchClause +
         "RETURN bb.id AS id, bb.name AS name, bb.type AS type, bb.description AS description, " +
         "bb.properties AS properties ORDER BY bb.name",
+      { id: parentId },
     );
-    const result = await conn.execute(stmt, { id: parentId });
-    const rows = asArray(result).getAllSync() as Array<{
-      id: string;
-      name: string;
-      type: string;
-      description: string;
-      properties: string;
-    }>;
+    const rows = z.array(BuildingBlockRowSchema).parse(rawRows);
     const out: DesignedBuildingBlock[] = [];
     for (const r of rows) {
       const behaviours = await this.fetchBehaviours(r.id);
@@ -1018,24 +1026,13 @@ export class DesignDocRepository {
   private async fetchBehaviours(
     bbId: string,
   ): Promise<DesignedBehaviour[]> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<BehaviourRow>(
       "MATCH (b:DesignedBuildingBlock)-[:DBB_HAS_BEHAVIOUR]->(h:DesignedBehaviour) WHERE b.id = $id " +
         "RETURN h.id AS id, h.name AS name, h.type AS type, h.description AS description, h.is_public AS is_public, " +
         "h.input AS input, h.output AS output, h.used_building_blocks AS used, h.actor_name AS actor_name ORDER BY h.name",
+      { id: bbId },
     );
-    const result = await conn.execute(stmt, { id: bbId });
-    const rows = asArray(result).getAllSync() as Array<{
-      id: string;
-      name: string;
-      type: string;
-      description: string;
-      is_public: boolean;
-      input: string[];
-      output: string[];
-      used: string[];
-      actor_name: string;
-    }>;
+    const rows = z.array(BehaviourRowSchema).parse(rawRows);
     const out: DesignedBehaviour[] = [];
     for (const r of rows) {
       const rules = await this.fetchRulesOfBehaviour(r.id);
@@ -1078,22 +1075,12 @@ export class DesignDocRepository {
     matchClause: string,
     parentId: string,
   ): Promise<DesignedRule[]> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<RuleRow>(
       matchClause +
         "RETURN r.name AS name, r.rule_type AS rule_type, r.description AS description ORDER BY r.name",
+      { id: parentId },
     );
-    const result = await conn.execute(stmt, { id: parentId });
-    const rows = asArray(result).getAllSync() as Array<{
-      name: string;
-      rule_type: string;
-      description: string;
-    }>;
-    return rows.map((r) => ({
-      name: r.name,
-      ruleType: emptyToNull(r.rule_type) as DesignedRule["ruleType"],
-      description: emptyToNull(r.description),
-    }));
+    return z.array(RuleRowSchema).parse(rawRows).map(rowToRule);
   }
 
   private async fetchScenariosOfBuildingBlock(
@@ -1118,26 +1105,12 @@ export class DesignDocRepository {
     matchClause: string,
     parentId: string,
   ): Promise<DesignedScenario[]> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rawRows = await this.db.query<ScenarioRow>(
       matchClause +
         "RETURN s.name AS name, s.description AS description, s.given AS given, s.when_clause AS when_clause, s.then_clause AS then_clause ORDER BY s.name",
+      { id: parentId },
     );
-    const result = await conn.execute(stmt, { id: parentId });
-    const rows = asArray(result).getAllSync() as Array<{
-      name: string;
-      description: string;
-      given: string;
-      when_clause: string;
-      then_clause: string;
-    }>;
-    return rows.map((r) => ({
-      name: r.name,
-      description: r.description,
-      given: r.given,
-      when: r.when_clause,
-      then: r.then_clause,
-    }));
+    return z.array(ScenarioRowSchema).parse(rawRows).map(rowToScenario);
   }
 
   private async edgeExists(
@@ -1147,12 +1120,11 @@ export class DesignDocRepository {
     toLabel: string,
     toId: string,
   ): Promise<boolean> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rows = await this.db.query<IdRow>(
       `MATCH (a:${fromLabel})-[:${relName}]->(b:${toLabel}) WHERE a.id = $fromId AND b.id = $toId RETURN a.id AS id LIMIT 1`,
+      { fromId, toId },
     );
-    const result = await conn.execute(stmt, { fromId, toId });
-    return asArray(result).getAllSync().length > 0;
+    return rows.length > 0;
   }
 
   private async linkParentToChild(
@@ -1162,20 +1134,18 @@ export class DesignDocRepository {
     childId: string,
     relName: string,
   ): Promise<void> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    await this.db.query(
       `MATCH (p:${parentLabel}), (c:${childLabel}) WHERE p.id = $pId AND c.id = $cId CREATE (p)-[:${relName}]->(c)`,
+      { pId: parentId, cId: childId },
     );
-    await conn.execute(stmt, { pId: parentId, cId: childId });
   }
 
   private async nodeExists(label: string, id: string): Promise<boolean> {
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    const rows = await this.db.query<IdRow>(
       `MATCH (n:${label}) WHERE n.id = $id RETURN n.id AS id LIMIT 1`,
+      { id },
     );
-    const result = await conn.execute(stmt, { id });
-    return asArray(result).getAllSync().length > 0;
+    return rows.length > 0;
   }
 
   private async updateNodeFields(
@@ -1186,12 +1156,44 @@ export class DesignDocRepository {
     const keys = Object.keys(fields);
     if (keys.length === 0) return;
     const setClause = keys.map((k) => `n.${k} = $${k}`).join(", ");
-    const conn = this.db.getConnection();
-    const stmt = await conn.prepare(
+    await this.db.query(
       `MATCH (n:${label}) WHERE n.id = $id SET ${setClause}`,
+      { id, ...fields },
     );
-    await conn.execute(stmt, { id, ...fields });
   }
+}
+
+function rowToActor(r: ActorRow): DesignedActor {
+  return {
+    name: r.name,
+    description: emptyToNull(r.description),
+  };
+}
+
+function rowToQualityAttribute(r: QualityAttributeRow): DesignedQualityAttribute {
+  return {
+    name: r.name,
+    type: emptyToNull(r.type) as DesignedQualityAttribute["type"],
+    description: emptyToNull(r.description),
+  };
+}
+
+function rowToRule(r: RuleRow): DesignedRule {
+  return {
+    name: r.name,
+    ruleType: emptyToNull(r.rule_type) as DesignedRule["ruleType"],
+    description: emptyToNull(r.description),
+  };
+}
+
+function rowToScenario(r: ScenarioRow): DesignedScenario {
+  return {
+    name: r.name,
+    description: r.description,
+    given: r.given,
+    when: r.when_clause,
+    then: r.then_clause,
+  };
 }
 
 function applyStringChangeSet(
@@ -1244,11 +1246,4 @@ function deserializeProperties(json: string): DesignedProperty[] {
 
 function emptyToNull(value: string): string | null {
   return value === "" ? null : value;
-}
-
-function asArray(
-  result: unknown,
-): { getNumTuples(): number; getAllSync(): unknown[] } {
-  if (Array.isArray(result)) return result[0];
-  return result as { getNumTuples(): number; getAllSync(): unknown[] };
 }

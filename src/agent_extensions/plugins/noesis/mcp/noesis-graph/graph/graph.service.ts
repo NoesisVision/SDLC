@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { z } from "zod";
 import { DatabaseService } from "../database/database.service.js";
 
 export interface NodeTableSchema {
@@ -24,6 +25,27 @@ export interface GraphSchema {
   relTables: RelTableSchema[];
 }
 
+const TableRowSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  comment: z.string(),
+});
+type TableRow = z.infer<typeof TableRowSchema>;
+
+const PropertyRowSchema = z.object({
+  property_id: z.union([z.number(), z.bigint()]),
+  name: z.string(),
+  type: z.string(),
+  primary_key: z.boolean().nullable().optional(),
+});
+type PropertyRow = z.infer<typeof PropertyRowSchema>;
+
+const ConnectionRowSchema = z.object({
+  "source table name": z.string(),
+  "destination table name": z.string(),
+});
+type ConnectionRow = z.infer<typeof ConnectionRowSchema>;
+
 @Injectable()
 export class GraphService {
   private readonly logger = new Logger(GraphService.name);
@@ -31,28 +53,19 @@ export class GraphService {
   constructor(private readonly db: DatabaseService) {}
 
   async getSchema(): Promise<GraphSchema> {
-    const conn = this.db.getConnection();
-
-    const tablesResult = await conn.query("CALL show_tables() RETURN *");
-    const tables = asRows(tablesResult) as Array<{
-      name: string;
-      type: string;
-      comment: string;
-    }>;
+    const rawTables = await this.db.query<TableRow>(
+      "CALL show_tables() RETURN *",
+    );
+    const tables = z.array(TableRowSchema).parse(rawTables);
 
     const nodeTables: NodeTableSchema[] = [];
     const relTables: RelTableSchema[] = [];
 
     for (const table of tables) {
-      const propsResult = await conn.query(
+      const rawProps = await this.db.query<PropertyRow>(
         `CALL table_info('${table.name}') RETURN *`,
       );
-      const props = asRows(propsResult) as Array<{
-        property_id: number;
-        name: string;
-        type: string;
-        primary_key: boolean;
-      }>;
+      const props = z.array(PropertyRowSchema).parse(rawProps);
 
       const properties: PropertySchema[] = props.map((p) => ({
         name: p.name,
@@ -63,10 +76,10 @@ export class GraphService {
       if (table.type === "NODE") {
         nodeTables.push({ name: table.name, properties });
       } else if (table.type === "REL") {
-        const connResult = await conn.query(
+        const rawConnections = await this.db.query<ConnectionRow>(
           `CALL show_connection('${table.name}') RETURN *`,
         );
-        const connections = asRows(connResult) as Array<Record<string, string>>;
+        const connections = z.array(ConnectionRowSchema).parse(rawConnections);
 
         for (const c of connections) {
           relTables.push({
@@ -84,9 +97,4 @@ export class GraphService {
     );
     return { nodeTables, relTables };
   }
-}
-
-function asRows(result: unknown): unknown[] {
-  if (Array.isArray(result)) return result[0].getAllSync();
-  return (result as { getAllSync(): unknown[] }).getAllSync();
 }

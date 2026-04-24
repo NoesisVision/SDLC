@@ -56,4 +56,26 @@ describe("DatabaseService", () => {
       (result as { getAllSync(): unknown[] }).getAllSync(),
     ).toEqual([{ x: 2 }]);
   });
+
+  test("query returns typed rows without params", async () => {
+    service.onModuleInit();
+    const rows = await service.query<{ x: number | bigint }>("RETURN 7 AS x");
+    expect(rows.map((r) => Number(r.x))).toEqual([7]);
+  });
+
+  test("query returns typed rows with params (prepare + execute)", async () => {
+    service.onModuleInit();
+    const conn = service.getConnection();
+    await conn.query(
+      "CREATE NODE TABLE IF NOT EXISTS Thing(id STRING, label STRING, PRIMARY KEY(id))",
+    );
+    await conn.query("CREATE (t:Thing {id: 'a', label: 'alpha'})");
+    await conn.query("CREATE (t:Thing {id: 'b', label: 'beta'})");
+
+    const rows = await service.query<{ label: string }>(
+      "MATCH (t:Thing) WHERE t.id = $id RETURN t.label AS label",
+      { id: "b" },
+    );
+    expect(rows).toEqual([{ label: "beta" }]);
+  });
 });
