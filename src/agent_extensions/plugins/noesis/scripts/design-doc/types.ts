@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const BuildingBlockTypeSchema = z.enum([
+export const DesignedBuildingBlockTypeSchema = z.enum([
   "aggregate",
   "entity",
   "value_object",
@@ -13,28 +13,28 @@ export const BuildingBlockTypeSchema = z.enum([
   "factory",
   "external_integration",
 ]);
-export type BuildingBlockType = z.infer<typeof BuildingBlockTypeSchema>;
+export type DesignedBuildingBlockType = z.infer<typeof DesignedBuildingBlockTypeSchema>;
 
-export const QualityAttributeTypeSchema = z.enum([
+export const DesignedQualityAttributeTypeSchema = z.enum([
   "performance",
   "availability",
   "security",
   "other",
 ]);
-export type QualityAttributeType = z.infer<typeof QualityAttributeTypeSchema>;
+export type DesignedQualityAttributeType = z.infer<typeof DesignedQualityAttributeTypeSchema>;
 
-export const RuleTypeSchema = z.enum([
+export const DesignedRuleTypeSchema = z.enum([
   "Consistency",
   "Structure",
   "Computation",
   "State change",
 ]);
-export type RuleType = z.infer<typeof RuleTypeSchema>;
+export type DesignedRuleType = z.infer<typeof DesignedRuleTypeSchema>;
 
-export const BehaviorTypeSchema = z.enum(["Command", "Event", "Query"]);
-export type BehaviorType = z.infer<typeof BehaviorTypeSchema>;
+export const DesignedBehaviorTypeSchema = z.enum(["Command", "Event", "Query"]);
+export type DesignedBehaviorType = z.infer<typeof DesignedBehaviorTypeSchema>;
 
-export const PropertySchema = z.object({
+export const DesignedPropertySchema = z.object({
   name: z.string(),
   type: z
     .string()
@@ -42,23 +42,23 @@ export const PropertySchema = z.object({
     .default(null)
     .describe("BuildingBlock name or primitive type name"),
 });
-export type Property = z.infer<typeof PropertySchema>;
+export type DesignedProperty = z.infer<typeof DesignedPropertySchema>;
 
-export const RuleSchema = z.object({
+export const DesignedRuleSchema = z.object({
   name: z.string(),
-  ruleType: RuleTypeSchema.nullable().default(null),
+  ruleType: DesignedRuleTypeSchema.nullable().default(null),
   description: z.string().nullable().default(null),
 });
-export type Rule = z.infer<typeof RuleSchema>;
+export type DesignedRule = z.infer<typeof DesignedRuleSchema>;
 
-export const ScenarioSchema = z.object({
+export const DesignedScenarioSchema = z.object({
   name: z.string().describe("Concise title, a few words"),
   description: z.string().describe("What the scenario verifies"),
   given: z.string().describe("Precondition or initial context"),
   when: z.string().describe("Action or event that triggers the scenario"),
   then: z.string().describe("Expected outcome or postcondition"),
 });
-export type Scenario = z.infer<typeof ScenarioSchema>;
+export type DesignedScenario = z.infer<typeof DesignedScenarioSchema>;
 
 function changeSetSchema<T extends z.ZodTypeAny>(itemSchema: T) {
   return z.object({
@@ -75,14 +75,14 @@ function changeSetSchema<T extends z.ZodTypeAny>(itemSchema: T) {
 }
 
 export const StringChangeSetSchema = changeSetSchema(z.string());
-export const PropertyChangeSetSchema = changeSetSchema(PropertySchema);
-export const RuleChangeSetSchema = changeSetSchema(RuleSchema);
-export const ScenarioChangeSetSchema = changeSetSchema(ScenarioSchema);
+export const DesignedPropertyChangeSetSchema = changeSetSchema(DesignedPropertySchema);
+export const DesignedRuleChangeSetSchema = changeSetSchema(DesignedRuleSchema);
+export const DesignedScenarioChangeSetSchema = changeSetSchema(DesignedScenarioSchema);
 
-export const BehaviourSchema = z.object({
+export const DesignedBehaviourSchema = z.object({
   name: z.string().describe("Concise name, a few words"),
   description: z.string().nullable().default(null),
-  type: BehaviorTypeSchema.nullable().default(null),
+  type: DesignedBehaviorTypeSchema.nullable().default(null),
   input: StringChangeSetSchema.nullable()
     .default(null)
     .describe("Input BuildingBlock names"),
@@ -92,8 +92,8 @@ export const BehaviourSchema = z.object({
   usedBuildingBlocks: StringChangeSetSchema.nullable()
     .default(null)
     .describe("Referenced BuildingBlock names"),
-  rules: RuleChangeSetSchema.nullable().default(null),
-  scenarios: ScenarioChangeSetSchema.nullable().default(null),
+  rules: DesignedRuleChangeSetSchema.nullable().default(null),
+  scenarios: DesignedScenarioChangeSetSchema.nullable().default(null),
   isPublic: z.boolean().default(false),
   actor: z
     .string()
@@ -101,74 +101,74 @@ export const BehaviourSchema = z.object({
     .default(null)
     .describe("Name of the actor who initiates this behaviour"),
 });
-export type Behaviour = z.infer<typeof BehaviourSchema>;
+export type DesignedBehaviour = z.infer<typeof DesignedBehaviourSchema>;
 
-export const BehaviourChangeSetSchema = changeSetSchema(BehaviourSchema);
+export const DesignedBehaviourChangeSetSchema = changeSetSchema(DesignedBehaviourSchema);
 
-export const ActorSchema = z.object({
+export const DesignedActorSchema = z.object({
   name: z.string(),
   description: z.string().nullable().default(null),
 });
-export type Actor = z.infer<typeof ActorSchema>;
+export type DesignedActor = z.infer<typeof DesignedActorSchema>;
 
-export const QualityAttributeSchema = z.object({
+export const DesignedQualityAttributeSchema = z.object({
   name: z.string(),
-  type: QualityAttributeTypeSchema.nullable().default(null),
+  type: DesignedQualityAttributeTypeSchema.nullable().default(null),
   description: z
     .string()
     .nullable()
     .default(null)
     .describe("Measurable quality expectation"),
 });
-export type QualityAttribute = z.infer<typeof QualityAttributeSchema>;
+export type DesignedQualityAttribute = z.infer<typeof DesignedQualityAttributeSchema>;
 
-export const BuildingBlockSchema = z.object({
+export const DesignedBuildingBlockSchema = z.object({
   name: z.string(),
-  type: BuildingBlockTypeSchema.nullable().default(null),
+  type: DesignedBuildingBlockTypeSchema.nullable().default(null),
   description: z.string().nullable().default(null),
-  properties: PropertyChangeSetSchema.nullable().default(null),
-  behaviours: BehaviourChangeSetSchema.nullable().default(null),
-  rules: RuleChangeSetSchema.nullable().default(null),
-  scenarios: ScenarioChangeSetSchema.nullable().default(null),
+  properties: DesignedPropertyChangeSetSchema.nullable().default(null),
+  behaviours: DesignedBehaviourChangeSetSchema.nullable().default(null),
+  rules: DesignedRuleChangeSetSchema.nullable().default(null),
+  scenarios: DesignedScenarioChangeSetSchema.nullable().default(null),
 });
-export type BuildingBlock = z.infer<typeof BuildingBlockSchema>;
+export type DesignedBuildingBlock = z.infer<typeof DesignedBuildingBlockSchema>;
 
-export const BuildingBlockChangeSetSchema =
-  changeSetSchema(BuildingBlockSchema);
+export const DesignedBuildingBlockChangeSetSchema =
+  changeSetSchema(DesignedBuildingBlockSchema);
 
-export const DomainModuleSchema = z.object({
+export const DesignedDomainModuleSchema = z.object({
   name: z.string(),
   description: z.string().nullable().default(null),
-  buildingBlocks: BuildingBlockChangeSetSchema.nullable().default(null),
+  buildingBlocks: DesignedBuildingBlockChangeSetSchema.nullable().default(null),
 });
-export type DomainModule = z.infer<typeof DomainModuleSchema>;
+export type DesignedDomainModule = z.infer<typeof DesignedDomainModuleSchema>;
 
-export const DomainModuleChangeSetSchema =
-  changeSetSchema(DomainModuleSchema);
+export const DesignedDomainModuleChangeSetSchema =
+  changeSetSchema(DesignedDomainModuleSchema);
 
-export const BoundedContextSchema = z.object({
+export const DesignedBoundedContextSchema = z.object({
   name: z.string(),
   description: z
     .string()
     .nullable()
     .default(null)
     .describe("Scope and responsibility of this context"),
-  modules: DomainModuleChangeSetSchema.nullable().default(null),
-  buildingBlocks: BuildingBlockChangeSetSchema.nullable()
+  modules: DesignedDomainModuleChangeSetSchema.nullable().default(null),
+  buildingBlocks: DesignedBuildingBlockChangeSetSchema.nullable()
     .default(null)
     .describe("Building blocks not belonging to any module"),
 });
-export type BoundedContext = z.infer<typeof BoundedContextSchema>;
+export type DesignedBoundedContext = z.infer<typeof DesignedBoundedContextSchema>;
 
-export const ActorChangeSetSchema = changeSetSchema(ActorSchema);
-export const BoundedContextChangeSetSchema =
-  changeSetSchema(BoundedContextSchema);
+export const DesignedActorChangeSetSchema = changeSetSchema(DesignedActorSchema);
+export const DesignedBoundedContextChangeSetSchema =
+  changeSetSchema(DesignedBoundedContextSchema);
 
 export const DesignDocSchema = z.object({
   description: z
     .string()
     .describe("Summary of what this design change covers"),
-  actors: ActorChangeSetSchema.nullable().default(null),
-  boundedContexts: BoundedContextChangeSetSchema.nullable().default(null),
+  actors: DesignedActorChangeSetSchema.nullable().default(null),
+  boundedContexts: DesignedBoundedContextChangeSetSchema.nullable().default(null),
 });
 export type DesignDoc = z.infer<typeof DesignDocSchema>;

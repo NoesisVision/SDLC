@@ -7,7 +7,7 @@ import {
 } from "../../../shared-contracts/topics.js";
 import { KnowledgeService, type TopicForReview } from "./knowledge.service.js";
 import type { TopicDetail } from "./knowledge.repository.js";
-import type { DecisionSupportSlot } from "./knowledge.types.js";
+import type { DecisionSupportSlot } from "./decision-support.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,

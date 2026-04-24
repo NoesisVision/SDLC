@@ -10,17 +10,18 @@ import {
   DDD_ANNOTATIONS,
   annotationToBlockType,
   type DddAnnotation,
-  type NoesisConfig,
-  type BoundedContext,
-  type Module,
-  type Behavior,
-  type BuildingBlock,
-  type CSharpNamespace,
-  type CSharpType,
-  type DomainModelTree,
-  type BoundedContextBranch,
-  type ModuleBranch,
-} from "./scanner.types.js";
+} from "./ddd-annotations.js";
+import type { NoesisConfig } from "./scanner-config.js";
+import type {
+  Behavior,
+  BoundedContext,
+  BoundedContextBranch,
+  BuildingBlock,
+  DomainModelTree,
+  Module,
+  ModuleBranch,
+} from "./domain-model/domain-model.js";
+import type { CSharpNamespace, CSharpType } from "./csharp/csharp-code.js";
 
 const CONCURRENCY_LIMIT = 10;
 

@@ -1,8 +1,8 @@
 import { Controller, Get, Post, Query } from "@nestjs/common";
 import { ScannerService } from "./scanner.service.js";
 import { InvocationsService } from "./invocations/invocations.service.js";
-import type { DomainModelTree } from "./scanner.types.js";
-import type { Invocation } from "./invocations/invocations.types.js";
+import type { DomainModelTree } from "./domain-model/domain-model.js";
+import type { Invocation } from "./invocations/invocation-graph.js";
 
 @Controller("api/model")
 export class ScannerController {

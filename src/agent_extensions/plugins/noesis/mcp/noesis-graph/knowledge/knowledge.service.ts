@@ -26,7 +26,7 @@ import {
   type NewTopicInput,
   type TopicDetail,
 } from "./knowledge.repository.js";
-import type { DecisionSupportSlot } from "./knowledge.types.js";
+import type { DecisionSupportSlot } from "./decision-support.js";
 
 export interface AddTopicInput {
   id?: string;

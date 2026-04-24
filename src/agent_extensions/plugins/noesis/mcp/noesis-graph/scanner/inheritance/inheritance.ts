@@ -1,4 +1,18 @@
-import type { InheritanceMap, TypeHeader, TypeKind } from "./inheritance.types.js";
+export type TypeKind = "class" | "struct" | "record" | "interface";
+
+export interface TypeHeader {
+  typeId: string;
+  typeName: string;
+  filePath: string;
+  kind: TypeKind;
+  baseTypeNames: string[];
+  interfaceTypeNames: string[];
+}
+
+export interface InheritanceMap {
+  byTypeId: Map<string, TypeHeader>;
+  byTypeName: Map<string, TypeHeader[]>;
+}
 
 export interface InheritanceSourceFile {
   relativePath: string;

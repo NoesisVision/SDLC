@@ -2,7 +2,8 @@ import { describe, test, expect } from "bun:test";
 import { sourcesFor, computeInvocations } from "./invocations.algorithm.js";
 import { extractInheritanceMap } from "../inheritance/inheritance.js";
 import { makeFakeSerena } from "./fakes.js";
-import type { BehaviorRow, SerenaReference } from "./invocations.types.js";
+import type { BehaviorRow } from "./invocation-graph.js";
+import type { SerenaReference } from "../../serena/serena.port.js";
 
 function ref(filePath: string, typeName: string, methodName: string): SerenaReference {
   return { enclosing: { filePath, typeName, methodName } };

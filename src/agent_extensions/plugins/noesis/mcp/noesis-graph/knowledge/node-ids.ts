@@ -1,8 +1,3 @@
-export type DecisionSupportSlot =
-  | { slot: "context" }
-  | { slot: "decision" }
-  | { slot: "alternative"; alternative_index: number };
-
 export function alternativeOptionNodeId(
   decisionId: string,
   optionIndex: number,

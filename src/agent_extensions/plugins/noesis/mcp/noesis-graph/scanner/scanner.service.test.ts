@@ -7,7 +7,7 @@ import {
   findModuleByPath,
   parseAnnotations,
 } from "./scanner.service.js";
-import { parentPathOf, type DomainModelTree } from "./scanner.types.js";
+import { parentPathOf, type DomainModelTree } from "./domain-model/domain-model.js";
 
 describe("removeSkippedParts", () => {
   test("returns empty string for empty namespace", () => {

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { saveChunkResult } from "./save-chunk-result.js";
-import type { Conversation, ChunkResult } from "../../shared-contracts/conversation.js";
-import { appendNewTopics, replacePlaceholderIds } from "../../shared-contracts/topics.js";
+import type { ChunkResult } from "./save-chunk-result.js";
+import { appendNewTopics, replacePlaceholderIds } from "./topic-helpers.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
 import type { PotentialTopic } from "../../shared-contracts/topics.js";
 
 function makeConversation(): Conversation {

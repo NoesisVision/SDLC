@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { saveTopicReview } from "./save-topic-review.js";
-import type { Conversation, TopicReviewResult } from "../../shared-contracts/conversation.js";
-import { replacePlaceholderIds } from "../../shared-contracts/topics.js";
+import type { TopicReviewResult } from "./save-topic-review.js";
+import { replacePlaceholderIds } from "./topic-helpers.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
 
 function makeConversation(): Conversation {
   return {

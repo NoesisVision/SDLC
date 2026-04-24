@@ -1,11 +1,10 @@
-import type { InheritanceMap } from "../inheritance/inheritance.types.js";
-import { ancestorsOf } from "../inheritance/inheritance.js";
+import { ancestorsOf, type InheritanceMap } from "../inheritance/inheritance.js";
+import type { SerenaLike } from "../../serena/serena.port.js";
 import type {
   BehaviorRow,
   Invocation,
   MethodDescriptor,
-  SerenaLike,
-} from "./invocations.types.js";
+} from "./invocation-graph.js";
 
 export interface BehaviorInventory {
   byLocation: Map<string, BehaviorRow>;

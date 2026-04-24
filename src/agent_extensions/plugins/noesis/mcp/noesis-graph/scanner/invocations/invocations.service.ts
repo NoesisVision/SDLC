@@ -6,13 +6,12 @@ import {
   computeInvocations,
   type BehaviorInventory,
 } from "./invocations.algorithm.js";
-import type { InheritanceMap } from "../inheritance/inheritance.types.js";
+import type { InheritanceMap } from "../inheritance/inheritance.js";
+import type { SerenaLike, SerenaReference } from "../../serena/serena.port.js";
 import type {
   BehaviorRow,
   Invocation,
-  SerenaLike,
-  SerenaReference,
-} from "./invocations.types.js";
+} from "./invocation-graph.js";
 
 @Injectable()
 export class InvocationsService implements OnModuleInit {

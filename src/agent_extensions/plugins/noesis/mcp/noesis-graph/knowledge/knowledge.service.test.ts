@@ -22,7 +22,7 @@ import {
   documentFragmentNodeId,
   ideaUnitNodeId,
   turnNodeId,
-} from "./knowledge.types.js";
+} from "./node-ids.js";
 
 const NODE_LABELS = [
   "AlternativeOption",

@@ -1,18 +1,35 @@
 import { join } from "path";
+import { z } from "zod";
 import { deleteFile, outputResult, parseArgs, readJson, requireDir, requireFile, writeJson } from "../io.js";
+import { ConversationSchema } from "../../shared-contracts/conversation.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
 import {
-  ConversationSchema,
-  TopicReviewResultSchema,
-} from "../../shared-contracts/conversation.js";
-import type { Conversation, TopicReviewResult } from "../../shared-contracts/conversation.js";
-import {
+  PotentialTopicSchema,
   PotentialTopicsSchema,
+} from "../../shared-contracts/topics.js";
+import type { Topic } from "../../shared-contracts/topics.js";
+import {
   appendNewTopics,
   createTopicFromPotential,
   findTopicOrFail,
   replacePlaceholderIds,
-} from "../../shared-contracts/topics.js";
-import type { Topic } from "../../shared-contracts/topics.js";
+} from "./topic-helpers.js";
+
+export const IdeaUnitReassignmentSchema = z.object({
+  turn_index: z.int(),
+  idea_unit_index: z.int(),
+  new_topic_id: z.string(),
+});
+export type IdeaUnitReassignment = z.infer<typeof IdeaUnitReassignmentSchema>;
+
+export const TopicReviewResultSchema = z.object({
+  topic_id: z.string(),
+  short_summary: z.string(),
+  long_summary: z.string(),
+  reassignments: z.array(IdeaUnitReassignmentSchema),
+  new_topics: z.array(PotentialTopicSchema),
+});
+export type TopicReviewResult = z.infer<typeof TopicReviewResultSchema>;
 
 export function saveTopicReview(
   conversation: Conversation,

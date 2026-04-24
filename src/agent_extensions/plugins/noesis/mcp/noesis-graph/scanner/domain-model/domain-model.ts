@@ -1,26 +1,3 @@
-export const DDD_ANNOTATIONS = [
-  "DddAggregate",
-  "DddApplicationService",
-  "DddBoundedContext",
-  "DddDomainEvent",
-  "DddDomainService",
-  "DddEntity",
-  "DddFactory",
-  "DddRepository",
-  "DddValueObject",
-] as const;
-
-export type DddAnnotation = (typeof DDD_ANNOTATIONS)[number];
-
-export function annotationToBlockType(annotation: DddAnnotation): string {
-  return annotation.replace(/^Ddd/, "");
-}
-
-export interface NoesisConfig {
-  namespacePartsToSkip: string[];
-  namespacesToExclude: string[];
-}
-
 export interface BoundedContext {
   name: string;
 }
@@ -43,24 +20,6 @@ export interface Behavior {
 
 export interface BuildingBlockBranch extends BuildingBlock {
   behaviors: Behavior[];
-}
-
-export interface CodeStructure {
-  name: string;
-}
-
-export interface CSharpNamespace extends CodeStructure {
-  fullName: string;
-}
-
-export interface CSharpType extends CodeStructure {
-  id: string;
-  fullName: string;
-  filePath: string;
-}
-
-export interface BuildingBlockWithCode extends BuildingBlock {
-  codeStructure: CodeStructure;
 }
 
 export interface DomainModelTree<Leaf extends BuildingBlock = BuildingBlockBranch> {

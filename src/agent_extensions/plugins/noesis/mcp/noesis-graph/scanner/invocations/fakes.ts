@@ -1,4 +1,4 @@
-import type { SerenaLike, SerenaReference } from "./invocations.types.js";
+import type { SerenaLike, SerenaReference } from "../../serena/serena.port.js";
 
 export function makeFakeSerena(
   refsByKey: Record<string, SerenaReference[]>,

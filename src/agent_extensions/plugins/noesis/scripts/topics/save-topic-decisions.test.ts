@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { saveTopicDecisions } from "./save-topic-decisions.js";
+import type { DecisionExtractionResult } from "./save-topic-decisions.js";
 import type { Conversation } from "../../shared-contracts/conversation.js";
-import type { DecisionExtractionResult } from "../../shared-contracts/topics.js";
 
 function makeConversation(): Conversation {
   return {

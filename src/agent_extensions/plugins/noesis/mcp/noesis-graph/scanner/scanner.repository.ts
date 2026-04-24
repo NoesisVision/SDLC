@@ -2,17 +2,16 @@ import { Injectable, Logger } from "@nestjs/common";
 import { DatabaseService } from "../database/database.service.js";
 import {
   parentPathOf,
-  type BoundedContext,
-  type Module,
   type Behavior,
+  type BoundedContext,
+  type BoundedContextBranch,
   type BuildingBlock,
   type BuildingBlockBranch,
-  type CSharpNamespace,
-  type CSharpType,
   type DomainModelTree,
-  type BoundedContextBranch,
+  type Module,
   type ModuleBranch,
-} from "./scanner.types.js";
+} from "./domain-model/domain-model.js";
+import type { CSharpNamespace, CSharpType } from "./csharp/csharp-code.js";
 
 const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS BoundedContext(name STRING, PRIMARY KEY(name))",

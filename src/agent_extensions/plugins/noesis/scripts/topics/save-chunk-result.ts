@@ -1,17 +1,37 @@
 import { join } from "path";
+import { z } from "zod";
 import { deleteFile, outputResult, parseArgs, readJson, requireDir, requireFile, writeJson } from "../io.js";
 import {
   ConversationSchema,
-  ChunkResultSchema,
+  TurnSchema,
 } from "../../shared-contracts/conversation.js";
-import type { Conversation, ChunkResult } from "../../shared-contracts/conversation.js";
+import type { Conversation } from "../../shared-contracts/conversation.js";
 import {
+  PotentialTopicSchema,
   PotentialTopicsSchema,
+} from "../../shared-contracts/topics.js";
+import type { Topic } from "../../shared-contracts/topics.js";
+import {
   appendNewTopics,
   createTopicFromPotential,
   replacePlaceholderIds,
-} from "../../shared-contracts/topics.js";
-import type { Topic } from "../../shared-contracts/topics.js";
+} from "./topic-helpers.js";
+
+export const IdeaUnitTopicAssignmentSchema = z.object({
+  turn_index: z.int(),
+  idea_unit_index: z.int(),
+  topic_id: z.string(),
+});
+export type IdeaUnitTopicAssignment = z.infer<
+  typeof IdeaUnitTopicAssignmentSchema
+>;
+
+export const ChunkResultSchema = z.object({
+  turns: z.array(TurnSchema),
+  assignments: z.array(IdeaUnitTopicAssignmentSchema),
+  new_topics: z.array(PotentialTopicSchema),
+});
+export type ChunkResult = z.infer<typeof ChunkResultSchema>;
 
 export function saveChunkResult(
   conversation: Conversation,

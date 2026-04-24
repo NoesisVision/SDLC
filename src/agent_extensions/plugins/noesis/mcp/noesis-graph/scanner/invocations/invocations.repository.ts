@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { DatabaseService } from "../../database/database.service.js";
-import type { Invocation } from "./invocations.types.js";
+import type { Invocation } from "./invocation-graph.js";
 
 const SCHEMA_STATEMENTS = [
   "CREATE REL TABLE IF NOT EXISTS BEHAVIOR_INVOKES_BEHAVIOR(FROM Behavior TO Behavior)",

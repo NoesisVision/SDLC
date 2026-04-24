@@ -18,8 +18,8 @@ import {
   documentFragmentNodeId,
   ideaUnitNodeId,
   turnNodeId,
-  type DecisionSupportSlot,
-} from "./knowledge.types.js";
+} from "./node-ids.js";
+import type { DecisionSupportSlot } from "./decision-support.js";
 
 const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS Topic(id STRING, title STRING, short_summary STRING, long_summary STRING, PRIMARY KEY(id))",

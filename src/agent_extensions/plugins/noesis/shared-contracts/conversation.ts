@@ -1,10 +1,5 @@
 import { z } from "zod";
-import {
-  IdeaUnitReassignmentSchema,
-  IdeaUnitTopicAssignmentSchema,
-  PotentialTopicSchema,
-  TopicSchema,
-} from "./topics.js";
+import { TopicSchema } from "./topics.js";
 
 export const IdeaUnitCategory = z.enum([
   "Information",
@@ -60,29 +55,13 @@ export const EnrichedTopicSchema = z.object({
 });
 export type EnrichedTopic = z.infer<typeof EnrichedTopicSchema>;
 
-export const ChunkResultSchema = z.object({
-  turns: z.array(TurnSchema),
-  assignments: z.array(IdeaUnitTopicAssignmentSchema),
-  new_topics: z.array(PotentialTopicSchema),
-});
-export type ChunkResult = z.infer<typeof ChunkResultSchema>;
-
-export const TopicReviewResultSchema = z.object({
-  topic_id: z.string(),
-  short_summary: z.string(),
-  long_summary: z.string(),
-  reassignments: z.array(IdeaUnitReassignmentSchema),
-  new_topics: z.array(PotentialTopicSchema),
-});
-export type TopicReviewResult = z.infer<typeof TopicReviewResultSchema>;
-
 // --- Domain functions ---
 
 export function buildTurnMap(turns: Turn[]): Map<number, Turn> {
   return new Map(turns.map((t) => [t.index, t]));
 }
 
-export function findIdeaUnit(turn: Turn, ideaUnitIndex: number): IdeaUnit | null {
+function findIdeaUnit(turn: Turn, ideaUnitIndex: number): IdeaUnit | null {
   return turn.idea_units.find((iu) => iu.index === ideaUnitIndex) ?? null;
 }
 

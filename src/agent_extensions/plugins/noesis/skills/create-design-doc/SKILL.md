@@ -80,18 +80,18 @@ Combine knowledge graph context (Step 3) with input requirements (Step 2) to pro
 The output JSON must conform to the `DesignDoc` schema. Key types (all use camelCase field names):
 
 - **DesignDoc**: `{ description, actors?, boundedContexts? }`
-- **BoundedContext**: `{ name, description?, modules?, buildingBlocks? }`
-- **DomainModule**: `{ name, description?, buildingBlocks? }`
-- **BuildingBlock**: `{ name, type?, description?, properties?, behaviours?, rules?, scenarios? }`
+- **DesignedBoundedContext**: `{ name, description?, modules?, buildingBlocks? }`
+- **DesignedDomainModule**: `{ name, description?, buildingBlocks? }`
+- **DesignedBuildingBlock**: `{ name, type?, description?, properties?, behaviours?, rules?, scenarios? }`
   - `type`: aggregate | entity | value_object | domain_event | domain_command | domain_query | domain_service | application_service | repository | factory | external_integration
-- **Behaviour**: `{ name, description?, type?, input?, output?, usedBuildingBlocks?, rules?, scenarios?, isPublic, actor? }`
+- **DesignedBehaviour**: `{ name, description?, type?, input?, output?, usedBuildingBlocks?, rules?, scenarios?, isPublic, actor? }`
   - `type`: Command | Event | Query
-- **Rule**: `{ name, ruleType?, description? }`
+- **DesignedRule**: `{ name, ruleType?, description? }`
   - `ruleType`: Consistency | Structure | Computation | State change
-- **Scenario**: `{ name, description, given, when, then }`
-- **Actor**: `{ name, description? }`
-- **QualityAttribute**: `{ name, type?, description? }`
-- **Property**: `{ name, type? }`
+- **DesignedScenario**: `{ name, description, given, when, then }`
+- **DesignedActor**: `{ name, description? }`
+- **DesignedQualityAttribute**: `{ name, type?, description? }`
+- **DesignedProperty**: `{ name, type? }`
 - **ChangeSet\<T\>**: `{ added: T[], removed: string[], modified: T[] }`
 
 All collection fields use `ChangeSet` wrappers. For first-time design, put all items in `added`.

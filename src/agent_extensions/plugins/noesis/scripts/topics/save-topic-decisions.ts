@@ -1,9 +1,18 @@
 import { join } from "path";
+import { z } from "zod";
 import { deleteFile, outputResult, parseArgs, readJson, requireDir, requireFile, writeJson } from "../io.js";
 import { ConversationSchema } from "../../shared-contracts/conversation.js";
 import type { Conversation } from "../../shared-contracts/conversation.js";
-import { DecisionExtractionResultSchema, findTopicOrFail } from "../../shared-contracts/topics.js";
-import type { DecisionExtractionResult } from "../../shared-contracts/topics.js";
+import { DecisionSchema } from "../../shared-contracts/topics.js";
+import { findTopicOrFail } from "./topic-helpers.js";
+
+export const DecisionExtractionResultSchema = z.object({
+  topic_id: z.string(),
+  decisions: z.array(DecisionSchema),
+});
+export type DecisionExtractionResult = z.infer<
+  typeof DecisionExtractionResultSchema
+>;
 
 export function saveTopicDecisions(
   conversation: Conversation,

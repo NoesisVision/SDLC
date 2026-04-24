@@ -15,14 +15,3 @@ export interface BehaviorRow {
   typeName: string;
   methodName: string;
 }
-
-export interface SerenaReference {
-  enclosing: MethodDescriptor | null;
-}
-
-export interface SerenaLike {
-  findReferencingSymbols(
-    namePath: string,
-    relativePath: string,
-  ): Promise<SerenaReference[]>;
-}
