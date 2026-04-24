@@ -9,6 +9,8 @@ import { InvocationsService } from "./scanner/invocations/invocations.service.js
 import { registerScannerTools } from "./scanner/scanner.mcp.js";
 import { KnowledgeService } from "./knowledge/knowledge.service.js";
 import { registerKnowledgeTools } from "./knowledge/knowledge.mcp.js";
+import { DesignDocService } from "./design-doc/design-doc.service.js";
+import { registerDesignDocTools } from "./design-doc/design-doc.mcp.js";
 
 export async function startServer(): Promise<void> {
   const [argDataDir, argProjectDir] = process.argv.slice(2);
@@ -48,6 +50,7 @@ export async function startServer(): Promise<void> {
 
     registerScannerTools(mcp, app.get(ScannerService), app.get(InvocationsService));
     registerKnowledgeTools(mcp, app.get(KnowledgeService));
+    registerDesignDocTools(mcp, app.get(DesignDocService));
     logger.log("MCP tools registered", "Bootstrap");
 
     const url = await app.getUrl();

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { z } from "zod";
 
 export const DesignedBuildingBlockTypeSchema = z.enum([
@@ -13,7 +14,9 @@ export const DesignedBuildingBlockTypeSchema = z.enum([
   "factory",
   "external_integration",
 ]);
-export type DesignedBuildingBlockType = z.infer<typeof DesignedBuildingBlockTypeSchema>;
+export type DesignedBuildingBlockType = z.infer<
+  typeof DesignedBuildingBlockTypeSchema
+>;
 
 export const DesignedQualityAttributeTypeSchema = z.enum([
   "performance",
@@ -21,7 +24,9 @@ export const DesignedQualityAttributeTypeSchema = z.enum([
   "security",
   "other",
 ]);
-export type DesignedQualityAttributeType = z.infer<typeof DesignedQualityAttributeTypeSchema>;
+export type DesignedQualityAttributeType = z.infer<
+  typeof DesignedQualityAttributeTypeSchema
+>;
 
 export const DesignedRuleTypeSchema = z.enum([
   "Consistency",
@@ -31,8 +36,12 @@ export const DesignedRuleTypeSchema = z.enum([
 ]);
 export type DesignedRuleType = z.infer<typeof DesignedRuleTypeSchema>;
 
-export const DesignedBehaviorTypeSchema = z.enum(["Command", "Event", "Query"]);
-export type DesignedBehaviorType = z.infer<typeof DesignedBehaviorTypeSchema>;
+export const DesignedBehaviourTypeSchema = z.enum([
+  "Command",
+  "Event",
+  "Query",
+]);
+export type DesignedBehaviourType = z.infer<typeof DesignedBehaviourTypeSchema>;
 
 export const DesignedPropertySchema = z.object({
   name: z.string(),
@@ -75,14 +84,29 @@ function changeSetSchema<T extends z.ZodTypeAny>(itemSchema: T) {
 }
 
 export const StringChangeSetSchema = changeSetSchema(z.string());
-export const DesignedPropertyChangeSetSchema = changeSetSchema(DesignedPropertySchema);
+export type StringChangeSet = z.infer<typeof StringChangeSetSchema>;
+
+export const DesignedPropertyChangeSetSchema = changeSetSchema(
+  DesignedPropertySchema,
+);
+export type DesignedPropertyChangeSet = z.infer<
+  typeof DesignedPropertyChangeSetSchema
+>;
+
 export const DesignedRuleChangeSetSchema = changeSetSchema(DesignedRuleSchema);
-export const DesignedScenarioChangeSetSchema = changeSetSchema(DesignedScenarioSchema);
+export type DesignedRuleChangeSet = z.infer<typeof DesignedRuleChangeSetSchema>;
+
+export const DesignedScenarioChangeSetSchema = changeSetSchema(
+  DesignedScenarioSchema,
+);
+export type DesignedScenarioChangeSet = z.infer<
+  typeof DesignedScenarioChangeSetSchema
+>;
 
 export const DesignedBehaviourSchema = z.object({
   name: z.string().describe("Concise name, a few words"),
   description: z.string().nullable().default(null),
-  type: DesignedBehaviorTypeSchema.nullable().default(null),
+  type: DesignedBehaviourTypeSchema.nullable().default(null),
   input: StringChangeSetSchema.nullable()
     .default(null)
     .describe("Input BuildingBlock names"),
@@ -103,7 +127,12 @@ export const DesignedBehaviourSchema = z.object({
 });
 export type DesignedBehaviour = z.infer<typeof DesignedBehaviourSchema>;
 
-export const DesignedBehaviourChangeSetSchema = changeSetSchema(DesignedBehaviourSchema);
+export const DesignedBehaviourChangeSetSchema = changeSetSchema(
+  DesignedBehaviourSchema,
+);
+export type DesignedBehaviourChangeSet = z.infer<
+  typeof DesignedBehaviourChangeSetSchema
+>;
 
 export const DesignedActorSchema = z.object({
   name: z.string(),
@@ -120,7 +149,9 @@ export const DesignedQualityAttributeSchema = z.object({
     .default(null)
     .describe("Measurable quality expectation"),
 });
-export type DesignedQualityAttribute = z.infer<typeof DesignedQualityAttributeSchema>;
+export type DesignedQualityAttribute = z.infer<
+  typeof DesignedQualityAttributeSchema
+>;
 
 export const DesignedBuildingBlockSchema = z.object({
   name: z.string(),
@@ -133,8 +164,12 @@ export const DesignedBuildingBlockSchema = z.object({
 });
 export type DesignedBuildingBlock = z.infer<typeof DesignedBuildingBlockSchema>;
 
-export const DesignedBuildingBlockChangeSetSchema =
-  changeSetSchema(DesignedBuildingBlockSchema);
+export const DesignedBuildingBlockChangeSetSchema = changeSetSchema(
+  DesignedBuildingBlockSchema,
+);
+export type DesignedBuildingBlockChangeSet = z.infer<
+  typeof DesignedBuildingBlockChangeSetSchema
+>;
 
 export const DesignedDomainModuleSchema = z.object({
   name: z.string(),
@@ -143,8 +178,12 @@ export const DesignedDomainModuleSchema = z.object({
 });
 export type DesignedDomainModule = z.infer<typeof DesignedDomainModuleSchema>;
 
-export const DesignedDomainModuleChangeSetSchema =
-  changeSetSchema(DesignedDomainModuleSchema);
+export const DesignedDomainModuleChangeSetSchema = changeSetSchema(
+  DesignedDomainModuleSchema,
+);
+export type DesignedDomainModuleChangeSet = z.infer<
+  typeof DesignedDomainModuleChangeSetSchema
+>;
 
 export const DesignedBoundedContextSchema = z.object({
   name: z.string(),
@@ -158,17 +197,56 @@ export const DesignedBoundedContextSchema = z.object({
     .default(null)
     .describe("Building blocks not belonging to any module"),
 });
-export type DesignedBoundedContext = z.infer<typeof DesignedBoundedContextSchema>;
+export type DesignedBoundedContext = z.infer<
+  typeof DesignedBoundedContextSchema
+>;
 
 export const DesignedActorChangeSetSchema = changeSetSchema(DesignedActorSchema);
-export const DesignedBoundedContextChangeSetSchema =
-  changeSetSchema(DesignedBoundedContextSchema);
+export type DesignedActorChangeSet = z.infer<
+  typeof DesignedActorChangeSetSchema
+>;
+
+export const DesignedBoundedContextChangeSetSchema = changeSetSchema(
+  DesignedBoundedContextSchema,
+);
+export type DesignedBoundedContextChangeSet = z.infer<
+  typeof DesignedBoundedContextChangeSetSchema
+>;
+
+export const DesignedQualityAttributeChangeSetSchema = changeSetSchema(
+  DesignedQualityAttributeSchema,
+);
+export type DesignedQualityAttributeChangeSet = z.infer<
+  typeof DesignedQualityAttributeChangeSetSchema
+>;
 
 export const DesignDocSchema = z.object({
+  id: z
+    .string()
+    .default(() => randomUUID())
+    .describe("Unique design id. If omitted, a UUID is generated."),
+  name: z
+    .string()
+    .describe(
+      "Human-readable design name (e.g. 'auth-system'). Stable across iterations.",
+    ),
   description: z
     .string()
     .describe("Summary of what this design change covers"),
   actors: DesignedActorChangeSetSchema.nullable().default(null),
   boundedContexts: DesignedBoundedContextChangeSetSchema.nullable().default(null),
+  qualityAttributes: DesignedQualityAttributeChangeSetSchema.nullable().default(
+    null,
+  ),
 });
 export type DesignDoc = z.infer<typeof DesignDocSchema>;
+
+export const DesignDocOverviewSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  actor_count: z.int(),
+  bounded_context_count: z.int(),
+  quality_attribute_count: z.int(),
+});
+export type DesignDocOverview = z.infer<typeof DesignDocOverviewSchema>;

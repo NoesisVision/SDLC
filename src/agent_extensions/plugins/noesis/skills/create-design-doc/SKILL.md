@@ -66,20 +66,22 @@ Combine knowledge graph context (Step 3) with input requirements (Step 2) to pro
 ### Step 5: Save design doc
 
 1. Construct the design doc JSON following the `DesignDoc` schema:
+   - `id`: optional design id (omit for first iteration to auto-generate UUID; reuse the same id when iterating).
+   - `name`: stable human-readable design name (e.g. `auth-system`).
    - `description`: summary of what this design change covers.
    - `actors`: ChangeSet of actors.
    - `boundedContexts`: ChangeSet of bounded contexts with modules, building blocks, behaviours, rules, and scenarios.
+   - `qualityAttributes`: ChangeSet of quality attributes.
 2. Write the JSON to `/tmp/noesis-design-doc-draft.json` using the Write tool.
-3. Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/design-doc/save-design-doc.ts /tmp/noesis-design-doc-draft.json <output_path>`.
-4. Read the script output to confirm success.
-5. Clean up: run `rm -f <tmp_file> /tmp/noesis-design-doc-draft.json`.
-6. Report the output path to the user.
+3. Call MCP tool `noesis-graph:save_design_doc` with `input_path: /tmp/noesis-design-doc-draft.json` and `output_path: <output_path>`. The tool validates, writes the canonicalized JSON to `<output_path>`, and persists the design into the knowledge graph. Returns inline JSON with counts of items added/modified/removed.
+4. Clean up: run `rm -f <tmp_file> /tmp/noesis-design-doc-draft.json`.
+5. Report the output path and the returned counts to the user.
 
 ## Design Doc Schema Reference
 
 The output JSON must conform to the `DesignDoc` schema. Key types (all use camelCase field names):
 
-- **DesignDoc**: `{ description, actors?, boundedContexts? }`
+- **DesignDoc**: `{ id?, name, description, actors?, boundedContexts?, qualityAttributes? }`
 - **DesignedBoundedContext**: `{ name, description?, modules?, buildingBlocks? }`
 - **DesignedDomainModule**: `{ name, description?, buildingBlocks? }`
 - **DesignedBuildingBlock**: `{ name, type?, description?, properties?, behaviours?, rules?, scenarios? }`
@@ -100,7 +102,7 @@ All collection fields use `ChangeSet` wrappers. For first-time design, put all i
 
 - NEVER use `cd` in any Bash command. Run scripts directly with `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/<path>.ts`.
 - NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Use `>` ONLY to capture script stdout to `<tmp_file>`. Use the Write tool for all other file writes.
-- Query the knowledge graph ONLY via `noesis-graph` MCP tools. Read-style tools (`list_topics`, `read_topic`) return a tmp file path in their JSON response — always read that file with the Read tool to see the actual content.
+- Query and persist via the `noesis-graph` MCP tools — never write design docs directly to disk yourself. Read-style tools (`list_topics`, `read_topic`, `read_design_doc`, `list_design_docs`) return a tmp file path in their JSON response — always read that file with the Read tool to see the actual content.
 - NEVER write inline code in Bash. Use only the provided scripts.
 - For first-time designs (no existing design to diff against), put everything in `added` arrays within ChangeSets.
 - Reuse terminology and naming from the knowledge graph to maintain consistency.
