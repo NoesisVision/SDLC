@@ -95,14 +95,14 @@ For each identified decision, build a `Decision` object:
 - `status` — `"accepted"` for confirmed decisions, `"proposed"` if discussion was inconclusive.
 - `context` — a `DecisionContext` with:
   - `text` — one to two sentences summarizing the problem or need that prompted the decision.
-  - `supporting_items` — list of `TopicItem` objects pointing to the context. Each item is either a `ConversationIdeaUnit` (`type: "conversation_idea_unit"` with `conversation_id`, `turn_index`, `idea_unit_index`) or a `DocumentFragment` (`type: "document_fragment"` with `document_id`, `start_offset`, `end_offset`).
+  - `supporting_items` — list of `TopicItem` objects pointing to the context. Each item is either an `IdeaUnitRef` (`type: "idea_unit_ref"` with `conversation_id`, `turn_index`, `idea_unit_index`) or a `DocumentFragmentRef` (`type: "document_fragment_ref"` with `document_id`, `start_offset`, `end_offset`).
 - `decision` — a `DecisionOption` with:
   - `text` — what was decided.
   - `rationale` — why this option was chosen.
   - `supporting_items` — list of `TopicItem` references that support the final decision.
 - `alternative_options` — list of `DecisionOption` objects for rejected or superseded alternatives. Each with `text`, `rationale` (why it was considered), and `supporting_items`. May be empty if no alternatives were discussed.
 
-For each `ConversationIdeaUnit`, use the `conversation_id` from the topic's idea unit details (all belong to the current conversation).
+For each `IdeaUnitRef`, use the `conversation_id` from the topic's idea unit details (all belong to the current conversation).
 
 Build a `DecisionExtractionResult` JSON object with:
 - `topic_id` — the topic's `id`.

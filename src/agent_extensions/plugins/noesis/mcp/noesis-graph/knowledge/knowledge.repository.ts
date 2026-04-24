@@ -1,10 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { z } from "zod";
 import { DatabaseService } from "../database/database.service.js";
+import { assertNever } from "../../../shared-contracts/assert-never.js";
 import type {
   Decision,
   DecisionOption,
   TopicItem,
-  TopicOverview,
 } from "../../../shared-contracts/topics.js";
 import type {
   Conversation,
@@ -20,6 +21,16 @@ import {
   turnNodeId,
 } from "./node-ids.js";
 import type { DecisionSupportSlot } from "./decision-support.js";
+
+export const TopicOverviewSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  short_summary: z.string(),
+  long_summary: z.string(),
+  has_subtopics: z.boolean(),
+  path: z.array(z.string()),
+});
+export type TopicOverview = z.infer<typeof TopicOverviewSchema>;
 
 const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS Topic(id STRING, title STRING, short_summary STRING, long_summary STRING, PRIMARY KEY(id))",
@@ -109,11 +120,18 @@ export class KnowledgeRepository {
     await this.requireSupportingItems(items);
 
     for (const item of items) {
-      if (slot.slot === "alternative") {
-        const altId = alternativeOptionNodeId(decisionId, slot.alternative_index);
-        await this.linkAlternativeToItem(altId, item);
-      } else {
-        await this.linkDecisionSlotToItem(decisionId, slot, item);
+      switch (slot.slot) {
+        case "alternative": {
+          const altId = alternativeOptionNodeId(decisionId, slot.alternative_index);
+          await this.linkAlternativeToItem(altId, item);
+          break;
+        }
+        case "context":
+        case "decision":
+          await this.linkDecisionSlotToItem(decisionId, slot, item);
+          break;
+        default:
+          assertNever(slot);
       }
     }
   }
@@ -123,22 +141,29 @@ export class KnowledgeRepository {
     await this.requireSupportingItems(items);
 
     for (const item of items) {
-      if (item.type === "conversation_idea_unit") {
-        const iuId = ideaUnitNodeId(
-          item.conversation_id,
-          item.turn_index,
-          item.idea_unit_index,
-        );
-        if (await this.edgeExists("TOPIC_HAS_IDEA_UNIT", "Topic", topicId, "IdeaUnit", iuId)) continue;
-        await this.linkTopicToIdeaUnit(topicId, iuId);
-      } else {
-        const fragId = await this.ensureDocumentFragmentNode(
-          item.document_id,
-          item.start_offset,
-          item.end_offset,
-        );
-        if (await this.edgeExists("TOPIC_HAS_DOCUMENT_FRAGMENT", "Topic", topicId, "DocumentFragment", fragId)) continue;
-        await this.linkTopicToDocumentFragment(topicId, fragId);
+      switch (item.type) {
+        case "idea_unit_ref": {
+          const iuId = ideaUnitNodeId(
+            item.conversation_id,
+            item.turn_index,
+            item.idea_unit_index,
+          );
+          if (await this.edgeExists("TOPIC_HAS_IDEA_UNIT", "Topic", topicId, "IdeaUnit", iuId)) break;
+          await this.linkTopicToIdeaUnit(topicId, iuId);
+          break;
+        }
+        case "document_fragment_ref": {
+          const fragId = await this.ensureDocumentFragmentNode(
+            item.document_id,
+            item.start_offset,
+            item.end_offset,
+          );
+          if (await this.edgeExists("TOPIC_HAS_DOCUMENT_FRAGMENT", "Topic", topicId, "DocumentFragment", fragId)) break;
+          await this.linkTopicToDocumentFragment(topicId, fragId);
+          break;
+        }
+        default:
+          assertNever(item);
       }
     }
   }
@@ -534,26 +559,33 @@ export class KnowledgeRepository {
     item: TopicItem,
   ): Promise<void> {
     const conn = this.db.getConnection();
-    if (item.type === "conversation_idea_unit") {
-      const iuId = ideaUnitNodeId(
-        item.conversation_id,
-        item.turn_index,
-        item.idea_unit_index,
-      );
-      const stmt = await conn.prepare(
-        "MATCH (a:AlternativeOption), (u:IdeaUnit) WHERE a.id = $altId AND u.id = $iuId CREATE (a)-[:ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT]->(u)",
-      );
-      await conn.execute(stmt, { altId, iuId });
-    } else {
-      const fragId = await this.ensureDocumentFragmentNode(
-        item.document_id,
-        item.start_offset,
-        item.end_offset,
-      );
-      const stmt = await conn.prepare(
-        "MATCH (a:AlternativeOption), (f:DocumentFragment) WHERE a.id = $altId AND f.id = $fragId CREATE (a)-[:ALTERNATIVE_SUPPORTED_BY_DOC_FRAGMENT]->(f)",
-      );
-      await conn.execute(stmt, { altId, fragId });
+    switch (item.type) {
+      case "idea_unit_ref": {
+        const iuId = ideaUnitNodeId(
+          item.conversation_id,
+          item.turn_index,
+          item.idea_unit_index,
+        );
+        const stmt = await conn.prepare(
+          "MATCH (a:AlternativeOption), (u:IdeaUnit) WHERE a.id = $altId AND u.id = $iuId CREATE (a)-[:ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT]->(u)",
+        );
+        await conn.execute(stmt, { altId, iuId });
+        return;
+      }
+      case "document_fragment_ref": {
+        const fragId = await this.ensureDocumentFragmentNode(
+          item.document_id,
+          item.start_offset,
+          item.end_offset,
+        );
+        const stmt = await conn.prepare(
+          "MATCH (a:AlternativeOption), (f:DocumentFragment) WHERE a.id = $altId AND f.id = $fragId CREATE (a)-[:ALTERNATIVE_SUPPORTED_BY_DOC_FRAGMENT]->(f)",
+        );
+        await conn.execute(stmt, { altId, fragId });
+        return;
+      }
+      default:
+        assertNever(item);
     }
   }
 
@@ -564,26 +596,33 @@ export class KnowledgeRepository {
   ): Promise<void> {
     const conn = this.db.getConnection();
     const relName = decisionSlotRelName(slot, item.type);
-    if (item.type === "conversation_idea_unit") {
-      const iuId = ideaUnitNodeId(
-        item.conversation_id,
-        item.turn_index,
-        item.idea_unit_index,
-      );
-      const stmt = await conn.prepare(
-        `MATCH (d:Decision), (u:IdeaUnit) WHERE d.id = $decisionId AND u.id = $iuId CREATE (d)-[:${relName}]->(u)`,
-      );
-      await conn.execute(stmt, { decisionId, iuId });
-    } else {
-      const fragId = await this.ensureDocumentFragmentNode(
-        item.document_id,
-        item.start_offset,
-        item.end_offset,
-      );
-      const stmt = await conn.prepare(
-        `MATCH (d:Decision), (f:DocumentFragment) WHERE d.id = $decisionId AND f.id = $fragId CREATE (d)-[:${relName}]->(f)`,
-      );
-      await conn.execute(stmt, { decisionId, fragId });
+    switch (item.type) {
+      case "idea_unit_ref": {
+        const iuId = ideaUnitNodeId(
+          item.conversation_id,
+          item.turn_index,
+          item.idea_unit_index,
+        );
+        const stmt = await conn.prepare(
+          `MATCH (d:Decision), (u:IdeaUnit) WHERE d.id = $decisionId AND u.id = $iuId CREATE (d)-[:${relName}]->(u)`,
+        );
+        await conn.execute(stmt, { decisionId, iuId });
+        return;
+      }
+      case "document_fragment_ref": {
+        const fragId = await this.ensureDocumentFragmentNode(
+          item.document_id,
+          item.start_offset,
+          item.end_offset,
+        );
+        const stmt = await conn.prepare(
+          `MATCH (d:Decision), (f:DocumentFragment) WHERE d.id = $decisionId AND f.id = $fragId CREATE (d)-[:${relName}]->(f)`,
+        );
+        await conn.execute(stmt, { decisionId, fragId });
+        return;
+      }
+      default:
+        assertNever(item);
     }
   }
 
@@ -718,16 +757,21 @@ export class KnowledgeRepository {
 
   private async requireSupportingItems(items: TopicItem[]): Promise<void> {
     for (const item of items) {
-      if (item.type === "conversation_idea_unit") {
-        await this.requireIdeaUnit(
-          item.conversation_id,
-          item.turn_index,
-          item.idea_unit_index,
-        );
-      } else {
-        if (!(await this.nodeExists("Document", item.document_id))) {
-          throw new Error(`Document not found: ${item.document_id}`);
-        }
+      switch (item.type) {
+        case "idea_unit_ref":
+          await this.requireIdeaUnit(
+            item.conversation_id,
+            item.turn_index,
+            item.idea_unit_index,
+          );
+          break;
+        case "document_fragment_ref":
+          if (!(await this.nodeExists("Document", item.document_id))) {
+            throw new Error(`Document not found: ${item.document_id}`);
+          }
+          break;
+        default:
+          assertNever(item);
       }
     }
   }
@@ -743,12 +787,21 @@ function decisionSlotRelName(
   slot: DecisionSupportSlot,
   itemType: TopicItem["type"],
 ): string {
-  const suffix = itemType === "conversation_idea_unit"
-    ? "IDEA_UNIT"
-    : "DOC_FRAGMENT";
-  if (slot.slot === "context") return `CONTEXT_SUPPORTED_BY_${suffix}`;
-  if (slot.slot === "decision") return `DECISION_SUPPORTED_BY_${suffix}`;
-  return `ALTERNATIVE_SUPPORTED_BY_${suffix}`;
+  const suffix = itemSuffix(itemType);
+  switch (slot.slot) {
+    case "context": return `CONTEXT_SUPPORTED_BY_${suffix}`;
+    case "decision": return `DECISION_SUPPORTED_BY_${suffix}`;
+    case "alternative": return `ALTERNATIVE_SUPPORTED_BY_${suffix}`;
+    default: return assertNever(slot);
+  }
+}
+
+function itemSuffix(itemType: TopicItem["type"]): string {
+  switch (itemType) {
+    case "idea_unit_ref": return "IDEA_UNIT";
+    case "document_fragment_ref": return "DOC_FRAGMENT";
+    default: return assertNever(itemType);
+  }
 }
 
 function asArray(

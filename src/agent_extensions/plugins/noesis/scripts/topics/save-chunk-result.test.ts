@@ -62,7 +62,7 @@ describe("saveChunkResult", () => {
     expect(conv.topics[0].title).toBe("Greetings");
     expect(conv.topics[0].items).toHaveLength(1);
     expect(conv.topics[0].items[0]).toEqual({
-      type: "conversation_idea_unit",
+      type: "idea_unit_ref",
       conversation_id: "conv-1",
       turn_index: 0,
       idea_unit_index: 0,

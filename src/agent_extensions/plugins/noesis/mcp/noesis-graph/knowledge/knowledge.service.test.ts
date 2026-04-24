@@ -263,7 +263,7 @@ describe("KnowledgeService", () => {
 
       const result = await service.addItemsToTopic("t1", [
         {
-          type: "conversation_idea_unit",
+          type: "idea_unit_ref",
           conversation_id: "conv-1",
           turn_index: 0,
           idea_unit_index: 0,
@@ -289,7 +289,7 @@ describe("KnowledgeService", () => {
 
       await service.addItemsToTopic("t1", [
         {
-          type: "document_fragment",
+          type: "document_fragment_ref",
           document_id: "doc-1",
           start_offset: 0,
           end_offset: 4,
@@ -312,7 +312,7 @@ describe("KnowledgeService", () => {
       await expect(
         service.addItemsToTopic("t1", [
           {
-            type: "conversation_idea_unit",
+            type: "idea_unit_ref",
             conversation_id: "ghost",
             turn_index: 0,
             idea_unit_index: 0,
@@ -326,7 +326,7 @@ describe("KnowledgeService", () => {
       await expect(
         service.addItemsToTopic("t1", [
           {
-            type: "document_fragment",
+            type: "document_fragment_ref",
             document_id: "ghost",
             start_offset: 0,
             end_offset: 1,
@@ -344,19 +344,19 @@ describe("KnowledgeService", () => {
       await service.addTopic({ id: "t1", title: "T", short_summary: "" });
 
       const iuContext = {
-        type: "conversation_idea_unit" as const,
+        type: "idea_unit_ref" as const,
         conversation_id: "conv-1",
         turn_index: 0,
         idea_unit_index: 0,
       };
       const iuDecision = {
-        type: "conversation_idea_unit" as const,
+        type: "idea_unit_ref" as const,
         conversation_id: "conv-1",
         turn_index: 0,
         idea_unit_index: 1,
       };
       const iuAlt = {
-        type: "conversation_idea_unit" as const,
+        type: "idea_unit_ref" as const,
         conversation_id: "conv-1",
         turn_index: 1,
         idea_unit_index: 0,
@@ -409,7 +409,7 @@ describe("KnowledgeService", () => {
             text: "",
             supporting_items: [
               {
-                type: "conversation_idea_unit",
+                type: "idea_unit_ref",
                 conversation_id: "ghost",
                 turn_index: 0,
                 idea_unit_index: 0,
@@ -516,7 +516,7 @@ describe("KnowledgeService", () => {
               long_summary: "l",
               items: [
                 {
-                  type: "conversation_idea_unit",
+                  type: "idea_unit_ref",
                   conversation_id: "m1",
                   turn_index: 0,
                   idea_unit_index: 0,
@@ -600,7 +600,7 @@ describe("KnowledgeService", () => {
               long_summary: "",
               items: [
                 {
-                  type: "conversation_idea_unit",
+                  type: "idea_unit_ref",
                   conversation_id: "rev-1",
                   turn_index: 0,
                   idea_unit_index: 0,
@@ -679,7 +679,7 @@ describe("KnowledgeService", () => {
       });
 
       const iu = {
-        type: "conversation_idea_unit" as const,
+        type: "idea_unit_ref" as const,
         conversation_id: "conv-1",
         turn_index: 0,
         idea_unit_index: 0,

@@ -17,6 +17,14 @@ export const IdeaUnitSchema = z.object({
 });
 export type IdeaUnit = z.infer<typeof IdeaUnitSchema>;
 
+export const IdeaUnitRefSchema = z.object({
+  type: z.literal("idea_unit_ref"),
+  conversation_id: z.string(),
+  turn_index: z.int(),
+  idea_unit_index: z.int(),
+});
+export type IdeaUnitRef = z.infer<typeof IdeaUnitRefSchema>;
+
 export const TurnSchema = z.object({
   index: z.int(),
   speaker: z.string(),
@@ -30,7 +38,7 @@ export const ConversationSchema = z.object({
   time: z.string(),
   main_topic: z.string(),
   turns: z.array(TurnSchema),
-  topics: z.array(TopicSchema),
+  topics: z.array(z.lazy(() => TopicSchema)),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 

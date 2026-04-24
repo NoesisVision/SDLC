@@ -15,6 +15,7 @@ import type {
   Turn,
 } from "../../shared-contracts/conversation.js";
 import type { Topic } from "../../shared-contracts/topics.js";
+import { assertNever } from "../../shared-contracts/assert-never.js";
 
 export function loadTopicForDecisions(
   conversation: Conversation,
@@ -41,11 +42,19 @@ function enrichTopicForDecisions(
   const details: IdeaUnitDetail[] = [];
 
   for (const item of topic.items) {
-    if (item.type !== "conversation_idea_unit") continue;
-    if (item.conversation_id !== conversationId) continue;
-    const detail = resolveIdeaUnitDetail(item, turnMap);
-    if (detail === null || isIrrelevant(detail.categories)) continue;
-    details.push(detail);
+    switch (item.type) {
+      case "idea_unit_ref": {
+        if (item.conversation_id !== conversationId) break;
+        const detail = resolveIdeaUnitDetail(item, turnMap);
+        if (detail === null || isIrrelevant(detail.categories)) break;
+        details.push(detail);
+        break;
+      }
+      case "document_fragment_ref":
+        break;
+      default:
+        assertNever(item);
+    }
   }
 
   return {

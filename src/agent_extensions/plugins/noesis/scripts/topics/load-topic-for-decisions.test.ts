@@ -26,9 +26,9 @@ function makeConversation(decisionsExtracted: boolean = false): Conversation {
         short_summary: "Summary",
         long_summary: "Long summary",
         items: [
-          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
-          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
-          { type: "conversation_idea_unit", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
+          { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+          { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
+          { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
         ],
         decisions: [],
         reviewed: true,
@@ -72,7 +72,7 @@ describe("loadTopicForDecisions", () => {
   test("skips refs from other conversations", () => {
     const conv = makeConversation(false);
     conv.topics[0].items.push({
-      type: "conversation_idea_unit",
+      type: "idea_unit_ref",
       conversation_id: "other-conv",
       turn_index: 0,
       idea_unit_index: 0,
@@ -88,10 +88,10 @@ describe("loadTopicForDecisions", () => {
     expect(result!.idea_units).toHaveLength(3);
   });
 
-  test("ignores document_fragment items", () => {
+  test("ignores document fragment ref items", () => {
     const conv = makeConversation(false);
     conv.topics[0].items.push({
-      type: "document_fragment",
+      type: "document_fragment_ref",
       document_id: "doc-1",
       start_offset: 10,
       end_offset: 50,

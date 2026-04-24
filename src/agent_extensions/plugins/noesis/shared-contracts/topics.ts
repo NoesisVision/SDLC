@@ -1,27 +1,13 @@
 import { randomUUID } from "crypto";
 import { z } from "zod";
+import { IdeaUnitRefSchema, type IdeaUnitRef } from "./conversation.js";
+import { DocumentFragmentRefSchema, type DocumentFragmentRef } from "./documents.js";
 
-export const ConversationIdeaUnitSchema = z.object({
-  type: z.literal("conversation_idea_unit"),
-  conversation_id: z.string(),
-  turn_index: z.int(),
-  idea_unit_index: z.int(),
-});
-export type ConversationIdeaUnit = z.infer<typeof ConversationIdeaUnitSchema>;
-
-export const DocumentFragmentSchema = z.object({
-  type: z.literal("document_fragment"),
-  document_id: z.string(),
-  start_offset: z.int(),
-  end_offset: z.int(),
-});
-export type DocumentFragment = z.infer<typeof DocumentFragmentSchema>;
-
-export const TopicItemSchema = z.discriminatedUnion("type", [
-  ConversationIdeaUnitSchema,
-  DocumentFragmentSchema,
+export const TopicItemSchema = z.union([
+  z.lazy(() => IdeaUnitRefSchema),
+  DocumentFragmentRefSchema,
 ]);
-export type TopicItem = z.infer<typeof TopicItemSchema>;
+export type TopicItem = IdeaUnitRef | DocumentFragmentRef;
 
 export const DecisionContextSchema = z.object({
   text: z.string(),
@@ -60,16 +46,6 @@ export const TopicSchema = z.object({
   decisions_extracted: z.boolean().default(false),
 });
 export type Topic = z.infer<typeof TopicSchema>;
-
-export const TopicOverviewSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  short_summary: z.string(),
-  long_summary: z.string(),
-  has_subtopics: z.boolean(),
-  path: z.array(z.string()),
-});
-export type TopicOverview = z.infer<typeof TopicOverviewSchema>;
 
 export const PotentialTopicSchema = z.object({
   id: z.string(),

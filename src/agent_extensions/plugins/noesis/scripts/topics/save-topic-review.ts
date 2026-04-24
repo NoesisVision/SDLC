@@ -8,6 +8,7 @@ import {
   PotentialTopicsSchema,
 } from "../../shared-contracts/topics.js";
 import type { Topic } from "../../shared-contracts/topics.js";
+import { assertNever } from "../../shared-contracts/assert-never.js";
 import {
   appendNewTopics,
   createTopicFromPotential,
@@ -55,8 +56,14 @@ function applyReassignments(
   );
 
   sourceTopic.items = sourceTopic.items.filter((item) => {
-    if (item.type !== "conversation_idea_unit") return true;
-    return !reassignedKeys.has(`${item.turn_index}:${item.idea_unit_index}`);
+    switch (item.type) {
+      case "idea_unit_ref":
+        return !reassignedKeys.has(`${item.turn_index}:${item.idea_unit_index}`);
+      case "document_fragment_ref":
+        return true;
+      default:
+        return assertNever(item);
+    }
   });
 
   for (const reassignment of review.reassignments) {
@@ -68,7 +75,7 @@ function applyReassignments(
     }
 
     target.items.push({
-      type: "conversation_idea_unit",
+      type: "idea_unit_ref",
       conversation_id: conversation.conversation_id,
       turn_index: reassignment.turn_index,
       idea_unit_index: reassignment.idea_unit_index,

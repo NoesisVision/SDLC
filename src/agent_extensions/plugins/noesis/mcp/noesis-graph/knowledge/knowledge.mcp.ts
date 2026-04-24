@@ -3,11 +3,11 @@ import { z } from "zod";
 import {
   DecisionSchema,
   TopicItemSchema,
-  type TopicOverview,
 } from "../../../shared-contracts/topics.js";
 import { KnowledgeService, type TopicForReview } from "./knowledge.service.js";
-import type { TopicDetail } from "./knowledge.repository.js";
+import type { TopicDetail, TopicOverview } from "./knowledge.repository.js";
 import type { DecisionSupportSlot } from "./decision-support.js";
+import { assertNever } from "../../../shared-contracts/assert-never.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -148,7 +148,7 @@ function registerAddItemsToDecision(
           .describe("Index of the alternative option. Required when slot='alternative'."),
         items: z
           .array(TopicItemSchema)
-          .describe("ConversationIdeaUnit or DocumentFragment references to attach."),
+          .describe("IdeaUnitRef or DocumentFragmentRef references to attach."),
       },
     },
     async ({ decision_id, slot, alternative_index, items }) =>
@@ -173,7 +173,7 @@ function registerAddItemsToTopic(
         topic_id: z.string().describe("Id of the target Topic."),
         items: z
           .array(TopicItemSchema)
-          .describe("ConversationIdeaUnit or DocumentFragment references to attach."),
+          .describe("IdeaUnitRef or DocumentFragmentRef references to attach."),
       },
     },
     async ({ topic_id, items }) =>
@@ -389,15 +389,20 @@ function resolveSlot(
   slot: "context" | "decision" | "alternative",
   alternativeIndex: number | undefined,
 ): DecisionSupportSlot {
-  if (slot === "alternative") {
-    if (alternativeIndex === undefined) {
-      throw new Error(
-        "alternative_index is required when slot='alternative'",
-      );
-    }
-    return { slot, alternative_index: alternativeIndex };
+  switch (slot) {
+    case "context":
+    case "decision":
+      return { slot };
+    case "alternative":
+      if (alternativeIndex === undefined) {
+        throw new Error(
+          "alternative_index is required when slot='alternative'",
+        );
+      }
+      return { slot, alternative_index: alternativeIndex };
+    default:
+      return assertNever(slot);
   }
-  return { slot };
 }
 
 function formatTopicDetail(

@@ -12,19 +12,20 @@ import {
   type Conversation,
   type EnrichedTopic,
   type IdeaUnitDetail,
+  type IdeaUnitRef,
 } from "../../../shared-contracts/conversation.js";
 import { DocumentSchema, type Document } from "../../../shared-contracts/documents.js";
+import { assertNever } from "../../../shared-contracts/assert-never.js";
 import {
   PotentialTopicsSchema,
-  type ConversationIdeaUnit,
   type Decision,
   type TopicItem,
-  type TopicOverview,
 } from "../../../shared-contracts/topics.js";
 import {
   KnowledgeRepository,
   type NewTopicInput,
   type TopicDetail,
+  type TopicOverview,
 } from "./knowledge.repository.js";
 import type { DecisionSupportSlot } from "./decision-support.js";
 
@@ -136,13 +137,21 @@ export class KnowledgeService implements OnModuleInit {
     const seen = new Set<string>();
 
     for (const item of topic.items) {
-      if (item.type !== "conversation_idea_unit") continue;
-      const key = itemKey(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const detail = resolveIdeaUnitDetail(item, currentTurnMap);
-      if (detail === null || isIrrelevant(detail.categories)) continue;
-      details.push(detail);
+      switch (item.type) {
+        case "idea_unit_ref": {
+          const key = itemKey(item);
+          if (seen.has(key)) break;
+          seen.add(key);
+          const detail = resolveIdeaUnitDetail(item, currentTurnMap);
+          if (detail === null || isIrrelevant(detail.categories)) break;
+          details.push(detail);
+          break;
+        }
+        case "document_fragment_ref":
+          break;
+        default:
+          assertNever(item);
+      }
     }
 
     for (const prior of priorDetails) {
@@ -288,7 +297,7 @@ function countIdeaUnits(conversation: Conversation): number {
   return conversation.turns.reduce((sum, t) => sum + t.idea_units.length, 0);
 }
 
-function itemKey(item: ConversationIdeaUnit): string {
+function itemKey(item: IdeaUnitRef): string {
   return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
 }
 

@@ -25,6 +25,7 @@
 2. **NestJS** for backend servers.
 3. **React + Vite** for UI applications.
 4. Strict TypeScript — no `any` types without justification.
+5. Narrow discriminated unions (and any closed string-literal union) with `switch` on the discriminator plus an `assertNever(x)` default — never `if`/`else if` chains or ternaries. This gives compile-time exhaustiveness when a new variant is added. The `assertNever` helper lives in `shared-contracts/assert-never.ts`.
 
 ## Python
 

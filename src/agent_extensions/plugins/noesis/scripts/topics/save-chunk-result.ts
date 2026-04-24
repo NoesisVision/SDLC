@@ -60,7 +60,7 @@ function applyAssignments(
     }
 
     topic.items.push({
-      type: "conversation_idea_unit",
+      type: "idea_unit_ref",
       conversation_id: conversation.conversation_id,
       turn_index: assignment.turn_index,
       idea_unit_index: assignment.idea_unit_index,
