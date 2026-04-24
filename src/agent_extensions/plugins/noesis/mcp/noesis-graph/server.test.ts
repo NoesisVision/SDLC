@@ -55,6 +55,12 @@ describe("MCP server smoke test", () => {
     expect(serverInfo!.version).toBe("0.1.0");
 
     const tools = await client.listTools();
-    expect(tools.tools.map((t) => t.name)).toContain("get_domain_model");
+    const toolNames = tools.tools.map((t) => t.name);
+    expect(toolNames).toContain("get_domain_model");
+    expect(toolNames).toContain("has_document");
+    expect(toolNames).toContain("list_decisions");
+    expect(toolNames).toContain("read_decision");
+    expect(toolNames).toContain("get_topic_for_document_review");
+    expect(toolNames).toContain("merge_document");
   }, 15000);
 });

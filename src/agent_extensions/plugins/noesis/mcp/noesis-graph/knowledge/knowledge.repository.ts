@@ -72,6 +72,42 @@ export interface TopicDetail {
   path: string[];
 }
 
+export interface DocumentFragmentDetail {
+  document_id: string;
+  document_title: string;
+  start_offset: number;
+  end_offset: number;
+  text: string;
+  section_path: string[];
+}
+
+export interface DecisionOverview {
+  id: string;
+  topic_id: string;
+  topic_title: string;
+  title: string;
+  status: string;
+  context_text: string;
+}
+
+export interface AlternativeRow {
+  option_index: number;
+  text: string;
+  rationale: string;
+}
+
+export interface DecisionDetail {
+  id: string;
+  topic_id: string;
+  topic_title: string;
+  title: string;
+  status: string;
+  context_text: string;
+  decision_text: string;
+  decision_rationale: string;
+  alternatives: AlternativeRow[];
+}
+
 @Injectable()
 export class KnowledgeRepository {
   private readonly logger = new Logger(KnowledgeRepository.name);
@@ -182,6 +218,96 @@ export class KnowledgeRepository {
 
   async hasConversation(conversationId: string): Promise<boolean> {
     return this.nodeExists("Conversation", conversationId);
+  }
+
+  async hasDocument(documentId: string): Promise<boolean> {
+    return this.nodeExists("Document", documentId);
+  }
+
+  async listDecisions(
+    topicId: string | null,
+  ): Promise<DecisionOverview[]> {
+    const conn = this.db.getConnection();
+    const query = topicId === null
+      ? "MATCH (t:Topic)-[:TOPIC_HAS_DECISION]->(d:Decision) " +
+        "RETURN d.id AS id, t.id AS topic_id, t.title AS topic_title, d.title AS title, d.status AS status, d.context_text AS context_text " +
+        "ORDER BY t.title, d.title"
+      : "MATCH (t:Topic)-[:TOPIC_HAS_DECISION]->(d:Decision) WHERE t.id = $topicId " +
+        "RETURN d.id AS id, t.id AS topic_id, t.title AS topic_title, d.title AS title, d.status AS status, d.context_text AS context_text " +
+        "ORDER BY d.title";
+    const stmt = await conn.prepare(query);
+    const result = topicId === null
+      ? await conn.execute(stmt, {})
+      : await conn.execute(stmt, { topicId });
+    return asArray(result).getAllSync() as DecisionOverview[];
+  }
+
+  async readDecision(decisionId: string): Promise<DecisionDetail | null> {
+    const conn = this.db.getConnection();
+    const headStmt = await conn.prepare(
+      "MATCH (t:Topic)-[:TOPIC_HAS_DECISION]->(d:Decision) WHERE d.id = $id " +
+        "RETURN d.id AS id, t.id AS topic_id, t.title AS topic_title, d.title AS title, d.status AS status, " +
+        "d.context_text AS context_text, d.decision_text AS decision_text, d.decision_rationale AS decision_rationale " +
+        "LIMIT 1",
+    );
+    const headResult = await conn.execute(headStmt, { id: decisionId });
+    const headRows = asArray(headResult).getAllSync() as Array<Omit<DecisionDetail, "alternatives">>;
+    if (headRows.length === 0) return null;
+
+    const altStmt = await conn.prepare(
+      "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(a:AlternativeOption) WHERE d.id = $id " +
+        "RETURN a.option_index AS option_index, a.text AS text, a.rationale AS rationale " +
+        "ORDER BY a.option_index",
+    );
+    const altResult = await conn.execute(altStmt, { id: decisionId });
+    const altRows = asArray(altResult).getAllSync() as Array<{
+      option_index: number | bigint;
+      text: string;
+      rationale: string;
+    }>;
+
+    return {
+      ...headRows[0],
+      alternatives: altRows.map((r) => ({
+        option_index: Number(r.option_index),
+        text: r.text,
+        rationale: r.rationale,
+      })),
+    };
+  }
+
+  async getPriorDocumentFragments(
+    topicId: string,
+    excludeDocumentId: string,
+  ): Promise<DocumentFragmentDetail[]> {
+    const conn = this.db.getConnection();
+    const stmt = await conn.prepare(
+      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
+        "WHERE t.id = $topicId AND d.id <> $excludeDocumentId " +
+        "RETURN d.id AS document_id, d.title AS document_title, d.content AS document_content, " +
+        "f.start_offset AS start_offset, f.end_offset AS end_offset " +
+        "ORDER BY d.id, f.start_offset",
+    );
+    const result = await conn.execute(stmt, { topicId, excludeDocumentId });
+    const rows = asArray(result).getAllSync() as Array<{
+      document_id: string;
+      document_title: string;
+      document_content: string;
+      start_offset: number | bigint;
+      end_offset: number | bigint;
+    }>;
+    return rows.map((r) => {
+      const start = Number(r.start_offset);
+      const end = Number(r.end_offset);
+      return {
+        document_id: r.document_id,
+        document_title: r.document_title,
+        start_offset: start,
+        end_offset: end,
+        text: r.document_content.slice(start, end).trim(),
+        section_path: [],
+      };
+    });
   }
 
   async insertConversation(conversation: Conversation): Promise<void> {

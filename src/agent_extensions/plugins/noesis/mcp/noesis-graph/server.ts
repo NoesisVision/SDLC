@@ -49,7 +49,7 @@ export async function startServer(): Promise<void> {
     await app.listen(0);
 
     registerScannerTools(mcp, app.get(ScannerService), app.get(InvocationsService));
-    registerKnowledgeTools(mcp, app.get(KnowledgeService));
+    registerKnowledgeTools(mcp, app.get(KnowledgeService), app.get(DesignDocService));
     registerDesignDocTools(mcp, app.get(DesignDocService));
     logger.log("MCP tools registered", "Bootstrap");
 

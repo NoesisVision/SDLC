@@ -718,6 +718,171 @@ describe("KnowledgeService", () => {
       ).rejects.toThrow(/Alternative option not found/);
     });
   });
+
+  describe("mergeDocument", () => {
+    test("inserts document, upserts topics, attaches fragments and decisions, applies attachments", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-merge-doc-"));
+      try {
+        const documentContent = "First paragraph.\n\nSecond paragraph.\n";
+        await writeFile(
+          join(workingDir, "document.json"),
+          JSON.stringify({
+            id: "doc-merge-1",
+            title: "Doc",
+            date: "2026-04-24",
+            content: documentContent,
+          }),
+        );
+
+        await service.addTopic({ id: "existing-topic", title: "Existing", short_summary: "" });
+        await service.addDecision("existing-topic", {
+          id: "existing-dec-1",
+          title: "Existing decision",
+          status: "accepted",
+          context: { text: "", supporting_items: [] },
+          decision: { text: "", rationale: "", supporting_items: [] },
+          alternative_options: [],
+        });
+
+        const analysis = {
+          document_id: "doc-merge-1",
+          document_title: "Doc",
+          document_date: "2026-04-24",
+          fragments: [
+            { index: 0, start_offset: 0, end_offset: 16, section_path: [], kind: "paragraph", text: "First paragraph.", categories: ["Information"] },
+            { index: 1, start_offset: 18, end_offset: 35, section_path: [], kind: "paragraph", text: "Second paragraph.", categories: ["Decision"] },
+          ],
+          section_tree: [],
+          topics: [
+            {
+              id: "new-topic-1",
+              title: "Fresh",
+              short_summary: "s",
+              long_summary: "l",
+              items: [
+                { type: "document_fragment_ref", document_id: "doc-merge-1", start_offset: 0, end_offset: 16 },
+                { type: "document_fragment_ref", document_id: "doc-merge-1", start_offset: 18, end_offset: 35 },
+              ],
+              decisions: [
+                {
+                  id: "new-dec-1",
+                  title: "New decision",
+                  status: "accepted",
+                  context: { text: "ctx", supporting_items: [] },
+                  decision: { text: "do it", rationale: "because", supporting_items: [] },
+                  alternative_options: [],
+                },
+              ],
+              reviewed: true,
+              decisions_extracted: true,
+            },
+          ],
+          decision_attachments: [
+            {
+              decision_id: "existing-dec-1",
+              slot: "context",
+              alternative_index: null,
+              fragment_indices: [0],
+            },
+          ],
+          design_doc_id: null,
+          design_doc_title: null,
+          design_doc_extracted: false,
+        };
+        await writeFile(join(workingDir, "analysis.json"), JSON.stringify(analysis));
+        await writeFile(
+          join(workingDir, "potential_topics.json"),
+          JSON.stringify({
+            topics: [
+              {
+                id: "new-topic-1",
+                title: "Fresh",
+                short_summary: "s",
+                path: ["Fresh"],
+                is_new: true,
+                parent_id: null,
+              },
+            ],
+          }),
+        );
+
+        const result = await service.mergeDocument(workingDir);
+        expect(result).toEqual({
+          document_id: "doc-merge-1",
+          topics_added: 1,
+          topics_updated: 0,
+          decisions_added: 1,
+          decision_attachments: 1,
+        });
+
+        expect(await countNodes("Document")).toBe(1);
+        expect(await countNodes("DocumentFragment")).toBe(2);
+        expect(await countRels("DOCUMENT_HAS_FRAGMENT")).toBe(2);
+        expect(await countRels("TOPIC_HAS_DOCUMENT_FRAGMENT")).toBe(2);
+        expect(await countRels("CONTEXT_SUPPORTED_BY_DOC_FRAGMENT")).toBe(1);
+        expect(await countRels("TOPIC_HAS_DECISION")).toBe(2);
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("hasDocument / listDecisions / readDecision", () => {
+    test("hasDocument returns true after insertion", async () => {
+      expect(await service.hasDocument("ghost")).toBe(false);
+      const path = join(tmpDir, "doc-h.json");
+      await writeFile(
+        path,
+        JSON.stringify({ id: "doc-h", title: "T", date: "2026-04-24", content: "x" }),
+      );
+      await service.addDocumentFromFile(path);
+      expect(await service.hasDocument("doc-h")).toBe(true);
+    });
+
+    test("listDecisions returns decisions filtered by topic and unfiltered", async () => {
+      await service.addTopic({ id: "t-a", title: "A", short_summary: "" });
+      await service.addTopic({ id: "t-b", title: "B", short_summary: "" });
+      await service.addDecision("t-a", {
+        id: "dec-a-1", title: "A1", status: "accepted",
+        context: { text: "ctx", supporting_items: [] },
+        decision: { text: "do", rationale: "r", supporting_items: [] },
+        alternative_options: [],
+      });
+      await service.addDecision("t-b", {
+        id: "dec-b-1", title: "B1", status: "proposed",
+        context: { text: "", supporting_items: [] },
+        decision: { text: "", rationale: "", supporting_items: [] },
+        alternative_options: [],
+      });
+
+      const all = await service.listDecisions(null);
+      expect(all).toHaveLength(2);
+      const onlyA = await service.listDecisions("t-a");
+      expect(onlyA).toHaveLength(1);
+      expect(onlyA[0].id).toBe("dec-a-1");
+    });
+
+    test("readDecision returns full detail with alternatives", async () => {
+      await service.addTopic({ id: "t-c", title: "C", short_summary: "" });
+      await service.addDecision("t-c", {
+        id: "dec-c-1",
+        title: "C1",
+        status: "accepted",
+        context: { text: "ctx", supporting_items: [] },
+        decision: { text: "do", rationale: "because", supporting_items: [] },
+        alternative_options: [
+          { text: "alt1", rationale: "r1", supporting_items: [] },
+        ],
+      });
+      const detail = await service.readDecision("dec-c-1");
+      expect(detail).not.toBeNull();
+      expect(detail!.title).toBe("C1");
+      expect(detail!.context_text).toBe("ctx");
+      expect(detail!.alternatives).toHaveLength(1);
+      expect(detail!.alternatives[0].text).toBe("alt1");
+      expect(await service.readDecision("ghost")).toBeNull();
+    });
+  });
 });
 
 function asArray(
