@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { basename, join } from "path";
 import { randomUUID } from "crypto";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
 import { fragmentMarkdown } from "./fragment-markdown.js";
@@ -8,6 +8,10 @@ import {
   type AnalyzeDesignDraftOutput,
 } from "../../shared-contracts/skills/analyze-design-draft/output.js";
 import { formatSectionTreeMarkdown } from "../../shared-contracts/documents.js";
+import { resolveScriptTmpDir } from "../../shared-contracts/plugin-paths.js";
+
+const FILE_MODE = 0o600;
+const DIR_MODE = 0o700;
 
 const DOCUMENT_ID_PATTERN = /^<!--\s*document_id:\s*([\w-]+)\s*-->/;
 
@@ -26,6 +30,7 @@ interface PrepareResult {
 interface PrepareOptions {
   designDocId: string | null;
   designDocTitle: string | null;
+  workingDirBase?: string;
 }
 
 // --- Public functions ---
@@ -59,8 +64,9 @@ export function prepareDocument(
 
   const { fragments, section_tree } = fragmentMarkdown(cleanedContent);
 
-  const workingDir = join("/tmp", `noesis-doc-${documentId}`);
-  mkdirSync(workingDir, { recursive: true });
+  const baseDir = options.workingDirBase ?? resolveScriptTmpDir();
+  const workingDir = join(baseDir, `noesis-doc-${documentId}`);
+  mkdirSync(workingDir, { recursive: true, mode: DIR_MODE });
 
   const output: AnalyzeDesignDraftOutput = {
     document: {
@@ -80,10 +86,16 @@ export function prepareDocument(
   };
   AnalyzeDesignDraftOutputSchema.parse(output);
   const outputPath = join(workingDir, "output.json");
-  writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
+  writeFileSync(outputPath, JSON.stringify(output, null, 2), {
+    encoding: "utf-8",
+    mode: FILE_MODE,
+  });
 
   const sectionTreePath = join(workingDir, "section_tree.md");
-  writeFileSync(sectionTreePath, formatSectionTreeMarkdown(section_tree), "utf-8");
+  writeFileSync(sectionTreePath, formatSectionTreeMarkdown(section_tree), {
+    encoding: "utf-8",
+    mode: FILE_MODE,
+  });
 
   return {
     status: "Ok",
@@ -101,8 +113,7 @@ export function prepareDocument(
 // --- Private functions ---
 
 function defaultTitle(documentPath: string): string {
-  const base = documentPath.split("/").pop() ?? documentPath;
-  return base.replace(/\.[^.]+$/, "");
+  return basename(documentPath).replace(/\.[^.]+$/, "");
 }
 
 function extractTitleFromContent(content: string): string | null {

@@ -21,19 +21,21 @@ Get from `$ARGUMENTS`, ask the user if missing:
 
 Run `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/conversation/prepare.ts <transcript_path> "<conversation_time>" "<main_topic>"`.
 
-The script generates a stable `conversation_id`, sentence-segments the transcript, writes `<transcript>-cleaned.md` next to the source, and initializes `<working_dir>/output.json` (matching `AnalyzeConversationOutput`: `{ conversation: { conversation_id, time, main_topic, turns: [], topics: [] }, potential_topics: { topics: [] } }`) under `/tmp/noesis-conv-<id>/`.
+The script generates a stable `conversation_id`, sentence-segments the transcript, writes `<transcript>-cleaned.md` next to the source, creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeConversationOutput`: `{ conversation: { conversation_id, time, main_topic, turns: [], topics: [] }, potential_topics: { topics: [] } }`).
 
 It returns:
 ```json
 {
   "status": "Ok",
-  "working_dir": "/tmp/noesis-conv-<id>",
+  "working_dir": "<absolute path returned by the script>",
   "conversation_id": "<id>",
   "cleaned_path": "<transcript>-cleaned.md",
   "output_path": "<working_dir>/output.json",
   "num_turns": <n>
 }
 ```
+
+Treat `working_dir` as an opaque absolute path — always use the value returned by the script, never construct it yourself.
 
 Then call MCP tool `noesis-graph:has_conversation` with `conversation_id`. If `exists: true`, report "Conversation already in the graph" and stop.
 

@@ -32,13 +32,13 @@ Get from `$ARGUMENTS`, ask if missing:
 
 Run `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/document/prepare.ts <document_path> "<title>" "<date>"` plus optional flags `--design_doc_id <id>` or `--design_doc_title <title>`.
 
-The script generates a stable `document_id`, writes `<document>-cleaned.md` next to the source (with the id stamped at the top), parses Markdown into a section tree + fragment list (with offsets), and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], potential_topics: { topics: [] }, design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md` under `/tmp/noesis-doc-<id>/`.
+The script generates a stable `document_id`, writes `<document>-cleaned.md` next to the source (with the id stamped at the top), parses Markdown into a section tree + fragment list (with offsets), creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], potential_topics: { topics: [] }, design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md`.
 
 It returns:
 ```json
 {
   "status": "Ok",
-  "working_dir": "/tmp/noesis-doc-<id>",
+  "working_dir": "<absolute path returned by the script>",
   "document_id": "<id>",
   "cleaned_path": "<document>-cleaned.md",
   "output_path": "<working_dir>/output.json",
@@ -48,6 +48,8 @@ It returns:
   "design_doc_title": <title|null>
 }
 ```
+
+Treat `working_dir` as an opaque absolute path — always use the value returned by the script, never construct it yourself.
 
 Then call MCP tool `noesis-graph:has_document` with `document_id`:
 - `exists: true` AND no Design-Doc target → "Document already in the graph", stop.

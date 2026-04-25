@@ -1,13 +1,24 @@
 import { type LoggerService, type LogLevel } from "@nestjs/common";
-import { appendFileSync, mkdirSync } from "fs";
+import { createWriteStream, mkdirSync, type WriteStream } from "fs";
 import { dirname, resolve } from "path";
+
+const FILE_MODE = 0o600;
+const DIR_MODE = 0o700;
 
 export class FileLogger implements LoggerService {
   private readonly logPath: string;
+  private readonly stream: WriteStream;
 
   constructor(dataDir: string) {
     this.logPath = resolve(dataDir, "noesis.log");
-    mkdirSync(dirname(this.logPath), { recursive: true });
+    mkdirSync(dirname(this.logPath), { recursive: true, mode: DIR_MODE });
+    this.stream = createWriteStream(this.logPath, {
+      flags: "a",
+      mode: FILE_MODE,
+    });
+    this.stream.on("error", () => {
+      // Ignore write failures to avoid cascading errors
+    });
   }
 
   debug(message: string, context?: string): void {
@@ -49,10 +60,6 @@ export class FileLogger implements LoggerService {
   }
 
   private append(text: string): void {
-    try {
-      appendFileSync(this.logPath, text);
-    } catch {
-      // Ignore write failures to avoid cascading errors
-    }
+    this.stream.write(text);
   }
 }

@@ -1,6 +1,27 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, statSync } from "fs";
-import { runFileOutputTool, runInlineJsonTool } from "./mcp-tool-output.js";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import {
+  configureToolOutputDir,
+  pruneStaleOutputs,
+  runFileOutputTool,
+  runInlineJsonTool,
+} from "./mcp-tool-output.js";
+
+const tmpDir = mkdtempSync(join(tmpdir(), "noesis-tool-output-"));
+
+beforeAll(() => {
+  configureToolOutputDir(tmpDir);
+});
 
 describe("runInlineJsonTool", () => {
   test("returns the result as inline JSON text content", async () => {
@@ -33,7 +54,7 @@ describe("runFileOutputTool", () => {
     const result = JSON.parse(response.content[0].text);
     expect(result.status).toBe("Ok");
     expect(typeof result.file).toBe("string");
-    expect(result.file).toContain("noesis-graph");
+    expect(result.file).toStartWith(tmpDir);
     expect(result.file).toContain("test_tool");
     expect(result.file).toEndWith(".md");
     expect(existsSync(result.file)).toBe(true);
@@ -63,4 +84,24 @@ describe("runFileOutputTool", () => {
     expect(response.isError).toBe(true);
     expect(response.content[0].text).toBe("nope");
   });
+});
+
+describe("pruneStaleOutputs", () => {
+  test("removes files older than the TTL and keeps fresher ones", () => {
+    const stale = join(tmpDir, "stale.md");
+    const fresh = join(tmpDir, "fresh.md");
+    writeFileSync(stale, "old");
+    writeFileSync(fresh, "new");
+    const oldTime = (Date.now() - 48 * 60 * 60 * 1000) / 1000;
+    utimesSync(stale, oldTime, oldTime);
+
+    pruneStaleOutputs(24 * 60 * 60 * 1000);
+
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+  });
+});
+
+afterAll(() => {
+  rmSync(tmpDir, { recursive: true, force: true });
 });

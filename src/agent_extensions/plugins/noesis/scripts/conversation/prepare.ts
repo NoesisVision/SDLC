@@ -8,6 +8,14 @@ import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
 } from "../../shared-contracts/skills/analyze-conversation/output.js";
+import { resolveScriptTmpDir } from "../../shared-contracts/plugin-paths.js";
+
+const FILE_MODE = 0o600;
+const DIR_MODE = 0o700;
+
+interface PrepareOptions {
+  workingDirBase?: string;
+}
 
 interface PrepareResult {
   status: "Ok";
@@ -50,6 +58,7 @@ export function prepareConversation(
   transcriptPath: string,
   conversationTime: string,
   mainTopic: string,
+  options: PrepareOptions = {},
 ): PrepareResult {
   const cleanedPath = getCleanedPath(transcriptPath);
 
@@ -69,8 +78,9 @@ export function prepareConversation(
   );
   writeFileSync(cleanedPath, cleanedMarkdown, "utf-8");
 
-  const workingDir = join("/tmp", `noesis-conv-${conversationId}`);
-  mkdirSync(workingDir, { recursive: true });
+  const baseDir = options.workingDirBase ?? resolveScriptTmpDir();
+  const workingDir = join(baseDir, `noesis-conv-${conversationId}`);
+  mkdirSync(workingDir, { recursive: true, mode: DIR_MODE });
 
   const output: AnalyzeConversationOutput = {
     conversation: {
@@ -84,7 +94,10 @@ export function prepareConversation(
   };
   AnalyzeConversationOutputSchema.parse(output);
   const outputPath = join(workingDir, "output.json");
-  writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
+  writeFileSync(outputPath, JSON.stringify(output, null, 2), {
+    encoding: "utf-8",
+    mode: FILE_MODE,
+  });
 
   return {
     status: "Ok",

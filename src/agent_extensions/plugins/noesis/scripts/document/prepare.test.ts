@@ -64,12 +64,15 @@ Another paragraph.
     const result = prepareDocument(docPath, "", "2026-04-25", {
       designDocId: null,
       designDocTitle: "auth-system",
+      workingDirBase: tmpDir,
     });
 
     expect(result.status).toBe("Ok");
     expect(result.cleaned_path).toBe(join(tmpDir, "spec-cleaned.md"));
     expect(existsSync(result.cleaned_path)).toBe(true);
-    expect(result.working_dir).toContain("noesis-doc-");
+    expect(result.working_dir).toBe(
+      join(tmpDir, `noesis-doc-${result.document_id}`),
+    );
     expect(existsSync(result.output_path)).toBe(true);
     expect(existsSync(result.section_tree_path)).toBe(true);
     expect(result.num_fragments).toBeGreaterThan(0);
@@ -96,10 +99,12 @@ Another paragraph.
     const first = prepareDocument(docPath, "Rerun", "2026-04-25", {
       designDocId: null,
       designDocTitle: null,
+      workingDirBase: tmpDir,
     });
     const second = prepareDocument(docPath, "Rerun", "2026-04-25", {
       designDocId: null,
       designDocTitle: null,
+      workingDirBase: tmpDir,
     });
     expect(second.document_id).toBe(first.document_id);
   });

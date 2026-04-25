@@ -4,6 +4,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AppModule } from "./app.module.js";
 import { FileLogger } from "./logging/file-logger.js";
+import {
+  configureToolOutputDir,
+  pruneStaleOutputs,
+} from "./mcp-tool-output.js";
+import {
+  ensureTmpDir,
+  scopeDataDirToProject,
+} from "../../shared-contracts/plugin-paths.js";
 import { ScannerService } from "./scanner/scanner.service.js";
 import { InvocationsService } from "./scanner/invocations/invocations.service.js";
 import { registerScannerTools } from "./scanner/scanner.mcp.js";
@@ -20,13 +28,13 @@ import { registerTopicsTools } from "./knowledge/topics/topics.mcp.js";
 
 export async function startServer(): Promise<void> {
   const [argDataDir, argProjectDir] = process.argv.slice(2);
-  const dataDir = argDataDir || process.env["CLAUDE_PLUGIN_DATA"];
+  const baseDataDir = argDataDir || process.env["CLAUDE_PLUGIN_DATA"];
   const projectDir =
     argProjectDir ||
     process.env["CLAUDE_PROJECT_DIR"] ||
     process.env["NOESIS_PROJECT_DIR"];
 
-  if (!dataDir) {
+  if (!baseDataDir) {
     throw new Error(
       "Plugin data directory is required.\n" +
         "Provide as first CLI arg or set CLAUDE_PLUGIN_DATA env var.",
@@ -40,9 +48,15 @@ export async function startServer(): Promise<void> {
     );
   }
 
+  const dataDir = scopeDataDirToProject(baseDataDir, projectDir);
+  const toolOutputDir = ensureTmpDir(dataDir);
+  configureToolOutputDir(toolOutputDir);
+  pruneStaleOutputs();
+
   const logger = new FileLogger(dataDir);
-  logger.log(`Data dir: ${dataDir}`, "Bootstrap");
+  logger.log(`Plugin data base: ${baseDataDir}`, "Bootstrap");
   logger.log(`Project dir: ${projectDir}`, "Bootstrap");
+  logger.log(`Scoped data dir: ${dataDir}`, "Bootstrap");
 
   const mcp = new McpServer({ name: "noesis-graph", version: "0.1.0" });
 
@@ -76,13 +90,22 @@ export async function startServer(): Promise<void> {
 }
 
 function openBrowser(url: string, logger: FileLogger): void {
-  const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+  const argv = browserCommand(url);
   try {
-    Bun.spawn([cmd, url], {
-      stdio: ["ignore", "ignore", "ignore"],
-    });
+    Bun.spawn(argv, { stdio: ["ignore", "ignore", "ignore"] });
   } catch {
     logger.warn(`Could not open browser. Visit ${url} manually.`, "Bootstrap");
+  }
+}
+
+function browserCommand(url: string): string[] {
+  switch (process.platform) {
+    case "win32":
+      return ["cmd", "/c", "start", "", url];
+    case "darwin":
+      return ["open", url];
+    default:
+      return ["xdg-open", url];
   }
 }
 

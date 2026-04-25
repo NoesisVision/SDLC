@@ -73,12 +73,15 @@ I think we should start with the database schema. It needs careful planning.
       transcriptPath,
       "2026-04-25 10:00:00",
       "Database design",
+      { workingDirBase: tmpDir },
     );
 
     expect(result.status).toBe("Ok");
     expect(result.cleaned_path).toBe(join(tmpDir, "meeting-cleaned.md"));
     expect(existsSync(result.cleaned_path)).toBe(true);
-    expect(result.working_dir).toContain("noesis-conv-");
+    expect(result.working_dir).toBe(
+      join(tmpDir, `noesis-conv-${result.conversation_id}`),
+    );
     expect(existsSync(result.output_path)).toBe(true);
     expect(result.num_turns).toBe(2);
 
@@ -101,8 +104,12 @@ Alice
 Sentence one. Sentence two.
 `,
     );
-    const first = prepareConversation(transcriptPath, "t", "m");
-    const second = prepareConversation(transcriptPath, "t", "m");
+    const first = prepareConversation(transcriptPath, "t", "m", {
+      workingDirBase: tmpDir,
+    });
+    const second = prepareConversation(transcriptPath, "t", "m", {
+      workingDirBase: tmpDir,
+    });
     expect(second.conversation_id).toBe(first.conversation_id);
   });
 });
