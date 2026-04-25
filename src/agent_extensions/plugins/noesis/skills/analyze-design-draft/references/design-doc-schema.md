@@ -1,6 +1,6 @@
 # Design Doc Schema Reference
 
-This file is loaded by the `extract-design-model` subagent. It captures (a) the JSON schema the produced `design_doc.json` must conform to, (b) the heuristics for recognising model-describing content in a design draft, and (c) ChangeSet semantics.
+This file is loaded only when Step 6 of `noesis:analyze-design-draft` is reached. It captures (a) the JSON schema the produced `design_doc.json` must conform to, (b) the heuristics for recognising model-describing content in a design draft, and (c) ChangeSet semantics.
 
 ## 1. Recognising model content in a draft
 
@@ -110,4 +110,4 @@ ChangeSet<T> { added: T[]; modified: T[]; removed: string[] }    // removed by n
 - Do not invent business rules, scenarios, or properties not stated in the source. The draft is the source of truth; gap-filling is the architect's job, not the extractor's.
 - Do not classify discussion / comparison content as model content. Comparison tables ("Vector RAG vs PageIndex") are NOT Building Blocks.
 - Do not promote a heading to a Module unless a separate Building Block sub-heading is nested under it. Modules group blocks; lone-heading sections become Building Blocks directly under the BoundedContext.
-- Do not produce an empty DesignDoc (no actors, no contexts, no quality attributes). If extraction yields nothing, return `{ "status": "NoModel" }` from the subagent and skip the merge step for the design doc.
+- Do not produce an empty DesignDoc (no actors, no contexts, no quality attributes). If extraction yields nothing, skip writing `design_doc.json` so `merge_document` skips the design-doc apply.

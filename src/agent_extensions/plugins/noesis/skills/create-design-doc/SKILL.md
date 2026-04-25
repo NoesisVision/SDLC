@@ -15,9 +15,7 @@ description: Create a design document (specification) for codebase changes based
 
 ## Environment
 
-- Run all scripts as: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/<path>.ts <args>`. Do NOT prepend `cd`.
-- Use `/tmp/noesis-design-doc-tmp.json` as `<tmp_file>` for script outputs.
-- After every script invocation, read `<tmp_file>` using the Read tool.
+- All graph access goes through `noesis-graph` MCP tools. Read-style tools (`list_topics`, `read_topic`, `read_design_doc`, `list_design_docs`) write Markdown to a tmp file and return the file path — read it with the Read tool.
 
 ## Setup
 
@@ -74,7 +72,7 @@ Combine knowledge graph context (Step 3) with input requirements (Step 2) to pro
    - `qualityAttributes`: ChangeSet of quality attributes.
 2. Write the JSON to `/tmp/noesis-design-doc-draft.json` using the Write tool.
 3. Call MCP tool `noesis-graph:save_design_doc` with `input_path: /tmp/noesis-design-doc-draft.json` and `output_path: <output_path>`. The tool validates, writes the canonicalized JSON to `<output_path>`, and persists the design into the knowledge graph. Returns inline JSON with counts of items added/modified/removed.
-4. Clean up: run `rm -f <tmp_file> /tmp/noesis-design-doc-draft.json`.
+4. Clean up: run `rm -f /tmp/noesis-design-doc-draft.json`.
 5. Report the output path and the returned counts to the user.
 
 ## Design Doc Schema Reference
@@ -100,9 +98,7 @@ All collection fields use `ChangeSet` wrappers. For first-time design, put all i
 
 ## Rules
 
-- NEVER use `cd` in any Bash command. Run scripts directly with `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/<path>.ts`.
-- NEVER use Bash (`cat`, `echo`, heredoc, redirect) to write files. Use `>` ONLY to capture script stdout to `<tmp_file>`. Use the Write tool for all other file writes.
 - Query and persist via the `noesis-graph` MCP tools — never write design docs directly to disk yourself. Read-style tools (`list_topics`, `read_topic`, `read_design_doc`, `list_design_docs`) return a tmp file path in their JSON response — always read that file with the Read tool to see the actual content.
-- NEVER write inline code in Bash. Use only the provided scripts.
+- Use the Write tool to produce the draft at `/tmp/noesis-design-doc-draft.json`. Do not generate it via shell heredoc.
 - For first-time designs (no existing design to diff against), put everything in `added` arrays within ChangeSets.
 - Reuse terminology and naming from the knowledge graph to maintain consistency.

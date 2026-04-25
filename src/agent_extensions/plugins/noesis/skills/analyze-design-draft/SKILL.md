@@ -1,112 +1,152 @@
 ---
 name: noesis:analyze-design-draft
-description: Analyze a software design draft (Markdown document) to build the knowledge graph. Extracts topics, decisions, and — when the document describes a domain model — maps Bounded Contexts, Modules, Building Blocks, and Behaviours into a Design Doc. Use to integrate a new design draft into the knowledge graph.
+description: Analyze a software design draft (Markdown document) and integrate it into the knowledge graph. Extracts topics and decisions, attaches new evidence to existing decisions where applicable, and — when the document describes a domain model — captures it as a Design Doc.
 ---
 
 # Analyze Design Draft
 
-## Core Principles
+The main agent does the reasoning. Use the Read tool freely to load as much (or as little) of the cleaned document as you need to keep output quality high — full document, partial windows, overlapping re-reads — that judgement is yours. The knowledge graph lives in the `noesis-graph` MCP server. Persist via `merge_document`; never write graph data directly.
 
-- NEVER load the whole document into LLM context. Always work via fragments and chunks.
-- Headings are **hints**, not authoritative topics. The final topic structure must respect existing knowledge-graph topics first; promote a heading to a topic only when no existing topic fits.
-- A document is treated as a **monologue** — one author, no off-topic noise — but with the same `Topic` / `Decision` / `TopicItem` semantics as a conversation. The atomic item is a **DocumentFragment** (offset range), not an IdeaUnit.
-- Reuse existing decisions before creating new ones. Search them with the same hierarchical / Goldilocks logic used for topics.
-- Knowledge-graph storage lives in the `noesis-graph` MCP server. The agent never writes to the graph directly.
-
-## Environment
-
-- Run all scripts as: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/<path>.ts <args>`. Do NOT prepend `cd`.
-- Do NOT load `REFERENCE-design-doc-schema.md` unless Step 7 is reached (design-model extraction).
+A document is a **monologue**: one author, no off-topic noise. The atomic item is a `DocumentFragment` (offset range), not an idea unit. Headings are **hints** — the topic structure must respect existing graph topics first; promote a heading to a topic only when no existing topic fits.
 
 ## Setup
 
-- **Document path:** Get from `$ARGUMENTS`, ask user if missing. Use for `<document_path>`.
-- **Document title:** Get from `$ARGUMENTS`, derive from the document's first `#` heading if absent. Use for `<title>`.
-- **Document date:** Get from `$ARGUMENTS`, fall back to today's date in `YYYY-MM-DD`. Use for `<date>`.
-- **Main topic:** Get from `$ARGUMENTS`, ask user if missing. Short description used to seed topic search. Use for `<main_topic>`.
-- **Design Doc target:** Get one of:
-    - `<design_doc_id>` — attach extracted model to an existing Design Doc, OR
-    - `<design_doc_title>` — create a new Design Doc with this name.
+Get from `$ARGUMENTS`, ask if missing:
 
-  If neither is present in `$ARGUMENTS`, ask the user: *"Should I attach the model to an existing Design Doc (provide id) or create a new one (provide title)? Reply with `id=<uuid>` or `title=<name>`. Reply `skip` if the document does not describe a domain model."*
+- **document_path** — absolute path to the source Markdown.
+- **title** — falls back to the document's first `#` heading or the filename stem.
+- **date** — `YYYY-MM-DD`, falls back to today.
+- **main_topic** — short description used to seed topic search.
+- **Design Doc target** — one of:
+  - `design_doc_id` — attach the extracted model to an existing Design Doc.
+  - `design_doc_title` — create a new Design Doc with this name.
+  - `skip` — the document does not describe a domain model.
+
+  If none provided, ask: *"Should I attach the extracted model to an existing Design Doc (provide id) or create a new one (provide title)? Reply `id=<uuid>`, `title=<name>`, or `skip`."*
 
 ## Workflow
 
-### Step 1: Prepare analysis
+### Step 1: Prepare
 
-Run: `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/documents/prepare-document-analysis.ts <document_path> <title> <date>` plus optional flags `--design_doc_id <id>` and `--design_doc_title <title>` if provided in Setup.
+Run `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/document/prepare.ts <document_path> "<title>" "<date>"` plus optional flags `--design_doc_id <id>` or `--design_doc_title <title>`.
 
-The script:
+The script generates a stable `document_id`, writes `<document>-cleaned.md` next to the source (with the id stamped at the top), parses Markdown into a section tree + fragment list (with offsets), and initializes `<working_dir>/{document.json,analysis.json,section_tree.md}` under `/tmp/noesis-doc-<id>/`.
 
-1. Computes (or reads) a stable `document_id` (UUID embedded as `<!-- document_id: ... -->` in the file's first line).
-2. Creates working directory `<document_path>_design_work/` next to the input file.
-3. Parses the Markdown into a section tree (`^(#{1,6})\s+(.+)$`, skipping headers inside fenced code blocks) and fragments (paragraph / list / code_block / table / blockquote, with `start_offset`/`end_offset` measured in characters).
-4. If no headings are found, treats the whole document as a monologue and fragments by paragraph.
-5. Writes `document.json`, `analysis.json`, `section_tree.md`, and chunk files.
-
-Output:
+It returns:
 ```json
 {
   "status": "Ok",
-  "working_dir": "<path>",
+  "working_dir": "/tmp/noesis-doc-<id>",
   "document_id": "<id>",
-  "design_doc_id": "<id-or-null>",
-  "design_doc_title": "<title-or-null>",
-  "section_tree_path": "<path>/section_tree.md",
-  "document_path": "<path>/document.json",
-  "analysis_path": "<path>/analysis.json",
-  "chunks": [
-    { "chunk_id": 0, "file": "<path>/chunk_0.md", "fragment_indices": [0, 1, 2], "num_fragments": 3, "section_paths": [["Part 1"]] }
-  ]
+  "cleaned_path": "<document>-cleaned.md",
+  "document_path": "<working_dir>/document.json",
+  "analysis_path": "<working_dir>/analysis.json",
+  "section_tree_path": "<working_dir>/section_tree.md",
+  "num_fragments": <n>,
+  "design_doc_id": <id|null>,
+  "design_doc_title": <title|null>
 }
 ```
 
 Then call MCP tool `noesis-graph:has_document` with `document_id`:
-- If `exists: true` AND the user did not pass a Design-Doc target, inform "Document already added" and finish.
-- If `exists: true` AND the user passed `<design_doc_id>`/`<design_doc_title>`, skip Steps 2–6 and jump to Step 7 (re-extract design model only).
+- `exists: true` AND no Design-Doc target → "Document already in the graph", stop.
+- `exists: true` AND a target was provided → skip Steps 2–5 and jump to Step 6 (re-extract design model only, then merge in Step 7).
 - Otherwise proceed.
 
-### Step 2: Find existing topics
+### Step 2: Find existing topics (Goldilocks)
 
-Invoke the `find-topics` subagent with `<main_topic>` as `<query>` and `<working_dir>`. The subagent reuses the existing hierarchical Goldilocks search and writes `{working_dir}/potential_topics.json`.
+Identify topics in the graph already covering the document's subject area, so Step 3 can reuse them.
 
-### Step 3: Extract topics from chunks
+1. Call `noesis-graph:list_topics` (no `parent_topic_id`). Read the returned file.
+2. Judge relevance against `<main_topic>`.
+3. Drill into relevant topics with `has_subtopics: yes` via `noesis-graph:list_topics` with `parent_topic_id: <id>`. Apply Goldilocks:
+   - **Too broad** — children match more accurately → drop the parent, recurse.
+   - **Too narrow** — children only cover a fraction → keep the parent.
+   - **Worse fit** — children are tangents → keep the parent, abort drill-down.
+   - **Just right** — child comprehensively covers the subject → keep it; consider its subtopics.
+4. Write `{working_dir}/potential_topics.json`:
+   ```json
+   { "topics": [ { "id": "...", "title": "...", "short_summary": "...", "path": ["..."], "is_new": false, "parent_id": null } ] }
+   ```
+   Empty `topics` array if nothing matches.
 
-**Loop** — for each chunk from Step 1, invoke the `extract-document-topics` subagent sequentially with `<working_dir>` and `<chunk-id>`. Each chunk file is at `{working_dir}/chunk_{chunk_id}.md`. Do NOT parallelize — each invocation reads the previous chunk's accumulated topics from `analysis.json`.
+### Step 3: Assign categories and topics to fragments
 
-The subagent assigns each fragment one or more `IdeaUnitCategory` values (`Information`, `Position`, `Argument`, `Decision`, `Irrelevant`) and a topic. Headings are scoring hints, not authoritative. Persistence runs through `scripts/documents/save-chunk-result.ts`.
+Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/extract-document-topics.md`.
+
+Read `<cleaned_path>` to understand the document. Read `<analysis_path>` to see the fragment list with `index`, `start_offset`, `end_offset`, `section_path`, `kind`, `text`. Read `<section_tree_path>` for hierarchy hints if useful.
+
+For every fragment:
+- Assign one or more categories (`Information`, `Position`, `Argument`, `Decision`, `Irrelevant`).
+- For non-Irrelevant fragments, assign a topic — reuse from `potential_topics.json` or create a new one (`is_new: true`, sensible `parent_id`, fresh UUID, path). Append every newly-created topic to `potential_topics.json`.
+
+Edit `<analysis_path>` (Edit tool):
+- For each fragment, set its `categories` array.
+- Build `topics: [...]` — one `Topic` per touched topic, each with empty summaries, `items: [DocumentFragmentRef, ...]`, empty `decisions`, `reviewed: false`, `decisions_extracted: false`.
+
+`DocumentFragmentRef`: `{ "type": "document_fragment_ref", "document_id": "<id>", "start_offset": N, "end_offset": N }` — copy `start_offset` / `end_offset` directly from the fragment.
 
 ### Step 4: Find existing decisions
 
-Collect the topic ids touched in Step 3 from `analysis.json`. Invoke the `find-decisions` subagent with `<working_dir>`, the topic id list, and `<main_topic>` as the query. The subagent walks `noesis-graph:list_decisions` per topic and writes `{working_dir}/potential_decisions.json`. May be empty.
+Collect every topic id that ended up in `analysis.json`'s `topics`. For each id, call `noesis-graph:list_decisions` with `topic_id: <id>` and read the returned file. Discard decisions whose context/title is clearly unrelated to `<main_topic>`. When in doubt, keep — Step 5 makes the final per-fragment attach/skip judgement.
 
-### Step 5 & 6: Analyze topics, extract or attach decisions
+If no topic ids were collected (the document maps entirely to new topics), call `noesis-graph:list_decisions` with no filter to scan top-level decisions.
 
-**Loop** — invoke the `analyze-document-topic` subagent with `<working_dir>`:
+Write `{working_dir}/potential_decisions.json`:
+```json
+{
+  "decisions": [
+    {
+      "id": "<decision_id>",
+      "topic_id": "<topic_id>",
+      "title": "...",
+      "status": "accepted|proposed",
+      "short_summary": "1 sentence: what was decided + key context"
+    }
+  ]
+}
+```
 
-1. The subagent calls `noesis-graph:get_topic_for_document_review`. If the response is `{ "status": "Done" }`, exit the loop.
-2. Otherwise the subagent reviews fragment-to-topic assignments, regenerates summaries, and (if `has_decision_units` is true) either attaches fragments to an existing decision listed in `potential_decisions.json` (via `AttachToDecision` records) or creates a new `Decision` with `DocumentFragmentRef` supporting items.
-3. The subagent returns `{"has_topic": true, "topic_id": "<id>"}` and the loop continues.
+Empty `decisions` array if nothing relevant.
 
-Do NOT parallelize — the subagent reads and writes `analysis.json`.
+### Step 5: Review topics, generate summaries, extract or attach decisions
 
-### Step 7: Extract design model (conditional)
+Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/analyze-document-topic.md`.
 
-Skip this step if the user replied `skip` in Setup. Invoke the `extract-design-model` subagent with `<working_dir>`, `<design_doc_id>` (may be null), and `<design_doc_title>` (may be null). The subagent loads `REFERENCE-design-doc-schema.md`, decides whether the document describes a model, and either writes `{working_dir}/design_doc.json` (returning `{"status": "Ok"}`) or returns `{"status": "NoModel"}`. Persistence happens in Step 8 via `merge_document`.
+Loop:
 
-### Step 8: Merge into the knowledge graph
+1. Call `noesis-graph:get_topic_for_document_review` with `analysis_path: <analysis_path>`. If `{ "status": "Done" }`, exit.
+2. Otherwise read the returned file. It contains the topic's fragments (current document + prior documents from the graph, with `[from <doc title>]` markers).
+3. Decide on summaries, fragment reassignments, and decisions per the REFERENCE.
+4. Edit `<analysis_path>`: update this topic's `short_summary` / `long_summary`, set `reviewed: true` and `decisions_extracted: true`. For decisions:
+   - **CREATE** new `Decision` records → add them to this topic's `decisions` array.
+   - **ATTACH** to an existing decision → append an `AttachToDecision` entry to the top-level `decision_attachments` array.
+5. Repeat from sub-step 1.
 
-Call MCP tool `noesis-graph:merge_document` with `working_dir: <working_dir>`. The server reads `document.json`, `analysis.json`, and (if present) `design_doc.json`; persists the Document, upserts topics with parent linking, attaches `DocumentFragmentRef` items, creates new Decisions, applies attachments via `add_items_to_decision`, and (if a design_doc is present) applies it via `save_design_doc`.
+Do not parallelize. Each iteration depends on the previous edit.
 
-Report to the user: `topics_added`, `topics_updated`, `decisions_added`, `decision_attachments`, and Design-Doc counts.
+### Step 6: Extract design model (conditional)
+
+Skip if the user replied `skip` in Setup.
+
+Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/extract-design-model.md` AND `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/design-doc-schema.md` (only at this step — these files are large).
+
+Decide whether the document genuinely describes a domain model (Bounded Contexts / Modules / Building Blocks / Behaviours / Quality Attributes / Actors). If it does not, skip the rest of this step.
+
+If `<design_doc_id>` is provided, call `noesis-graph:read_design_doc` with that id, read the returned file, and produce a ChangeSet diff against the cached state. Otherwise produce a first-iteration design with everything in `added`.
+
+Write `<working_dir>/design_doc.json` with the validated `DesignDoc` payload. Set `<analysis_path>`'s `design_doc_extracted: true`. (If you skip this step, leave the file absent — `merge_document` will skip the design-doc apply.)
+
+### Step 7: Merge into the knowledge graph
+
+Call MCP tool `noesis-graph:merge_document` with `working_dir: <working_dir>`. The server reads `document.json`, `analysis.json`, `potential_topics.json`, and (if present) `design_doc.json`; persists the Document, upserts Topics with parent linking, attaches `DocumentFragmentRef` items, creates Decisions, applies attachments, and saves the Design Doc.
+
+Report `topics_added`, `topics_updated`, `decisions_added`, `decision_attachments`, and Design-Doc counts to the user.
 
 ## Rules
 
-- NEVER use `cd` in any Bash command. Run scripts directly.
-- NEVER use Bash to write files (`cat`, `echo`, heredoc, redirect). Use `>` ONLY to capture script stdout to tmp files. Use the Write tool for all other writes.
-- Read tool is reserved for files explicitly listed in this workflow plus the file paths returned in MCP tool responses.
-- Query/persist via `noesis-graph` MCP tools — never write graph data directly to disk.
+- Read tool is fine for `<cleaned_path>`, `<analysis_path>`, `<document_path>`, `<section_tree_path>`, and any path returned by an MCP tool. Do not browse the working dir for other files.
+- Persist graph state only via `noesis-graph` MCP tools. Edit `analysis.json` / write `design_doc.json` with Edit/Write.
+- Do NOT load `references/design-doc-schema.md` unless Step 6 is actually entered — it is large.
 - Generate all titles, summaries, and free-text fields in the same language as the source document.
-- Do NOT load `REFERENCE-design-doc-schema.md` unless Step 7 is actually entered.
-- A heading is a hint; reuse before promote. A new top-level topic is the rarest outcome.
-- An existing decision should be **augmented**, not duplicated. Only create a new decision when the document genuinely introduces a new decision arc.
+- Reuse before promote: prefer an existing topic over a new one, an existing decision over a new one, whenever the fit is reasonable.

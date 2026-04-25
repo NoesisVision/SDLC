@@ -1,29 +1,13 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
+import { describe, expect, test } from "bun:test";
 import {
   cleanTextBlock,
   detectLanguage,
   normalizeEncoding,
   normalizeTime,
+  parseTranscript,
   splitSentences,
   stripConversationIdLine,
-  structureTranscript,
 } from "./structure-transcript.js";
-
-const tmpDir = mkdtempSync(join(import.meta.dirname, ".tmp-test-"));
-const SCRIPT = join(import.meta.dirname, "structure-transcript.ts");
-
-function runScript(
-  ...args: string[]
-): { exitCode: number; stdout: string; stderr: string } {
-  const result = Bun.spawnSync(["bun", "run", SCRIPT, ...args]);
-  return {
-    exitCode: result.exitCode,
-    stdout: result.stdout.toString(),
-    stderr: result.stderr.toString(),
-  };
-}
 
 describe("stripConversationIdLine", () => {
   test("removes conversation_id comment from first line", () => {
@@ -132,15 +116,9 @@ describe("cleanTextBlock", () => {
   });
 });
 
-describe("structureTranscript", () => {
-  test("parses transcript with speaker turns into structured JSON", () => {
-    const transcriptDir = join(tmpDir, "struct_test");
-    mkdirSync(transcriptDir, { recursive: true });
-    mkdirSync(join(transcriptDir, "meeting_work"), { recursive: true });
-    const transcriptPath = join(transcriptDir, "meeting.md");
-    writeFileSync(
-      transcriptPath,
-      `<!-- conversation_id: test-id -->
+describe("parseTranscript", () => {
+  test("parses transcript with speaker turns", () => {
+    const raw = `<!-- conversation_id: test-id -->
 **0:30**
 Alice
 Hello everyone, welcome to the meeting. Let's discuss the new feature.
@@ -148,61 +126,25 @@ Hello everyone, welcome to the meeting. Let's discuss the new feature.
 **1:15**
 Bob
 I think we should start with the database schema. It needs careful planning.
-`,
-    );
-
-    const result = structureTranscript(transcriptPath, "test-id");
-
+`;
+    const result = parseTranscript(raw, "test-id");
     expect(result.status).toBe("Ok");
-    expect(result.output_path).toBeDefined();
-    expect(existsSync(result.output_path!)).toBe(true);
-
-    const output = JSON.parse(readFileSync(result.output_path!, "utf-8"));
-    expect(output.conversation_id).toBe("test-id");
-    expect(output.turns.length).toBe(2);
-    expect(output.turns[0].speaker).toBe("Alice");
-    expect(output.turns[0].time).toBe("00:00:30");
-    expect(output.turns[0].sentences.length).toBeGreaterThan(0);
-    expect(output.turns[1].speaker).toBe("Bob");
+    if (result.status !== "Ok") return;
+    expect(result.transcript.conversation_id).toBe("test-id");
+    expect(result.transcript.turns.length).toBe(2);
+    expect(result.transcript.turns[0].speaker).toBe("Alice");
+    expect(result.transcript.turns[0].time).toBe("00:00:30");
+    expect(result.transcript.turns[0].sentences.length).toBeGreaterThan(0);
+    expect(result.transcript.turns[1].speaker).toBe("Bob");
   });
 
-  test("returns error for empty file", () => {
-    const path = join(tmpDir, "empty.md");
-    writeFileSync(path, "");
-
-    const result = structureTranscript(path, "id");
-
+  test("returns Error for empty transcript", () => {
+    const result = parseTranscript("", "id");
     expect(result.status).toBe("Error");
-    expect(result.message).toContain("empty");
   });
 
-  test("returns error when no speaker turns found", () => {
-    const path = join(tmpDir, "no_turns.md");
-    writeFileSync(path, "Just some text without any speaker format.");
-
-    const result = structureTranscript(path, "id");
-
+  test("returns Error when no speaker turns found", () => {
+    const result = parseTranscript("Just some text without any speaker format.", "id");
     expect(result.status).toBe("Error");
-    expect(result.message).toContain("No recognizable speaker turns");
   });
-});
-
-describe("structure_transcript script", () => {
-  test("exits with code 1 when transcript file does not exist", () => {
-    const result = runScript("/nonexistent/file.md", "some-id");
-
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("File not found");
-  });
-
-  test("exits with code 1 when arguments are missing", () => {
-    const result = runScript();
-
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("Missing required argument");
-  });
-});
-
-afterAll(() => {
-  rmSync(tmpDir, { recursive: true, force: true });
 });
