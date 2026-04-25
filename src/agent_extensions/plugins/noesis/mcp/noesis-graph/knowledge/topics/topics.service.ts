@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
-import { isIrrelevant } from "../../../../shared-contracts/conversation.js";
 import type { TopicItem } from "../../../../shared-contracts/topics.js";
 import type {
   TopicConversationDetail,
@@ -131,16 +130,14 @@ export class TopicsService {
       conversation_id: conversation.conversation_id,
       conversation_title: conversation.main_topic,
       conversation_date: conversation.time,
-      idea_units: ideaUnits
-        .filter((iu) => !isIrrelevant(iu.categories))
-        .map((iu) => ({
-          turn_index: iu.turn_index,
-          idea_unit_index: iu.idea_unit_index,
-          time: iu.time,
-          speaker: iu.speaker,
-          sentences: iu.sentences,
-          categories: iu.categories,
-        })),
+      idea_units: ideaUnits.map((iu) => ({
+        turn_index: iu.turn_index,
+        idea_unit_index: iu.idea_unit_index,
+        time: iu.time,
+        speaker: iu.speaker,
+        sentences: iu.sentences,
+        categories: iu.categories,
+      })),
     };
   }
 

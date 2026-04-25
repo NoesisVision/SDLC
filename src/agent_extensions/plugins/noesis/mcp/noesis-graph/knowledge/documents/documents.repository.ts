@@ -127,7 +127,7 @@ export class DocumentsRepository {
       "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
         "WHERE t.id = $topicId " +
         "RETURN DISTINCT d.id AS document_id, d.title AS title, d.date AS date " +
-        "ORDER BY d.date DESC",
+        "ORDER BY date DESC",
       { topicId },
     );
     return z.array(DocumentRefRowSchema).parse(rawRows);

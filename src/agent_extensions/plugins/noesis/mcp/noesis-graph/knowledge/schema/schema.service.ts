@@ -34,7 +34,6 @@ const TableRowSchema = z.object({
 type TableRow = z.infer<typeof TableRowSchema>;
 
 const PropertyRowSchema = z.object({
-  property_id: z.union([z.number(), z.bigint()]),
   name: z.string(),
   type: z.string(),
   primary_key: z.boolean().nullable().optional(),

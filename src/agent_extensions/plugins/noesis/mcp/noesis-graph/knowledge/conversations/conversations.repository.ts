@@ -61,6 +61,7 @@ export class ConversationsRepository {
     const rawRows = await this.db.query<IdeaUnitJoinRow>(
       "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn) " +
         "WHERE t.id = $topicId AND u.conversation_id <> $excludeConversationId " +
+        "AND u.categories <> ['Irrelevant'] " +
         "RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, " +
         "u.sentences AS sentences, u.categories AS categories, turn.speaker AS speaker, turn.time AS time " +
         "ORDER BY u.conversation_id, u.turn_index, u.idea_unit_index",
@@ -91,7 +92,7 @@ export class ConversationsRepository {
       "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) " +
         "WHERE t.id = $topicId " +
         "RETURN DISTINCT c.id AS conversation_id, c.main_topic AS main_topic, c.time AS time " +
-        "ORDER BY c.time DESC",
+        "ORDER BY time DESC",
       { topicId },
     );
     return z.array(ConversationRefRowSchema).parse(rawRows);
@@ -104,6 +105,7 @@ export class ConversationsRepository {
     const rawRows = await this.db.query<IdeaUnitJoinRow>(
       "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn) " +
         "WHERE t.id = $topicId AND u.conversation_id = $conversationId " +
+        "AND u.categories <> ['Irrelevant'] " +
         "RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, " +
         "u.sentences AS sentences, u.categories AS categories, turn.speaker AS speaker, turn.time AS time " +
         "ORDER BY u.turn_index, u.idea_unit_index",

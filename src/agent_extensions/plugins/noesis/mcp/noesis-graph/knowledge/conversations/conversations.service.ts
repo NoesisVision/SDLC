@@ -105,7 +105,6 @@ export class ConversationsService {
       const key = `${prior.conversation_id}:${prior.turn_index}:${prior.idea_unit_index}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      if (isIrrelevant(prior.categories)) continue;
       details.push(prior);
     }
 

@@ -12,7 +12,9 @@
     "@tabler/icons-react": "^3.41.1",
     "@xyflow/react": "^12.8.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

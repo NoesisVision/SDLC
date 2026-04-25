@@ -249,7 +249,7 @@ export class TopicsRepository {
     });
     const baseMatch =
       "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) " +
-      "WHERE t.id = $topicId";
+      "WHERE t.id = $topicId AND u.categories <> ['Irrelevant']";
     const dateFilter = since === null ? "" : " AND c.time > $since";
     const rawRows = await this.db.query<unknown>(
       `${baseMatch}${dateFilter} ` +

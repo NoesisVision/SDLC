@@ -18,9 +18,10 @@ import {
   IconChevronRight,
   IconFileText,
   IconMessageCircle,
-  IconNotes,
   IconTopologyStar,
 } from "@tabler/icons-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import classes from "./topics.module.css";
 import type {
   TopicConversationDetail,
@@ -267,8 +268,8 @@ function TopicTreeBranch({
         hasChildren={hasChildren}
         active={active}
         icon={
-          <ThemeIcon size="sm" variant="light" color="noesisBlue" radius="sm">
-            <IconNotes size={14} stroke={1.5} />
+          <ThemeIcon size="sm" variant="light" color="noesisIndigo" radius="sm">
+            <IconTopologyStar size={14} stroke={1.5} />
           </ThemeIcon>
         }
         label={topic.title}
@@ -894,7 +895,11 @@ function DocumentDetails({
                     {f.start_offset}–{f.end_offset}
                   </Badge>
                 </Group>
-                <Text className={classes.fragmentText}>{f.text}</Text>
+                <Box className={classes.fragmentMarkdown}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {f.text}
+                  </ReactMarkdown>
+                </Box>
               </Box>
             ))}
           </Stack>
