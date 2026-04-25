@@ -1,0 +1,278 @@
+# `analyze-conversation` — Improvement Plan
+
+Source: post-mortem after the first run of `noesis:analyze-conversation` on a real Polish sales-call transcript (`2026-02-10-cz1_short.md`). The pipeline completed successfully; the issues below are quality-of-life and correctness improvements derived from observed friction.
+
+This document groups every reported issue with: **what the agent saw**, **root cause in code**, **proposed fix**, and **open questions** that require the maintainer's decision before implementation.
+
+---
+
+## 1. Documentation inconsistency in `references/extract-topics.md`
+
+### Observed
+`references/extract-topics.md:67` says:
+
+> Overwrite `<working_dir>/conversation.json` with: ...
+
+The actual artifact created by the prepare script is `<working_dir>/output.json`, and its shape is `{ conversation: {...}, potential_topics: {...} }` — not a bare conversation. A new agent following the reference verbatim would write the wrong file with the wrong wrapping shape.
+
+### Root cause
+- `scripts/conversation/prepare.ts:96` — `outputPath = join(workingDir, "output.json")`.
+- `shared-contracts/skills/analyze-conversation/output.ts:5` — schema is `{ conversation, potential_topics }`.
+- The reference doc was written before the wrapping was introduced and never updated.
+
+The same drift appears in `references/analyze-topic.md:102` ("edit `<working_dir>/conversation.json`") and the heading on line 100 ("Updating conversation.json").
+
+### Proposed fix
+1. In `references/extract-topics.md`:
+   - Replace `conversation.json` with `output.json` (line 67, file header).
+   - Replace the bare-`conversation` JSON example (lines 69–99) with the wrapped shape, showing `topics` lives at `output.conversation.topics`, and that `potential_topics.topics` is appended to the top-level sibling key — not nested inside `conversation`.
+   - Cross-link to `shared-contracts/skills/analyze-conversation/output.ts` so the schema is single-sourced.
+2. In `references/analyze-topic.md`:
+   - Same file-name and shape correction in the "Updating conversation.json" section (lines 100–109). Topics are at `conversation.topics[]`, not `topics[]`.
+
+### Open questions
+- **OQ-1.1**: Should the JSON example in references be inlined, or replaced with a single Zod-style summary plus a pointer to `output.ts`? Inlined is friendlier to agents; the pointer is single-source-of-truth. Recommendation: inline minimal example + pointer.
+
+---
+
+## 2. Container topics (no direct items) are unspecified
+
+### Observed
+The agent created 4 root container topics (e.g. *Stan cenowy – koncept*, *Wycena dokumentów i okresów*) that have only subtopics, no direct idea-unit items. The skill rules don't address this case:
+
+- `analyze-topic.md:40` — "Always regenerate both summaries from ALL idea units" — degenerates to no-op when `num_items: 0`.
+- `get_topic_for_review` still returns these topics with `num_items: 0`, forcing the agent to invent empty summaries and set `reviewed: true` to escape the loop.
+
+### Root cause
+- `conversations.service.ts:74` — `getTopicForReview` picks the first topic where `!t.reviewed`, regardless of item count.
+- `conversations.service.ts:120-126` — emits the topic with `num_items` derived from filtered details (excludes Irrelevant + dedup), but does not skip when zero.
+- The skill says "leaf-level for narrow self-contained concepts" (extract-topics.md:54-56) but explicitly endorses functional-area parents that don't carry items themselves — there's no contract for what their summaries should be.
+
+### Proposed fix (three options)
+
+**Option A — server-side skip and auto-mark**
+In `getTopicForReview`, if `details.length === 0` after filtering, mark the topic `reviewed: true` and `decisions_extracted: true` in `output.json` and recurse to the next unreviewed topic. Server side becomes responsible for writing `output.json` (currently it only reads it).
+
+**Option B — server-side skip but agent writes**
+Return a new status `{ status: "AutoSkip", topic_id, reason: "no items" }` so the agent does the edit. Keeps the agent as the only writer of `output.json`.
+
+**Option C — skill-level rule for container topics**
+Add to `analyze-topic.md`: if `num_items: 0`, generate `short_summary` from the topic's title + child titles (a one-line "umbrella" summary) and leave `long_summary` empty. Set both flags true.
+
+### Recommendation
+**Option B** — preserves the "MCP server is read-only on `output.json`" boundary that the rest of the pipeline relies on, while still saving the agent a full enriched-Markdown round trip per container.
+
+### Open questions
+- **OQ-2.1**: Are container topics actually desirable, or should the skill **forbid** them and require every topic to have at least one item? Container topics provide tree shape but inflate review cost; if every leaf carries items, the tree is naturally implied by `parent_id`.
+- **OQ-2.2**: If we keep container topics: should `short_summary` be auto-generated by the server from child titles, or written by the agent? Server-generated is cheaper but loses semantic nuance.
+
+---
+
+## 3. Review loop is strictly sequential and chatty
+
+### Observed
+16 topics → 16 × (`get_topic_for_review` → `Read` → `Edit`) round trips. For empty containers the round trip yields no useful information.
+
+### Root cause
+- `conversations.service.ts:70-127` returns one topic per call. The contract is "one-step / one-tool" (per `mcp/noesis-graph/CLAUDE.md` "One step → one struct → one MCP tool"), but here "one step" was modelled as "one topic" rather than "one review pass".
+- `analyze-topic.md:90` — "Do not parallelize. Each iteration depends on the previous edit" — true only because reassignment in topic A may move items into topic B. Most topics have no reassignment.
+
+### Proposed fix (two layered options)
+
+**Option A — Auto-skip empty topics (combines with §2 Option B)**
+Already cuts ~25% of round trips on this transcript.
+
+**Option B — Batch fetch all unreviewed topics**
+New tool `get_topics_for_review_batch(output_path)` returning a single Markdown bundle (one section per topic, separated by `---`). Agent reads once, edits `output.json` in one or two passes, then calls `merge_conversation`.
+
+Trade-off: batch fetch loses the "edit-then-refetch" pattern that lets reassignment in topic A reflect in topic B's fetch. But the reassignment path (analyze-topic.md:32-37) is rare and explicitly conditional ("ONLY when the mismatch is clear"); when the agent does reassign, it can call the per-topic tool to refresh.
+
+### Recommendation
+Implement Option A first (cheap, contained). Defer Option B until we have a second production run to confirm whether the per-topic chattiness is the dominant cost.
+
+### Open questions
+- **OQ-3.1**: How important is the reassignment path in practice? If reassignment is < 5% of topics, batch + per-topic-fallback is strictly better.
+- **OQ-3.2**: For batch mode, what's an acceptable file size? With 16 topics × prior-conversation enrichment, the bundle could grow to 100+ KB on a mature graph.
+
+---
+
+## 4. Transcript ASR artifacts survive cleaning
+
+### Observed
+The transcript contained Polish ASR errors that propagated into idea-unit text and were quoted verbatim in summaries:
+
+- *SAT* (should be *SAD*)
+- *TN-eum* (likely *Hide/new system*)
+- *Kłody o kosztach* (likely *Chodzi o koszty*)
+- *pstryczek w ich nos*
+- *peletkę* (likely *paletkę*)
+
+### Root cause
+- `scripts/conversation/structure-transcript.ts:42-54` — `cleanTextBlock` only does whitespace/punctuation normalization.
+- `scripts/conversation/prepare.ts` does no spelling normalization. The pipeline assumes the transcript text is canonical.
+
+### Proposed fix
+Add an **optional** ASR-correction pass to `prepare.ts`, gated by a flag (`--normalize-asr` or env var). Implementation choices:
+
+1. **LLM-based correction** — call Anthropic API per turn with a "fix obvious ASR errors, keep semantics" prompt. Most accurate, costs tokens, requires API key in the script (which today has no LLM dependency).
+2. **Dictionary + edit-distance** — language-specific correction lists per project. Cheap, brittle for novel domain vocabulary.
+3. **Out-of-band manual pass** — keep `prepare.ts` deterministic; add a separate skill `clean-transcript` the user runs first when ASR quality is poor.
+
+### Recommendation
+**Option 3** in the short term — preserves the deterministic-script invariant from `agent_extensions/CLAUDE.md` and keeps API access out of the data prep path. Document in `SKILL.md` Setup that ASR-noisy inputs should be pre-cleaned.
+
+### Open questions
+- **OQ-4.1**: Is ASR cleaning a `noesis` concern at all, or should it live one layer up in the recording-to-transcript pipeline? Current evidence is one transcript; we should not over-fit.
+- **OQ-4.2**: If we add a `clean-transcript` skill, should it write back to the source file (destructive) or produce `<source>-asr-cleaned.md` (chained input)? Chained is safer.
+
+---
+
+## 5. `has_decision_units` semantics are misleading
+
+### Observed
+The `has_decision_units` flag is true if **any** idea unit carries the `Decision` category. But Decision quality varies:
+
+- T28 was just *"Tak, tak."* — formally `Decision`, only meaningful with T26-27 context.
+- T46 contained the substantive *"nie wiem czy chcę z niej rezygnować"* (a real decision) **without** a `Decision` tag.
+
+So the flag both over-fires (on confirmations) and under-fires (on substantive commitments not labelled as such).
+
+### Root cause
+This is an **agent-side categorization quality issue**, not a server bug. The instructions in `extract-topics.md:32-36` define `Decision` as "explicit agreement / chosen approach" — but in practice the agent applied it to confirmation tokens (`"Tak, tak."`) and missed implicit commitments.
+
+### Proposed fix
+Sharpen the rule in `extract-topics.md`:
+
+> `Decision` — a unit that **commits** the speaker (or the group) to a course of action. Acknowledgement tokens (`"yes"`, `"okay"`, `"tak"`) are **not** Decisions on their own; tag them as `Information` and let the prior unit carry the `Decision` category if it expresses the commitment. Conversely, an apparent `Position` that names the commitment ("I'm not sure I want to drop it") should also carry `Decision` if it is the speaker's settled stance.
+
+Optionally: add 2–3 worked examples in Polish/English.
+
+### Open questions
+- **OQ-5.1**: Should `has_decision_units` be replaced with a semantic flag like `has_decision_arc` that the agent sets during Step 3 (when it actually evaluates the arc), and the server simply reports back? This shifts the heuristic from server to agent and matches the "no LLM in MCP server" rule.
+
+---
+
+## 6. `potential_topics` ambiguity for new root topics
+
+### Observed
+`extract-topics.md:69` says:
+
+> For new topics that should sit under an existing parent, append the new entry to `output.json:potential_topics.topics` with `is_new: true` and `parent_id: <existing parent id>` so the merge step can wire the parent.
+
+This is silent about new **roots** (no existing parent). The agent included them anyway with `parent_id: null`, and the merge worked fine — but the rule is implicit.
+
+### Root cause
+- `conversations.service.ts:236-244` — `buildParentMap` already accepts `parent_id: null` and clears the parent edge accordingly. Code is correct; doc is incomplete.
+
+### Proposed fix
+Reword `extract-topics.md:69` to:
+
+> For every newly-created topic, append an entry to `output.json:potential_topics.topics` with `is_new: true`. Set `parent_id` to the existing parent's id, or to `null` if the topic is a new root.
+
+Mirror the same wording in `SKILL.md:69`.
+
+---
+
+## 7. File-path resolution in Setup
+
+### Observed
+The user invocation passed `2026-02-10-cz1_short.md`, but the actual file lived at `conversations/wycena-dokumentów/2026-02-10-cz1_short.md`. The skill's Setup says:
+
+> **transcript_path** — absolute path to the raw transcript Markdown.
+
+…but doesn't tell the agent how to recover when the path is **not** absolute. The agent had to glob the filename.
+
+### Root cause
+- `SKILL.md:14` requires absolute path.
+- `scripts/conversation/prepare.ts:133` calls `requireFile` which fails on non-existent paths but does not search.
+
+### Proposed fix
+Two complementary changes:
+
+1. In `SKILL.md` Setup, add a path-resolution note:
+
+   > If `transcript_path` is not absolute, resolve it via Glob within the current working directory. If multiple matches exist, ask the user which one.
+
+2. Optionally extend `prepare.ts` to accept a basename and search under a configured root (e.g. project's `conversations/`), but this risks ambiguity. Prefer agent-side resolution.
+
+### Open questions
+- **OQ-7.1**: Where do conversation transcripts canonically live? If there's a project convention (`conversations/**/*.md`), the skill could surface this in Setup with a suggested glob root. Otherwise leave it as "search workspace, ask if ambiguous".
+
+---
+
+## 8. No re-merge or repair path
+
+### Observed
+`has_conversation` returns early if the conversation already exists. If a downstream review reveals errors (wrong topic assignment, missing decision), the only recovery is to delete the conversation manually and re-run.
+
+### Root cause
+- `conversations.service.ts:138` — `mergeConversation` calls `insertConversation` which fails on duplicate id.
+- No `replace_conversation` or `update_conversation_topics` tool.
+
+The CLAUDE.md notes the graph is in-memory and a server restart loses state — so for the current development state this is a non-issue. For production it will matter.
+
+### Proposed fix
+Defer until persistence lands, but keep the shape in mind:
+
+- **Option A**: `replace_conversation(working_dir)` — delete + re-insert atomically.
+- **Option B**: idempotent merge — on duplicate id, diff topics/items/decisions and update in place.
+
+Option B is correct semantically (preserves attached prior items, edges from other conversations) but more code. Option A is simpler and adequate for a "the analysis was wrong, redo it" flow.
+
+### Open questions
+- **OQ-8.1**: Does graph persistence land before or after this concern bites? If after, this stays a TODO. If before, Option A is the minimum we need.
+- **OQ-8.2**: For Option B, what is the merge semantics for **decisions**? Decisions have UUIDs the agent generated; on re-run they get new UUIDs. Either re-use stable ids (deterministic from content?) or wipe and replace per topic.
+
+---
+
+## 9. Minor friction (no action required, captured for future reference)
+
+### 9.1 Wasteful UUID generation
+Agent generated 30 decision UUIDs upfront, used 7. Harmless but wasteful. If the rules drove on-demand generation ("generate UUID at the moment you create a Decision record"), this disappears.
+
+### 9.2 One-word interjections
+*"Słucham?"* (T34:IU1) — a one-word interjection. The IU-grouping rules let the agent tag it `Irrelevant`, but the rule against tiny IUs in `extract-topics.md` is silent on transitional one-word fragments. Consider: "merge transitional interjections into the surrounding IU when they don't carry meaning on their own."
+
+### 9.3 Decision JSON bloat
+`supporting_items` repetition (same IU referenced in `context` + `decision` + `alternative`) inflates JSON size. For long Polish-language transcripts with multi-sentence IUs this becomes meaningful. Consider: store IUs once in a `referenced_items` map at the Decision root, with `context.supporting_item_indices: [0, 2]` instead of full refs. Trade-off: less self-describing, more code on read.
+
+---
+
+## Implementation plan (recommended sequencing)
+
+### P0 — Doc fixes (one PR, low risk)
+- §1: Update `extract-topics.md` and `analyze-topic.md` to reference `output.json` and the wrapped shape.
+- §6: Clarify the `parent_id: null` rule for new roots.
+- §7.1: Add path-resolution note to `SKILL.md` Setup.
+- §5: Tighten the `Decision` category definition with examples.
+
+### P1 — Empty-topic auto-skip (one PR, server change)
+- §2 + §3 Option A combined: `get_topic_for_review` returns `{ status: "AutoSkip", topic_id, reason }` for topics with `num_items: 0`. Agent sets the flags, loops, no Read/Edit round trip.
+
+### P2 — Batch review (deferred, depends on P1 results)
+- §3 Option B: only if P1 doesn't sufficiently reduce chattiness in the next production run.
+
+### P3 — Re-merge path (deferred until persistence)
+- §8: spec out `replace_conversation` once we have persistence + a real "I want to re-run" use case.
+
+### Out of scope (for now)
+- §4 ASR cleaning — defer; revisit if multiple transcripts show systematic issues.
+- §9 minor items — cosmetic, capture in backlog.
+
+---
+
+## Open questions summary
+
+| ID | Question | Blocking |
+|----|----------|----------|
+| OQ-1.1 | Inline JSON example vs schema pointer in references? | P0 doc fix |
+| OQ-2.1 | Forbid container topics outright? | P1 design |
+| OQ-2.2 | Server-generated container summaries? | P1 design |
+| OQ-3.1 | How common is reassignment in practice? | P2 design |
+| OQ-3.2 | Acceptable batch file size? | P2 design |
+| OQ-4.1 | Is ASR cleaning a noesis concern? | §4 (deferred) |
+| OQ-4.2 | Destructive vs chained ASR-cleaned output? | §4 (deferred) |
+| OQ-5.1 | Move `has_decision_*` flag from server-derived to agent-set? | §5 nice-to-have |
+| OQ-7.1 | Canonical conversation transcript location convention? | §7 nice-to-have |
+| OQ-8.1 | Persistence timeline vs re-merge need? | P3 timing |
+| OQ-8.2 | Decision id stability across re-runs? | P3 design |
