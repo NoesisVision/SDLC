@@ -33,7 +33,7 @@ import type {
   ModelExplorerData,
   ModuleBranch,
 } from "../../../ui-contracts/model-explorer/model-explorer-data.js";
-import classes from "./model.module.css";
+import classes from "./model-explorer.module.css";
 
 type View =
   | { kind: "boundedContext"; name: string }
@@ -50,7 +50,7 @@ interface NavState {
   bbStack: BuildingBlockView[];
 }
 
-export function ModelPage() {
+export function ModelExplorerPage() {
   const [model, setModel] = useState<DomainModelTree | null>(null);
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +151,7 @@ export function ModelPage() {
     <Box className={classes.page}>
       <Box className={classes.topBar}>
         <Text component="h1" size="xl" fw={700} c="gray.1">
-          Model
+          Model Explorer
         </Text>
         <Button
           leftSection={

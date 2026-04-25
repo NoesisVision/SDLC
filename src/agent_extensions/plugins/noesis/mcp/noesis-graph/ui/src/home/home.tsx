@@ -48,7 +48,7 @@ export function HomePage({ onNavigate }: { onNavigate: (path: string) => void })
   const actionItems: ActionItem[] = [
     { title: "Topics", icon: IconMessageCircle, color: "noesisGreen", onClick: () => onNavigate("/topics") },
     { title: "Decisions", icon: IconGavel, color: "noesisIndigo", onClick: () => onNavigate("/decisions") },
-    { title: "Model", icon: IconCube, color: "noesisBlue", onClick: () => onNavigate("/model") },
+    { title: "Model Explorer", icon: IconCube, color: "noesisBlue", onClick: () => onNavigate("/model-explorer") },
     { title: "Graph Schema", icon: IconSchema, color: "noesisGreen", onClick: () => onNavigate("/graph") },
   ];
 
