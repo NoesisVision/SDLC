@@ -1,12 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { existsSync } from "fs";
-import { join } from "path";
 import { z } from "zod";
 import {
   runFileOutputTool,
   runInlineJsonTool,
 } from "../../mcp-tool-output.js";
-import { DesignDocsService } from "../design-docs/design-docs.service.js";
 import {
   DocumentsService,
   type TopicForDocumentReview,
@@ -15,12 +12,11 @@ import {
 export function registerDocumentsTools(
   mcp: McpServer,
   documents: DocumentsService,
-  designDocs: DesignDocsService,
 ): void {
   registerAddDocument(mcp, documents);
   registerHasDocument(mcp, documents);
   registerGetTopicForDocumentReview(mcp, documents);
-  registerMergeDocument(mcp, documents, designDocs);
+  registerMergeDocument(mcp, documents);
 }
 
 function registerAddDocument(
@@ -54,21 +50,21 @@ function registerGetTopicForDocumentReview(
     "get_topic_for_document_review",
     {
       description:
-        "Load the next unreviewed Topic from a working analysis.json (document analysis flow). " +
+        "Load the next unreviewed Topic from a working output.json (document analysis flow). " +
         "Combines current-document fragments with prior-document fragments already attached to the same Topic " +
         "(prefixed `[from <doc title>]`). Writes the enriched topic Markdown (with HTML-comment metadata for " +
         "`topic_id`, `num_items`, `has_decision_units`) to a tmp file and returns the file path — read it with the Read tool. " +
         "If no unreviewed topic remains, returns inline JSON `{ status: \"Done\" }`.",
       inputSchema: {
-        analysis_path: z
+        output_path: z
           .string()
           .describe(
-            "Absolute path to the working analysis.json produced during document analysis.",
+            "Absolute path to the working output.json produced during document analysis.",
           ),
       },
     },
-    async ({ analysis_path }) => {
-      const review = await documents.getTopicForDocumentReview(analysis_path);
+    async ({ output_path }) => {
+      const review = await documents.getTopicForDocumentReview(output_path);
       if (review === null) {
         return runInlineJsonTool(async () => ({ status: "Done" }));
       }
@@ -105,40 +101,28 @@ function registerHasDocument(
 function registerMergeDocument(
   mcp: McpServer,
   documents: DocumentsService,
-  designDocs: DesignDocsService,
 ): void {
   mcp.registerTool(
     "merge_document",
     {
       description:
         "Merge a completed document analysis into the knowledge graph. Reads " +
-        "`<working_dir>/document.json` and `<working_dir>/analysis.json` " +
-        "(and `potential_topics.json` for parent mapping), " +
-        "persists the Document, upserts referenced Topics, " +
+        "`<working_dir>/output.json` (matching AnalyzeDesignDraftOutput: " +
+        "`{ document, fragments, section_tree, topics, decision_attachments, potential_topics, design_doc_id?, design_doc_title? }`). " +
+        "Persists the Document, upserts referenced Topics with parent linking, " +
         "attaches document-fragment items, creates Decisions, and applies attachments to existing Decisions. " +
-        "If `<working_dir>/design_doc.json` is present, also persists the DesignDoc via save_design_doc. " +
+        "Design Docs are persisted via the separate `save_design_doc` tool. " +
         "Returns inline JSON with counts.",
       inputSchema: {
         working_dir: z
           .string()
           .describe(
-            "Absolute path to the analysis working directory containing document.json and analysis.json.",
+            "Absolute path to the analysis working directory containing output.json.",
           ),
       },
     },
     async ({ working_dir }) =>
-      runInlineJsonTool(async () => {
-        const result = await documents.mergeDocument(working_dir);
-        const designPath = join(working_dir, "design_doc.json");
-        if (existsSync(designPath)) {
-          const designResult = await designDocs.saveDesignDocFromFile(
-            designPath,
-            null,
-          );
-          return { ...result, design_doc: designResult };
-        }
-        return { ...result, design_doc: null };
-      }),
+      runInlineJsonTool(() => documents.mergeDocument(working_dir)),
   );
 }
 

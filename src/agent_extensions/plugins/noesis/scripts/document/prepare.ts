@@ -4,11 +4,10 @@ import { randomUUID } from "crypto";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
 import { fragmentMarkdown } from "./fragment-markdown.js";
 import {
-  DocumentAnalysisSchema,
-  formatSectionTreeMarkdown,
-  type DocumentAnalysis,
-} from "../../shared-contracts/document-analysis.js";
-import { DocumentSchema } from "../../shared-contracts/documents.js";
+  AnalyzeDesignDraftOutputSchema,
+  type AnalyzeDesignDraftOutput,
+} from "../../shared-contracts/skills/analyze-design-draft/output.js";
+import { formatSectionTreeMarkdown } from "../../shared-contracts/documents.js";
 
 const DOCUMENT_ID_PATTERN = /^<!--\s*document_id:\s*([\w-]+)\s*-->/;
 
@@ -17,8 +16,7 @@ interface PrepareResult {
   working_dir: string;
   document_id: string;
   cleaned_path: string;
-  document_path: string;
-  analysis_path: string;
+  output_path: string;
   section_tree_path: string;
   num_fragments: number;
   design_doc_id: string | null;
@@ -64,31 +62,25 @@ export function prepareDocument(
   const workingDir = join("/tmp", `noesis-doc-${documentId}`);
   mkdirSync(workingDir, { recursive: true });
 
-  const document = {
-    id: documentId,
-    title: resolvedTitle,
-    date,
-    content: cleanedContent,
-  };
-  DocumentSchema.parse(document);
-  const documentJsonPath = join(workingDir, "document.json");
-  writeFileSync(documentJsonPath, JSON.stringify(document, null, 2), "utf-8");
-
-  const analysis: DocumentAnalysis = {
-    document_id: documentId,
-    document_title: resolvedTitle,
-    document_date: date,
+  const output: AnalyzeDesignDraftOutput = {
+    document: {
+      id: documentId,
+      title: resolvedTitle,
+      date,
+      content: cleanedContent,
+    },
     fragments,
     section_tree,
     topics: [],
     decision_attachments: [],
+    potential_topics: { topics: [] },
     design_doc_id: options.designDocId,
     design_doc_title: options.designDocTitle,
     design_doc_extracted: false,
   };
-  DocumentAnalysisSchema.parse(analysis);
-  const analysisJsonPath = join(workingDir, "analysis.json");
-  writeFileSync(analysisJsonPath, JSON.stringify(analysis, null, 2), "utf-8");
+  AnalyzeDesignDraftOutputSchema.parse(output);
+  const outputPath = join(workingDir, "output.json");
+  writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
 
   const sectionTreePath = join(workingDir, "section_tree.md");
   writeFileSync(sectionTreePath, formatSectionTreeMarkdown(section_tree), "utf-8");
@@ -98,8 +90,7 @@ export function prepareDocument(
     working_dir: workingDir,
     document_id: documentId,
     cleaned_path: cleanedPath,
-    document_path: documentJsonPath,
-    analysis_path: analysisJsonPath,
+    output_path: outputPath,
     section_tree_path: sectionTreePath,
     num_fragments: fragments.length,
     design_doc_id: options.designDocId,

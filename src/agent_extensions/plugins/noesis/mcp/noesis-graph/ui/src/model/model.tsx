@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActionIcon,
   Badge,
@@ -25,36 +25,15 @@ import {
 } from "@tabler/icons-react";
 import { blockTypeStyle, type BehaviorMeta } from "./block-type.js";
 import { InvocationFlow } from "./invocation-flow.js";
+import type {
+  Behavior,
+  BoundedContextBranch,
+  BuildingBlock,
+  DomainModelTree,
+  ModelExplorerData,
+  ModuleBranch,
+} from "./model-explorer-data.js";
 import classes from "./model.module.css";
-
-interface Behavior {
-  id: string;
-  name: string;
-}
-
-interface BuildingBlock {
-  id: string;
-  name: string;
-  type: string;
-  behaviors: Behavior[];
-}
-
-interface ModuleBranch {
-  name: string;
-  fullPath: string;
-  modules: ModuleBranch[];
-  buildingBlocks: BuildingBlock[];
-}
-
-interface BoundedContextBranch {
-  name: string;
-  modules: ModuleBranch[];
-  buildingBlocks: BuildingBlock[];
-}
-
-interface DomainModelTree {
-  boundedContexts: BoundedContextBranch[];
-}
 
 type View =
   | { kind: "boundedContext"; name: string }
@@ -131,18 +110,13 @@ export function ModelPage() {
     });
   }, []);
 
-  const behaviorIndex = useMemo(
-    () => (model !== null ? buildBehaviorIndex(model) : new Map<string, BehaviorMeta>()),
-    [model],
-  );
-
   const loadModel = useCallback(() => {
-    fetch("/api/model")
+    fetch("/api/ui/model-explorer")
       .then((res) => res.json())
-      .then((data: DomainModelTree) => {
-        setModel(data);
+      .then((data: ModelExplorerData) => {
+        setModel(data.tree);
         setTreeVersion((v) => v + 1);
-        if (data.boundedContexts.length > 0) setScanState("done");
+        if (data.tree.boundedContexts.length > 0) setScanState("done");
       })
       .catch(() => {});
   }, []);
@@ -154,13 +128,13 @@ export function ModelPage() {
   const handleScan = useCallback(() => {
     setScanState("scanning");
     setError(null);
-    fetch("/api/model/scan", { method: "POST" })
+    fetch("/api/ui/model-explorer/scan", { method: "POST" })
       .then((res) => {
         if (!res.ok) throw new Error(`Scan failed (${res.status})`);
         return res.json();
       })
-      .then((data: DomainModelTree) => {
-        setModel(data);
+      .then((data: ModelExplorerData) => {
+        setModel(data.tree);
         setTreeVersion((v) => v + 1);
         setScanState("done");
         setNav({ current: null, bbStack: [] });
@@ -233,7 +207,6 @@ export function ModelPage() {
               canGoBack={canGoBack}
               onBack={goBack}
               onNavigate={pushView}
-              behaviorIndex={behaviorIndex}
             />
           </Box>
         </Box>
@@ -528,13 +501,11 @@ function DetailsPanel({
   canGoBack,
   onBack,
   onNavigate,
-  behaviorIndex,
 }: {
   current: View | null;
   canGoBack: boolean;
   onBack: () => void;
   onNavigate: (v: View) => void;
-  behaviorIndex: Map<string, BehaviorMeta>;
 }) {
   if (current === null) {
     return (
@@ -586,12 +557,7 @@ function DetailsPanel({
             }
           />
         )}
-        {current.kind === "behavior" && (
-          <BehaviorDetails
-            view={current}
-            behaviorIndex={behaviorIndex}
-          />
-        )}
+        {current.kind === "behavior" && <BehaviorDetails view={current} />}
       </Box>
     </Box>
   );
@@ -749,14 +715,15 @@ function BehaviorRow({
 
 function BehaviorDetails({
   view,
-  behaviorIndex,
 }: {
   view: Extract<View, { kind: "behavior" }>;
-  behaviorIndex: Map<string, BehaviorMeta>;
 }) {
-  const focus = behaviorIndex.get(view.behaviorId) ?? {
+  const behavior = view.buildingBlock.behaviors.find(
+    (b) => b.id === view.behaviorId,
+  );
+  const focus: BehaviorMeta = {
     id: view.behaviorId,
-    name: view.behaviorId,
+    name: behavior?.name ?? view.behaviorId,
     blockId: view.buildingBlock.id,
     blockName: view.buildingBlock.name,
     blockType: view.buildingBlock.type,
@@ -792,7 +759,7 @@ function BehaviorDetails({
         </Group>
       </Box>
       <Box className={classes.behaviorFlow}>
-        <InvocationFlow focus={focus} behaviorIndex={behaviorIndex} />
+        <InvocationFlow focus={focus} />
       </Box>
     </Box>
   );
@@ -824,34 +791,3 @@ function ScanPrompt() {
   );
 }
 
-function buildBehaviorIndex(tree: DomainModelTree): Map<string, BehaviorMeta> {
-  const index = new Map<string, BehaviorMeta>();
-
-  const visitBlocks = (blocks: BuildingBlock[]) => {
-    for (const block of blocks) {
-      for (const behavior of block.behaviors) {
-        index.set(behavior.id, {
-          id: behavior.id,
-          name: behavior.name,
-          blockId: block.id,
-          blockName: block.name,
-          blockType: block.type,
-        });
-      }
-    }
-  };
-
-  const visitModules = (modules: ModuleBranch[]) => {
-    for (const mod of modules) {
-      visitBlocks(mod.buildingBlocks);
-      visitModules(mod.modules);
-    }
-  };
-
-  for (const bc of tree.boundedContexts) {
-    visitBlocks(bc.buildingBlocks);
-    visitModules(bc.modules);
-  }
-
-  return index;
-}

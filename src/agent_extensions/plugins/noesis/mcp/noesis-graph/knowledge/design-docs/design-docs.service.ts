@@ -1,17 +1,15 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import {
   DesignDocSchema,
   type DesignDoc,
   type DesignDocOverview,
 } from "../../../../shared-contracts/design-doc.js";
-import {
-  DesignDocsRepository,
-  type ApplyResult,
-} from "./design-docs.repository.js";
+import { DesignDocsRepository } from "./design-docs.repository.js";
 
-export interface SaveDesignDocResult extends ApplyResult {
-  output_path: string | null;
+export interface SaveDesignDocResult {
+  design_doc_id: string;
+  totals: { added: number; modified: number; removed: number };
 }
 
 @Injectable()
@@ -37,19 +35,27 @@ export class DesignDocsService implements OnModuleInit {
     return this.repository.readDesignDoc(designDocId);
   }
 
-  async saveDesignDocFromFile(
-    inputPath: string,
-    outputPath: string | null,
-  ): Promise<SaveDesignDocResult> {
-    const doc = await this.readDesignDocFile(inputPath);
+  async saveDesignDocFromFile(path: string): Promise<SaveDesignDocResult> {
+    const doc = await this.readDesignDocFile(path);
     const applyResult = await this.repository.applyDesignDoc(doc);
-    if (outputPath !== null) {
-      await writeFile(outputPath, JSON.stringify(doc, null, 2), "utf-8");
-    }
+    const totals = {
+      added:
+        applyResult.actors_added +
+        applyResult.bounded_contexts_added +
+        applyResult.quality_attributes_added,
+      modified:
+        applyResult.actors_modified +
+        applyResult.bounded_contexts_modified +
+        applyResult.quality_attributes_modified,
+      removed:
+        applyResult.actors_removed +
+        applyResult.bounded_contexts_removed +
+        applyResult.quality_attributes_removed,
+    };
     this.logger.log(
-      `Saved DesignDoc ${doc.id} (${doc.name}) — +${applyResult.bounded_contexts_added} BCs, +${applyResult.actors_added} actors`,
+      `Saved DesignDoc ${doc.id} (${doc.name}) — +${totals.added} added, ~${totals.modified} modified, -${totals.removed} removed`,
     );
-    return { ...applyResult, output_path: outputPath };
+    return { design_doc_id: doc.id, totals };
   }
 
   private async readDesignDocFile(path: string): Promise<DesignDoc> {

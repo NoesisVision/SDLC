@@ -1,6 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { readFile } from "fs/promises";
-import { existsSync } from "fs";
 import { join } from "path";
 import {
   ConversationSchema,
@@ -14,7 +13,10 @@ import {
   type IdeaUnitRef,
 } from "../../../../shared-contracts/conversation.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
-import { PotentialTopicsSchema } from "../../../../shared-contracts/topics.js";
+import {
+  AnalyzeConversationOutputSchema,
+  type AnalyzeConversationOutput,
+} from "../../../../shared-contracts/skills/analyze-conversation/output.js";
 import { DecisionsService } from "../decisions/decisions.service.js";
 import { DocumentsRepository } from "../documents/documents.repository.js";
 import { TopicsRepository } from "../topics/topics.repository.js";
@@ -66,9 +68,9 @@ export class ConversationsService {
   }
 
   async getTopicForReview(
-    conversationPath: string,
+    outputPath: string,
   ): Promise<TopicForReview | null> {
-    const conversation = await this.readConversationFile(conversationPath);
+    const { conversation } = await this.readOutputFile(outputPath);
     const topic = conversation.topics.find((t) => !t.reviewed) ?? null;
     if (topic === null) return null;
 
@@ -130,10 +132,9 @@ export class ConversationsService {
   }
 
   async mergeConversation(workingDir: string): Promise<MergeConversationResult> {
-    const conversation = await this.readConversationFile(
-      join(workingDir, "conversation.json"),
-    );
-    const parentMap = await readParentMap(workingDir);
+    const output = await this.readOutputFile(join(workingDir, "output.json"));
+    const { conversation, potential_topics } = output;
+    const parentMap = buildParentMap(potential_topics.topics);
 
     await this.repository.insertConversation(conversation);
 
@@ -215,6 +216,14 @@ export class ConversationsService {
     const parsed = JSON.parse(raw);
     return ConversationSchema.parse(parsed);
   }
+
+  private async readOutputFile(
+    path: string,
+  ): Promise<AnalyzeConversationOutput> {
+    const raw = await readFile(path, "utf-8");
+    const parsed = JSON.parse(raw);
+    return AnalyzeConversationOutputSchema.parse(parsed);
+  }
 }
 
 function countIdeaUnits(conversation: Conversation): number {
@@ -225,16 +234,11 @@ function itemKey(item: IdeaUnitRef): string {
   return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
 }
 
-async function readParentMap(
-  workingDir: string,
-): Promise<Map<string, string | null>> {
-  const path = join(workingDir, "potential_topics.json");
-  if (!existsSync(path)) return new Map();
-  const raw = await readFile(path, "utf-8");
-  const parsed = JSON.parse(raw);
-  const { topics } = PotentialTopicsSchema.parse(parsed);
+function buildParentMap(
+  potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
+): Map<string, string | null> {
   const map = new Map<string, string | null>();
-  for (const t of topics) {
+  for (const t of potentialTopics) {
     if (t.is_new) map.set(t.id, t.parent_id);
   }
   return map;

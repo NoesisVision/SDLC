@@ -1,26 +1,22 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { readFile } from "fs/promises";
-import { existsSync } from "fs";
 import { join } from "path";
 import {
-  DocumentAnalysisSchema,
+  AnalyzeDesignDraftOutputSchema,
   buildFragmentMap,
   formatEnrichedDocumentTopicMarkdown,
-  isIrrelevantFragment,
   resolveFragmentDetail,
+  type AnalyzeDesignDraftOutput,
   type AttachToDecision,
-  type DocumentAnalysis,
   type EnrichedDocumentTopic,
   type FragmentDetail,
-} from "../../../../shared-contracts/document-analysis.js";
+} from "../../../../shared-contracts/skills/analyze-design-draft/output.js";
 import {
   DocumentSchema,
+  isIrrelevantFragment,
   type Document,
 } from "../../../../shared-contracts/documents.js";
-import {
-  PotentialTopicsSchema,
-  type TopicItem,
-} from "../../../../shared-contracts/topics.js";
+import { type TopicItem } from "../../../../shared-contracts/topics.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
 import {
   DecisionsService,
@@ -63,16 +59,16 @@ export class DocumentsService {
   }
 
   async getTopicForDocumentReview(
-    analysisPath: string,
+    outputPath: string,
   ): Promise<TopicForDocumentReview | null> {
-    const analysis = await this.readDocumentAnalysisFile(analysisPath);
-    const topic = analysis.topics.find((t) => !t.reviewed) ?? null;
+    const output = await this.readOutputFile(outputPath);
+    const topic = output.topics.find((t) => !t.reviewed) ?? null;
     if (topic === null) return null;
 
-    const fragmentMap = buildFragmentMap(analysis.fragments);
+    const fragmentMap = buildFragmentMap(output.fragments);
     const priorFragments = await this.repository.getPriorDocumentFragments(
       topic.id,
-      analysis.document_id,
+      output.document.id,
     );
 
     const details: FragmentDetail[] = [];
@@ -81,15 +77,15 @@ export class DocumentsService {
     for (const item of topic.items) {
       switch (item.type) {
         case "document_fragment_ref": {
-          if (item.document_id !== analysis.document_id) break;
+          if (item.document_id !== output.document.id) break;
           const fragmentIndex = findFragmentByOffsets(
-            analysis.fragments,
+            output.fragments,
             item.start_offset,
             item.end_offset,
           );
           if (fragmentIndex === null) break;
           const detail = resolveFragmentDetail(
-            analysis.document_id,
+            output.document.id,
             fragmentIndex,
             fragmentMap,
           );
@@ -132,7 +128,7 @@ export class DocumentsService {
       title: topic.title,
       short_summary: topic.short_summary,
       long_summary: topic.long_summary,
-      document_id: analysis.document_id,
+      document_id: output.document.id,
       fragments: details,
     };
 
@@ -150,19 +146,9 @@ export class DocumentsService {
   }
 
   async mergeDocument(workingDir: string): Promise<MergeDocumentResult> {
-    const document = await this.readDocumentFile(
-      join(workingDir, "document.json"),
-    );
-    const analysis = await this.readDocumentAnalysisFile(
-      join(workingDir, "analysis.json"),
-    );
-    if (analysis.document_id !== document.id) {
-      throw new Error(
-        `document.json id (${document.id}) does not match analysis.json document_id (${analysis.document_id})`,
-      );
-    }
-
-    const parentMap = await readParentMap(workingDir);
+    const output = await this.readOutputFile(join(workingDir, "output.json"));
+    const document = output.document;
+    const parentMap = buildParentMap(output.potential_topics.topics);
 
     if (!(await this.repository.exists(document.id))) {
       await this.repository.insertDocument(document);
@@ -170,7 +156,7 @@ export class DocumentsService {
 
     let topicsAdded = 0;
     let topicsUpdated = 0;
-    for (const topic of analysis.topics) {
+    for (const topic of output.topics) {
       const fields = {
         title: topic.title,
         short_summary: topic.short_summary,
@@ -185,7 +171,7 @@ export class DocumentsService {
       }
     }
 
-    for (const topic of analysis.topics) {
+    for (const topic of output.topics) {
       if (!parentMap.has(topic.id)) continue;
       const parentId = parentMap.get(topic.id) ?? null;
       await this.topics.deleteParentEdge(topic.id);
@@ -194,7 +180,7 @@ export class DocumentsService {
       }
     }
 
-    for (const topic of analysis.topics) {
+    for (const topic of output.topics) {
       for (const item of topic.items) {
         switch (item.type) {
           case "document_fragment_ref": {
@@ -215,7 +201,7 @@ export class DocumentsService {
     }
 
     let decisionsAdded = 0;
-    for (const topic of analysis.topics) {
+    for (const topic of output.topics) {
       for (const decision of topic.decisions) {
         await this.decisions.addDecision(topic.id, decision);
         decisionsAdded++;
@@ -223,8 +209,8 @@ export class DocumentsService {
     }
 
     let attachmentsApplied = 0;
-    for (const attachment of analysis.decision_attachments) {
-      const items = attachmentToItems(attachment, analysis);
+    for (const attachment of output.decision_attachments) {
+      const items = attachmentToItems(attachment, output);
       if (items.length === 0) continue;
       const slot = attachmentToSlot(attachment);
       await this.decisions.addItemsToDecisionSlot(
@@ -248,12 +234,12 @@ export class DocumentsService {
     };
   }
 
-  private async readDocumentAnalysisFile(
+  private async readOutputFile(
     path: string,
-  ): Promise<DocumentAnalysis> {
+  ): Promise<AnalyzeDesignDraftOutput> {
     const raw = await readFile(path, "utf-8");
     const parsed = JSON.parse(raw);
-    return DocumentAnalysisSchema.parse(parsed);
+    return AnalyzeDesignDraftOutputSchema.parse(parsed);
   }
 
   private async readDocumentFile(path: string): Promise<Document> {
@@ -265,16 +251,16 @@ export class DocumentsService {
 
 function attachmentToItems(
   attachment: AttachToDecision,
-  analysis: DocumentAnalysis,
+  output: AnalyzeDesignDraftOutput,
 ): TopicItem[] {
-  const fragmentMap = buildFragmentMap(analysis.fragments);
+  const fragmentMap = buildFragmentMap(output.fragments);
   const items: TopicItem[] = [];
   for (const fi of attachment.fragment_indices) {
     const fragment = fragmentMap.get(fi);
     if (fragment === undefined) continue;
     items.push({
       type: "document_fragment_ref",
-      document_id: analysis.document_id,
+      document_id: output.document.id,
       start_offset: fragment.start_offset,
       end_offset: fragment.end_offset,
     });
@@ -303,7 +289,7 @@ function attachmentToSlot(attachment: AttachToDecision): DecisionSupportSlot {
 }
 
 function findFragmentByOffsets(
-  fragments: DocumentAnalysis["fragments"],
+  fragments: AnalyzeDesignDraftOutput["fragments"],
   startOffset: number,
   endOffset: number,
 ): number | null {
@@ -319,16 +305,11 @@ function fragmentKey(documentId: string, start: number, end: number): string {
   return `${documentId}:${start}:${end}`;
 }
 
-async function readParentMap(
-  workingDir: string,
-): Promise<Map<string, string | null>> {
-  const path = join(workingDir, "potential_topics.json");
-  if (!existsSync(path)) return new Map();
-  const raw = await readFile(path, "utf-8");
-  const parsed = JSON.parse(raw);
-  const { topics } = PotentialTopicsSchema.parse(parsed);
+function buildParentMap(
+  potentialTopics: AnalyzeDesignDraftOutput["potential_topics"]["topics"],
+): Map<string, string | null> {
   const map = new Map<string, string | null>();
-  for (const t of topics) {
+  for (const t of potentialTopics) {
     if (t.is_new) map.set(t.id, t.parent_id);
   }
   return map;

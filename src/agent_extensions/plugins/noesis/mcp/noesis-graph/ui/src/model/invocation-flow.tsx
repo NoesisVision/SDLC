@@ -15,12 +15,8 @@ import {
 } from "@xyflow/react";
 import { IconBolt } from "@tabler/icons-react";
 import { blockTypeStyle, type BehaviorMeta } from "./block-type.js";
+import type { InvocationGraphData } from "./invocation-graph-data.js";
 import classes from "./invocation-flow.module.css";
-
-interface Invocation {
-  source: string;
-  destination: string;
-}
 
 interface BlockGroup {
   blockId: string;
@@ -49,15 +45,8 @@ const NODE_HEADER_HEIGHT = 48;
 const NODE_PADDING_V = 12;
 const COLUMN_GAP = 20;
 
-export function InvocationFlow({
-  focus,
-  behaviorIndex,
-}: {
-  focus: BehaviorMeta;
-  behaviorIndex: Map<string, BehaviorMeta>;
-}) {
-  const [incoming, setIncoming] = useState<Invocation[]>([]);
-  const [outgoing, setOutgoing] = useState<Invocation[]>([]);
+export function InvocationFlow({ focus }: { focus: BehaviorMeta }) {
+  const [data, setData] = useState<InvocationGraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,18 +54,13 @@ export function InvocationFlow({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([
-      fetch(
-        `/api/model/invocations?destinationBehaviorId=${encodeURIComponent(focus.id)}`,
-      ).then((r) => r.json() as Promise<Invocation[]>),
-      fetch(
-        `/api/model/invocations?sourceBehaviorId=${encodeURIComponent(focus.id)}`,
-      ).then((r) => r.json() as Promise<Invocation[]>),
-    ])
-      .then(([inc, out]) => {
+    fetch(
+      `/api/ui/invocation-graph?behaviorId=${encodeURIComponent(focus.id)}`,
+    )
+      .then((r) => r.json() as Promise<InvocationGraphData>)
+      .then((result) => {
         if (cancelled) return;
-        setIncoming(inc);
-        setOutgoing(out);
+        setData(result);
         setLoading(false);
       })
       .catch((err: Error) => {
@@ -96,13 +80,10 @@ export function InvocationFlow({
 
   const { nodes, edges, isEmpty } = useMemo(
     () =>
-      buildFlowGraph({
-        focus,
-        incoming,
-        outgoing,
-        index: behaviorIndex,
-      }),
-    [focus, incoming, outgoing, behaviorIndex],
+      data === null
+        ? { nodes: [] as Node[], edges: [] as Edge[], isEmpty: true }
+        : buildFlowGraph(data),
+    [data],
   );
 
   if (loading) {
@@ -275,31 +256,12 @@ const BlockFlowNode = memo(function BlockFlowNode({ data }: NodeProps) {
   );
 });
 
-function buildFlowGraph({
-  focus,
-  incoming,
-  outgoing,
-  index,
-}: {
-  focus: BehaviorMeta;
-  incoming: Invocation[];
-  outgoing: Invocation[];
-  index: Map<string, BehaviorMeta>;
-}): {
+function buildFlowGraph(data: InvocationGraphData): {
   nodes: Node[];
   edges: Edge[];
   isEmpty: boolean;
 } {
-  const callers = resolveMany(
-    incoming.map((i) => i.source),
-    index,
-    focus.id,
-  );
-  const callees = resolveMany(
-    outgoing.map((i) => i.destination),
-    index,
-    focus.id,
-  );
+  const { focus, callers, callees } = data;
 
   const callerGroups = groupByBlock(callers);
   const calleeGroups = groupByBlock(callees);
@@ -419,34 +381,6 @@ function buildEdge(source: string, target: string, suffix: string): Edge {
       height: 16,
     },
   } satisfies Edge;
-}
-
-function resolveMany(
-  ids: string[],
-  index: Map<string, BehaviorMeta>,
-  excludeId: string,
-): BehaviorMeta[] {
-  const out: BehaviorMeta[] = [];
-  const seen = new Set<string>();
-  for (const id of ids) {
-    if (id === excludeId || seen.has(id)) continue;
-    seen.add(id);
-    out.push(
-      index.get(id) ?? {
-        id,
-        name: fallbackLabel(id),
-        blockId: `unknown:${id}`,
-        blockName: "Unknown",
-        blockType: "Behavior",
-      },
-    );
-  }
-  return out;
-}
-
-function fallbackLabel(id: string): string {
-  const tail = id.split(":").pop();
-  return tail !== undefined && tail.length > 0 ? tail : id;
 }
 
 function focusBlockNodeId(blockId: string): string {

@@ -10,14 +10,13 @@ import {
 import { Test } from "@nestjs/testing";
 import type { TestingModule } from "@nestjs/testing";
 import { mkdtempSync, rmSync } from "fs";
-import { writeFile, readFile } from "fs/promises";
+import { writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { DatabaseService } from "../../database/database.service.js";
 import { DATA_DIR } from "../../config/config.module.js";
 import { DesignDocsRepository } from "./design-docs.repository.js";
 import { DesignDocsService } from "./design-docs.service.js";
-import type { DesignDoc } from "../../../../shared-contracts/design-doc.js";
 
 const NODE_LABELS = [
   "DesignedScenario",
@@ -87,7 +86,7 @@ describe("DesignDocsService", () => {
         { id: "dd-1", name: "auth", description: "Auth system" },
         "minimal.json",
       );
-      const result = await service.saveDesignDocFromFile(path, null);
+      const result = await service.saveDesignDocFromFile(path);
       expect(result.design_doc_id).toBe("dd-1");
       expect(await countNodes("DesignDoc")).toBe(1);
     });
@@ -168,11 +167,12 @@ describe("DesignDocsService", () => {
         },
       };
       const path = await writeDoc(doc, "full.json");
-      const result = await service.saveDesignDocFromFile(path, null);
+      const result = await service.saveDesignDocFromFile(path);
 
-      expect(result.actors_added).toBe(1);
-      expect(result.bounded_contexts_added).toBe(1);
-      expect(result.quality_attributes_added).toBe(1);
+      expect(result.design_doc_id).toBe("dd-2");
+      expect(result.totals.added).toBe(3);
+      expect(result.totals.modified).toBe(0);
+      expect(result.totals.removed).toBe(0);
       expect(await countNodes("DesignedActor")).toBe(1);
       expect(await countNodes("DesignedBoundedContext")).toBe(1);
       expect(await countNodes("DesignedDomainModule")).toBe(1);
@@ -181,18 +181,6 @@ describe("DesignDocsService", () => {
       expect(await countNodes("DesignedRule")).toBe(1);
       expect(await countNodes("DesignedScenario")).toBe(1);
       expect(await countNodes("DesignedQualityAttribute")).toBe(1);
-    });
-
-    test("writes normalized JSON to output_path when provided", async () => {
-      const path = await writeDoc(
-        { id: "dd-3", name: "x", description: "y" },
-        "in.json",
-      );
-      const out = join(workDir, "out.json");
-      await service.saveDesignDocFromFile(path, out);
-      const written = JSON.parse(await readFile(out, "utf-8")) as DesignDoc;
-      expect(written.id).toBe("dd-3");
-      expect(written.name).toBe("x");
     });
 
     test("modified ChangeSet updates only changed fields", async () => {
@@ -206,7 +194,6 @@ describe("DesignDocsService", () => {
       };
       await service.saveDesignDocFromFile(
         await writeDoc(initial, "v1.json"),
-        null,
       );
 
       const delta = {
@@ -219,9 +206,8 @@ describe("DesignDocsService", () => {
       };
       const result = await service.saveDesignDocFromFile(
         await writeDoc(delta, "v2.json"),
-        null,
       );
-      expect(result.bounded_contexts_modified).toBe(1);
+      expect(result.totals.modified).toBe(1);
       const read = await service.readDesignDoc("dd-4");
       expect(read?.description).toBe("v2");
       expect(read?.boundedContexts?.added[0].description).toBe(
@@ -243,7 +229,6 @@ describe("DesignDocsService", () => {
       };
       await service.saveDesignDocFromFile(
         await writeDoc(initial, "v1.json"),
-        null,
       );
       expect(await countNodes("DesignedActor")).toBe(2);
 
@@ -255,7 +240,6 @@ describe("DesignDocsService", () => {
       };
       await service.saveDesignDocFromFile(
         await writeDoc(delta, "v2.json"),
-        null,
       );
       expect(await countNodes("DesignedActor")).toBe(1);
     });
@@ -287,7 +271,7 @@ describe("DesignDocsService", () => {
         },
         "r.json",
       );
-      await service.saveDesignDocFromFile(path, null);
+      await service.saveDesignDocFromFile(path);
       const doc = await service.readDesignDoc("dd-r");
       expect(doc).not.toBeNull();
       expect(doc?.actors?.added.map((a) => a.name)).toEqual(["A"]);
@@ -310,14 +294,12 @@ describe("DesignDocsService", () => {
           },
           "a.json",
         ),
-        null,
       );
       await service.saveDesignDocFromFile(
         await writeDoc(
           { id: "dd-b", name: "beta", description: "second" },
           "b.json",
         ),
-        null,
       );
       const docs = await service.listDesignDocs();
       expect(docs).toHaveLength(2);
@@ -346,7 +328,6 @@ describe("DesignDocsService", () => {
           },
           "del.json",
         ),
-        null,
       );
       await service.deleteDesignDoc("dd-del");
       expect(await countNodes("DesignDoc")).toBe(0);

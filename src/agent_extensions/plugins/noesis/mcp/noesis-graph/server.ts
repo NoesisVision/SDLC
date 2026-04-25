@@ -58,11 +58,7 @@ export async function startServer(): Promise<void> {
     registerTopicsTools(mcp, app.get(TopicsService));
     registerDecisionsTools(mcp, app.get(DecisionsService));
     registerConversationsTools(mcp, app.get(ConversationsService));
-    registerDocumentsTools(
-      mcp,
-      app.get(DocumentsService),
-      app.get(DesignDocsService),
-    );
+    registerDocumentsTools(mcp, app.get(DocumentsService));
     registerDesignDocsTools(mcp, app.get(DesignDocsService));
     logger.log("MCP tools registered", "Bootstrap");
 

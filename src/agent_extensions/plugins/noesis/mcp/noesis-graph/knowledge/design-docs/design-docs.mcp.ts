@@ -37,26 +37,19 @@ function registerSaveDesignDoc(
     {
       description:
         "Persist a DesignDoc into the knowledge graph from a JSON file matching DesignDocSchema. " +
-        "Applies ChangeSets recursively (added → upsert, modified → partial update, removed → delete by name). " +
-        "If `output_path` is provided, the validated, normalized JSON is also written there for version control. " +
-        "Returns inline JSON with counts of items added/modified/removed at each top-level slot.",
+        "The path points at the version-controlled DesignDoc JSON in the repository — the agent writes/updates this file " +
+        "directly, then this tool reads it, validates, and applies ChangeSets recursively (added → upsert, " +
+        "modified → partial update, removed → delete by name). Returns the design doc id and aggregate counts.",
       inputSchema: {
-        input_path: z
+        path: z
           .string()
-          .describe("Absolute path to a JSON file matching DesignDocSchema."),
-        output_path: z
-          .string()
-          .nullable()
-          .optional()
           .describe(
-            "Optional absolute path. When set, the normalized DesignDoc JSON is written there.",
+            "Absolute path to the persisted DesignDoc JSON file in the repository.",
           ),
       },
     },
-    async ({ input_path, output_path }) =>
-      runInlineJsonTool(() =>
-        service.saveDesignDocFromFile(input_path, output_path ?? null),
-      ),
+    async ({ path }) =>
+      runInlineJsonTool(() => service.saveDesignDocFromFile(path)),
   );
 }
 

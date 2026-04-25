@@ -79,18 +79,17 @@ I think we should start with the database schema. It needs careful planning.
     expect(result.cleaned_path).toBe(join(tmpDir, "meeting-cleaned.md"));
     expect(existsSync(result.cleaned_path)).toBe(true);
     expect(result.working_dir).toContain("noesis-conv-");
-    expect(existsSync(join(result.working_dir, "conversation.json"))).toBe(true);
+    expect(existsSync(result.output_path)).toBe(true);
     expect(result.num_turns).toBe(2);
 
     const cleaned = readFileSync(result.cleaned_path, "utf-8");
     expect(cleaned).toContain(`<!-- conversation_id: ${result.conversation_id} -->`);
 
-    const conv = JSON.parse(
-      readFileSync(join(result.working_dir, "conversation.json"), "utf-8"),
-    );
-    expect(conv.conversation_id).toBe(result.conversation_id);
-    expect(conv.turns).toEqual([]);
-    expect(conv.topics).toEqual([]);
+    const output = JSON.parse(readFileSync(result.output_path, "utf-8"));
+    expect(output.conversation.conversation_id).toBe(result.conversation_id);
+    expect(output.conversation.turns).toEqual([]);
+    expect(output.conversation.topics).toEqual([]);
+    expect(output.potential_topics).toEqual({ topics: [] });
   });
 
   test("reuses existing conversation_id from cleaned file on rerun", () => {

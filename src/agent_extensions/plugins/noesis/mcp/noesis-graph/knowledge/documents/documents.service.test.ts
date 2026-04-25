@@ -102,15 +102,6 @@ describe("DocumentsService", () => {
       const workingDir = mkdtempSync(join(tmpdir(), "noesis-merge-doc-"));
       try {
         const documentContent = "First paragraph.\n\nSecond paragraph.\n";
-        await writeFile(
-          join(workingDir, "document.json"),
-          JSON.stringify({
-            id: "doc-merge-1",
-            title: "Doc",
-            date: "2026-04-24",
-            content: documentContent,
-          }),
-        );
 
         await topics.addTopic({
           id: "existing-topic",
@@ -126,10 +117,13 @@ describe("DocumentsService", () => {
           alternative_options: [],
         });
 
-        const analysis = {
-          document_id: "doc-merge-1",
-          document_title: "Doc",
-          document_date: "2026-04-24",
+        const output = {
+          document: {
+            id: "doc-merge-1",
+            title: "Doc",
+            date: "2026-04-24",
+            content: documentContent,
+          },
           fragments: [
             {
               index: 0,
@@ -197,14 +191,7 @@ describe("DocumentsService", () => {
               fragment_indices: [0],
             },
           ],
-          design_doc_id: null,
-          design_doc_title: null,
-          design_doc_extracted: false,
-        };
-        await writeFile(join(workingDir, "analysis.json"), JSON.stringify(analysis));
-        await writeFile(
-          join(workingDir, "potential_topics.json"),
-          JSON.stringify({
+          potential_topics: {
             topics: [
               {
                 id: "new-topic-1",
@@ -215,7 +202,14 @@ describe("DocumentsService", () => {
                 parent_id: null,
               },
             ],
-          }),
+          },
+          design_doc_id: null,
+          design_doc_title: null,
+          design_doc_extracted: false,
+        };
+        await writeFile(
+          join(workingDir, "output.json"),
+          JSON.stringify(output),
         );
 
         const result = await documents.mergeDocument(workingDir);

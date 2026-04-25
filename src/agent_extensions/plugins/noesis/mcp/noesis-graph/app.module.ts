@@ -6,6 +6,7 @@ import { DatabaseModule } from "./database/database.module.js";
 import { SerenaModule } from "./serena/serena.module.js";
 import { ScannerModule } from "./scanner/scanner.module.js";
 import { KnowledgeModule } from "./knowledge/knowledge.module.js";
+import { UiDataModule } from "./ui-data/ui-data.module.js";
 import { HealthController } from "./health/health.controller.js";
 
 @Module({})
@@ -23,6 +24,7 @@ export class AppModule {
         SerenaModule,
         ScannerModule,
         KnowledgeModule,
+        UiDataModule,
       ],
       controllers: [HealthController],
     };

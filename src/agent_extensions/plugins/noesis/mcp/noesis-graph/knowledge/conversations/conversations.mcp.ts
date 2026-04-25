@@ -50,22 +50,22 @@ function registerGetTopicForReview(
     "get_topic_for_review",
     {
       description:
-        "Load the next unreviewed Topic from a working conversation.json for analysis. " +
+        "Load the next unreviewed Topic from a working output.json for analysis. " +
         "Combines the current conversation's idea units with prior-conversation idea units " +
         "already attached to the same Topic in the knowledge graph (marked `[prior conversation]`). " +
         "Writes the enriched topic Markdown (with HTML-comment metadata for `topic_id`, `num_items`, " +
         "`has_decision_units`) to a tmp file and returns the file path. The agent must read it with the Read tool. " +
         "If no unreviewed topic remains, returns inline JSON `{ status: \"Done\" }`.",
       inputSchema: {
-        conversation_path: z
+        output_path: z
           .string()
           .describe(
-            "Absolute path to the working conversation.json produced during analysis.",
+            "Absolute path to the working output.json produced during analysis.",
           ),
       },
     },
-    async ({ conversation_path }) => {
-      const review = await conversations.getTopicForReview(conversation_path);
+    async ({ output_path }) => {
+      const review = await conversations.getTopicForReview(output_path);
       if (review === null) {
         return runInlineJsonTool(async () => ({ status: "Done" }));
       }
@@ -108,15 +108,15 @@ function registerMergeConversation(
     {
       description:
         "Merge a completed conversation analysis into the knowledge graph. Reads " +
-        "`<working_dir>/conversation.json` (and `potential_topics.json` for parent mapping), " +
-        "persists the Conversation + Turn + IdeaUnit nodes, upserts referenced Topics, " +
+        "`<working_dir>/output.json` (matching AnalyzeConversationOutput: `{ conversation, potential_topics }`). " +
+        "Persists the Conversation + Turn + IdeaUnit nodes, upserts referenced Topics with parent linking, " +
         "attaches idea-unit / document-fragment items, and creates Decisions under their owning Topics. " +
         "Fails if the conversation id already exists in the graph.",
       inputSchema: {
         working_dir: z
           .string()
           .describe(
-            "Absolute path to the analysis working directory containing conversation.json.",
+            "Absolute path to the analysis working directory containing output.json.",
           ),
       },
     },

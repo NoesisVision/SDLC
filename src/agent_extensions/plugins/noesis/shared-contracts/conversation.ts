@@ -1,14 +1,8 @@
 import { z } from "zod";
 import { TopicSchema } from "./topics.js";
 
-export const IdeaUnitCategory = z.enum([
-  "Information",
-  "Position",
-  "Argument",
-  "Decision",
-  "Irrelevant",
-]);
-export type IdeaUnitCategory = z.infer<typeof IdeaUnitCategory>;
+export { IdeaUnitCategory } from "./idea-unit-category.js";
+import { IdeaUnitCategory } from "./idea-unit-category.js";
 
 export const IdeaUnitSchema = z.object({
   index: z.int(),

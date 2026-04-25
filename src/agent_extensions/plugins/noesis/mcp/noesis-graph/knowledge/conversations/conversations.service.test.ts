@@ -146,10 +146,9 @@ describe("ConversationsService", () => {
           ],
         };
 
-        await writeFile(join(workingDir, "conversation.json"), JSON.stringify(conv));
-        await writeFile(
-          join(workingDir, "potential_topics.json"),
-          JSON.stringify({
+        const output = {
+          conversation: conv,
+          potential_topics: {
             topics: [
               {
                 id: "m-topic-1",
@@ -160,7 +159,11 @@ describe("ConversationsService", () => {
                 parent_id: null,
               },
             ],
-          }),
+          },
+        };
+        await writeFile(
+          join(workingDir, "output.json"),
+          JSON.stringify(output),
         );
 
         const result = await conversations.mergeConversation(workingDir);
@@ -220,10 +223,13 @@ describe("ConversationsService", () => {
             },
           ],
         };
-        await writeFile(join(workingDir, "conversation.json"), JSON.stringify(conv));
+        await writeFile(
+          join(workingDir, "output.json"),
+          JSON.stringify({ conversation: conv, potential_topics: { topics: [] } }),
+        );
 
         const review = await conversations.getTopicForReview(
-          join(workingDir, "conversation.json"),
+          join(workingDir, "output.json"),
         );
         expect(review).not.toBeNull();
         expect(review!.topic_id).toBe("r-topic");
@@ -257,10 +263,13 @@ describe("ConversationsService", () => {
             },
           ],
         };
-        await writeFile(join(workingDir, "conversation.json"), JSON.stringify(conv));
+        await writeFile(
+          join(workingDir, "output.json"),
+          JSON.stringify({ conversation: conv, potential_topics: { topics: [] } }),
+        );
 
         const review = await conversations.getTopicForReview(
-          join(workingDir, "conversation.json"),
+          join(workingDir, "output.json"),
         );
         expect(review).toBeNull();
       } finally {

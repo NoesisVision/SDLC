@@ -43,7 +43,7 @@ describe("buildCleanedMarkdown", () => {
 });
 
 describe("prepareDocument", () => {
-  test("generates id, writes cleaned doc, document.json, analysis.json", () => {
+  test("generates id, writes cleaned doc and output.json", () => {
     const docPath = join(tmpDir, "spec.md");
     writeFileSync(
       docPath,
@@ -70,8 +70,7 @@ Another paragraph.
     expect(result.cleaned_path).toBe(join(tmpDir, "spec-cleaned.md"));
     expect(existsSync(result.cleaned_path)).toBe(true);
     expect(result.working_dir).toContain("noesis-doc-");
-    expect(existsSync(result.document_path)).toBe(true);
-    expect(existsSync(result.analysis_path)).toBe(true);
+    expect(existsSync(result.output_path)).toBe(true);
     expect(existsSync(result.section_tree_path)).toBe(true);
     expect(result.num_fragments).toBeGreaterThan(0);
     expect(result.design_doc_title).toBe("auth-system");
@@ -81,16 +80,14 @@ Another paragraph.
       `<!-- document_id: ${result.document_id} -->`,
     );
 
-    const analysis = JSON.parse(readFileSync(result.analysis_path, "utf-8"));
-    expect(analysis.document_id).toBe(result.document_id);
-    expect(analysis.fragments.length).toBe(result.num_fragments);
-    expect(analysis.topics).toEqual([]);
-    expect(analysis.design_doc_title).toBe("auth-system");
-
-    const document = JSON.parse(readFileSync(result.document_path, "utf-8"));
-    expect(document.id).toBe(result.document_id);
-    expect(document.title).toBe("Spec");
-    expect(document.content).toBe(cleaned);
+    const output = JSON.parse(readFileSync(result.output_path, "utf-8"));
+    expect(output.document.id).toBe(result.document_id);
+    expect(output.document.title).toBe("Spec");
+    expect(output.document.content).toBe(cleaned);
+    expect(output.fragments.length).toBe(result.num_fragments);
+    expect(output.topics).toEqual([]);
+    expect(output.potential_topics).toEqual({ topics: [] });
+    expect(output.design_doc_title).toBe("auth-system");
   });
 
   test("reuses document_id from cleaned file on rerun", () => {

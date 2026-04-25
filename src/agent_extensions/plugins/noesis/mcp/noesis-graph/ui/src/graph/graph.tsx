@@ -14,29 +14,10 @@ import {
   BackgroundVariant,
 } from "@xyflow/react";
 import { SchemaTableNode } from "./schema-table-node.js";
-
-interface PropertySchema {
-  name: string;
-  type: string;
-  isPrimaryKey: boolean;
-}
-
-interface NodeTableSchema {
-  name: string;
-  properties: PropertySchema[];
-}
-
-interface RelTableSchema {
-  name: string;
-  from: string;
-  to: string;
-  properties: PropertySchema[];
-}
-
-interface GraphSchema {
-  nodeTables: NodeTableSchema[];
-  relTables: RelTableSchema[];
-}
+import type {
+  GraphSchemaData,
+  NodeTableSchema,
+} from "./graph-schema-data.js";
 
 const NODE_WIDTH = 260;
 const NODE_BASE_HEIGHT = 60;
@@ -45,14 +26,14 @@ const HORIZONTAL_GAP = 120;
 const VERTICAL_GAP = 80;
 
 export function GraphPage() {
-  const [schema, setSchema] = useState<GraphSchema | null>(null);
+  const [schema, setSchema] = useState<GraphSchemaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/knowledge/schema")
+    fetch("/api/ui/graph-schema")
       .then((res) => res.json())
-      .then((data: GraphSchema) => {
+      .then((data: GraphSchemaData) => {
         setSchema(data);
         setLoading(false);
       })
@@ -102,7 +83,7 @@ const NODE_COLORS: Record<string, { bg: string; border: string; header: string }
 
 const DEFAULT_COLOR = { bg: "#1f2937", border: "#6b7280", header: "#374151" };
 
-function SchemaGraph({ schema }: { schema: GraphSchema }) {
+function SchemaGraph({ schema }: { schema: GraphSchemaData }) {
   const nodeTypes: NodeTypes = useMemo(() => ({ schemaTable: SchemaTableNode }), []);
 
   const { initialNodes, initialEdges } = useMemo(
@@ -210,7 +191,7 @@ function SchemaGraph({ schema }: { schema: GraphSchema }) {
   );
 }
 
-function buildFlowElements(schema: GraphSchema): {
+function buildFlowElements(schema: GraphSchemaData): {
   initialNodes: Node[];
   initialEdges: Edge[];
 } {

@@ -10,13 +10,7 @@ import {
   IconTool,
 } from "@tabler/icons-react";
 
-export interface BehaviorMeta {
-  id: string;
-  name: string;
-  blockId: string;
-  blockName: string;
-  blockType: string;
-}
+export type { BehaviorMeta } from "./invocation-graph-data.js";
 
 export function blockTypeStyle(type: string): {
   icon: ReactNode;

@@ -4,13 +4,17 @@ import { randomUUID } from "crypto";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
 import { parseTranscript } from "./structure-transcript.js";
 import { CONVERSATION_ID_PATTERN, type RawTranscript } from "./types.js";
-import { ConversationSchema } from "../../shared-contracts/conversation.js";
+import {
+  AnalyzeConversationOutputSchema,
+  type AnalyzeConversationOutput,
+} from "../../shared-contracts/skills/analyze-conversation/output.js";
 
 interface PrepareResult {
   status: "Ok";
   working_dir: string;
   conversation_id: string;
   cleaned_path: string;
+  output_path: string;
   num_turns: number;
 }
 
@@ -68,25 +72,26 @@ export function prepareConversation(
   const workingDir = join("/tmp", `noesis-conv-${conversationId}`);
   mkdirSync(workingDir, { recursive: true });
 
-  const conversation = {
-    conversation_id: conversationId,
-    time: conversationTime,
-    main_topic: mainTopic,
-    turns: [],
-    topics: [],
+  const output: AnalyzeConversationOutput = {
+    conversation: {
+      conversation_id: conversationId,
+      time: conversationTime,
+      main_topic: mainTopic,
+      turns: [],
+      topics: [],
+    },
+    potential_topics: { topics: [] },
   };
-  ConversationSchema.parse(conversation);
-  writeFileSync(
-    join(workingDir, "conversation.json"),
-    JSON.stringify(conversation, null, 2),
-    "utf-8",
-  );
+  AnalyzeConversationOutputSchema.parse(output);
+  const outputPath = join(workingDir, "output.json");
+  writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
 
   return {
     status: "Ok",
     working_dir: workingDir,
     conversation_id: conversationId,
     cleaned_path: cleanedPath,
+    output_path: outputPath,
     num_turns: parsed.transcript.turns.length,
   };
 }
