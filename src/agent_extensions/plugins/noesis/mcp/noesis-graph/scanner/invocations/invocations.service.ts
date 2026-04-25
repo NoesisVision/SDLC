@@ -1,5 +1,15 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { SerenaService } from "../../serena/serena.service.js";
+import type {
+  BehaviorMeta,
+  InvocationGraphData,
+} from "../../ui-contracts/invocation-graph/invocation-graph-data.js";
+import type {
+  Behavior,
+  BuildingBlockBranch,
+  DomainModelTree,
+  ModuleBranch,
+} from "../domain-model/domain-model.js";
 import { ScannerRepository } from "../scanner.repository.js";
 import { InvocationsRepository } from "./invocations.repository.js";
 import {
@@ -28,6 +38,26 @@ export class InvocationsService implements OnModuleInit {
     destinationBehaviorId?: string;
   }): Promise<Invocation[]> {
     return this.repo.getInvocations(filter);
+  }
+
+  async getInvocationGraph(behaviorId: string): Promise<InvocationGraphData> {
+    const tree = await this.scannerRepo.getDomainModel();
+    const index = buildBehaviorIndex(tree);
+    const focus = index.get(behaviorId);
+    if (focus === undefined) {
+      throw new Error(`Behavior not found: ${behaviorId}`);
+    }
+    const incoming = await this.repo.getInvocations({
+      destinationBehaviorId: behaviorId,
+    });
+    const outgoing = await this.repo.getInvocations({
+      sourceBehaviorId: behaviorId,
+    });
+    return {
+      focus,
+      callers: resolveBehaviors(incoming.map((i) => i.source), index),
+      callees: resolveBehaviors(outgoing.map((i) => i.destination), index),
+    };
   }
 
   async onModuleInit(): Promise<void> {
@@ -279,6 +309,62 @@ function describeValue(value: unknown): string {
     return `string(${JSON.stringify(preview)})`;
   }
   return typeof value;
+}
+
+function buildBehaviorIndex(
+  tree: DomainModelTree<BuildingBlockBranch>,
+): Map<string, BehaviorMeta> {
+  const index = new Map<string, BehaviorMeta>();
+
+  const visitBlocks = (blocks: BuildingBlockBranch[]) => {
+    for (const block of blocks) {
+      for (const behavior of block.behaviors) {
+        index.set(behavior.id, toBehaviorMeta(behavior, block));
+      }
+    }
+  };
+
+  const visitModules = (modules: ModuleBranch<BuildingBlockBranch>[]) => {
+    for (const mod of modules) {
+      visitBlocks(mod.buildingBlocks);
+      visitModules(mod.modules);
+    }
+  };
+
+  for (const bc of tree.boundedContexts) {
+    visitBlocks(bc.buildingBlocks);
+    visitModules(bc.modules);
+  }
+
+  return index;
+}
+
+function toBehaviorMeta(
+  behavior: Behavior,
+  block: BuildingBlockBranch,
+): BehaviorMeta {
+  return {
+    id: behavior.id,
+    name: behavior.name,
+    blockId: block.id,
+    blockName: block.name,
+    blockType: block.type,
+  };
+}
+
+function resolveBehaviors(
+  ids: string[],
+  index: Map<string, BehaviorMeta>,
+): BehaviorMeta[] {
+  const seen = new Set<string>();
+  const result: BehaviorMeta[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const meta = index.get(id);
+    if (meta !== undefined) result.push(meta);
+  }
+  return result;
 }
 
 function buildInventory(rows: BehaviorRow[]): BehaviorInventory {

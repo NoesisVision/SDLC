@@ -253,4 +253,98 @@ describe("DecisionsService", () => {
       expect(await decisions.readDecision("ghost")).toBeNull();
     });
   });
+
+  describe("getDecisionsPage", () => {
+    test("returns decisions sorted by source date desc with derived dates", async () => {
+      const convPath = join(ctx.tmpDir, "conv-page.json");
+      await writeFile(
+        convPath,
+        JSON.stringify(sampleConversation("conv-page-1")),
+      );
+      await conversations.addConversationFromFile(convPath);
+      await topics.addTopic({ id: "t-page", title: "T", short_summary: "" });
+
+      const iu = {
+        type: "idea_unit_ref" as const,
+        conversation_id: "conv-page-1",
+        turn_index: 0,
+        idea_unit_index: 0,
+      };
+
+      await decisions.addDecision("t-page", {
+        id: "dec-with-date",
+        title: "Has date",
+        status: "accepted",
+        context: { text: "c", supporting_items: [iu] },
+        decision: { text: "d", rationale: "", supporting_items: [] },
+        alternative_options: [],
+      });
+      await decisions.addDecision("t-page", {
+        id: "dec-no-date",
+        title: "No date",
+        status: "proposed",
+        context: { text: "c", supporting_items: [] },
+        decision: { text: "d", rationale: "", supporting_items: [] },
+        alternative_options: [],
+      });
+
+      const page = await decisions.getDecisionsPage();
+      expect(page.decisions).toHaveLength(2);
+      expect(page.decisions[0].id).toBe("dec-with-date");
+      expect(page.decisions[0].date).not.toBe("");
+      expect(page.decisions[1].id).toBe("dec-no-date");
+      expect(page.decisions[1].date).toBe("");
+    });
+  });
+
+  describe("getDecisionDetail", () => {
+    test("returns formatted detail data with derived date", async () => {
+      const convPath = join(ctx.tmpDir, "conv-det.json");
+      await writeFile(
+        convPath,
+        JSON.stringify(sampleConversation("conv-det-1")),
+      );
+      await conversations.addConversationFromFile(convPath);
+      await topics.addTopic({ id: "t-det", title: "Topic D", short_summary: "" });
+
+      const iu = {
+        type: "idea_unit_ref" as const,
+        conversation_id: "conv-det-1",
+        turn_index: 0,
+        idea_unit_index: 0,
+      };
+
+      await decisions.addDecision("t-det", {
+        id: "dec-det-1",
+        title: "Detail",
+        status: "accepted",
+        context: { text: "ctx text", supporting_items: [iu] },
+        decision: {
+          text: "decision text",
+          rationale: "because",
+          supporting_items: [],
+        },
+        alternative_options: [
+          { text: "alt 0", rationale: "r0", supporting_items: [] },
+        ],
+      });
+
+      const detail = await decisions.getDecisionDetail("dec-det-1");
+      expect(detail.id).toBe("dec-det-1");
+      expect(detail.topic_title).toBe("Topic D");
+      expect(detail.status).toBe("accepted");
+      expect(detail.context_text).toBe("ctx text");
+      expect(detail.decision_text).toBe("decision text");
+      expect(detail.decision_rationale).toBe("because");
+      expect(detail.alternatives).toHaveLength(1);
+      expect(detail.alternatives[0].text).toBe("alt 0");
+      expect(detail.date).not.toBe("");
+    });
+
+    test("throws on missing decision", async () => {
+      await expect(decisions.getDecisionDetail("ghost")).rejects.toThrow(
+        /not found/,
+      );
+    });
+  });
 });

@@ -63,6 +63,11 @@ export interface DecisionDetail {
   alternatives: AlternativeRow[];
 }
 
+export interface DecisionDateEntry {
+  id: string;
+  date: string;
+}
+
 @Injectable()
 export class DecisionsRepository {
   constructor(private readonly db: DatabaseService) {}
@@ -173,6 +178,26 @@ export class DecisionsRepository {
       "MATCH (t:Topic), (d:Decision) WHERE t.id = $topicId AND d.id = $decisionId CREATE (t)-[:TOPIC_HAS_DECISION]->(d)",
       { topicId, decisionId },
     );
+  }
+
+  async listDecisionSourceDates(): Promise<DecisionDateEntry[]> {
+    const DateRowSchema = z.object({ id: z.string(), date: z.string() });
+    const queries = [
+      "MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_IDEA_UNIT]->(:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) RETURN d.id AS id, c.time AS date",
+      "MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_IDEA_UNIT]->(:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) RETURN d.id AS id, c.time AS date",
+      "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT]->(:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) RETURN d.id AS id, c.time AS date",
+      "MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_DOC_FRAGMENT]->(:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(doc:Document) RETURN d.id AS id, doc.date AS date",
+      "MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_DOC_FRAGMENT]->(:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(doc:Document) RETURN d.id AS id, doc.date AS date",
+      "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_DOC_FRAGMENT]->(:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(doc:Document) RETURN d.id AS id, doc.date AS date",
+    ];
+    const all: DecisionDateEntry[] = [];
+    for (const q of queries) {
+      const rows = await this.db.query<unknown>(q);
+      for (const row of z.array(DateRowSchema).parse(rows)) {
+        all.push(row);
+      }
+    }
+    return all;
   }
 
   async listDecisions(

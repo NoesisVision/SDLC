@@ -4,6 +4,10 @@ import type {
   Decision,
   TopicItem,
 } from "../../../../shared-contracts/topics.js";
+import type {
+  DecisionDetailData,
+  DecisionsPageData,
+} from "../../ui-contracts/decisions/decisions-data.js";
 import { ideaUnitNodeId } from "../conversations/node-ids.js";
 import { ConversationsRepository } from "../conversations/conversations.repository.js";
 import { DocumentsRepository } from "../documents/documents.repository.js";
@@ -90,12 +94,57 @@ export class DecisionsService {
     return { added: items.length };
   }
 
+  async getDecisionDetail(decisionId: string): Promise<DecisionDetailData> {
+    const detail = await this.repository.readDecision(decisionId);
+    if (detail === null) throw new Error(`Decision not found: ${decisionId}`);
+    const dateMap = await this.computeDecisionDates();
+    return {
+      id: detail.id,
+      topic_id: detail.topic_id,
+      topic_title: detail.topic_title,
+      title: detail.title,
+      status: detail.status,
+      date: dateMap.get(detail.id) ?? "",
+      context_text: detail.context_text,
+      decision_text: detail.decision_text,
+      decision_rationale: detail.decision_rationale,
+      alternatives: detail.alternatives.map((a) => ({
+        option_index: a.option_index,
+        text: a.text,
+        rationale: a.rationale,
+      })),
+    };
+  }
+
+  async getDecisionsPage(): Promise<DecisionsPageData> {
+    const overviews = await this.repository.listDecisions(null);
+    const dateMap = await this.computeDecisionDates();
+    const items = overviews.map((d) => ({
+      id: d.id,
+      date: dateMap.get(d.id) ?? "",
+      title: d.title,
+      status: d.status,
+    }));
+    items.sort(byDateDesc);
+    return { decisions: items };
+  }
+
   async listDecisions(topicId: string | null): Promise<DecisionOverview[]> {
     return this.repository.listDecisions(topicId);
   }
 
   async readDecision(decisionId: string): Promise<DecisionDetail | null> {
     return this.repository.readDecision(decisionId);
+  }
+
+  private async computeDecisionDates(): Promise<Map<string, string>> {
+    const entries = await this.repository.listDecisionSourceDates();
+    const max = new Map<string, string>();
+    for (const e of entries) {
+      const cur = max.get(e.id);
+      if (cur === undefined || e.date > cur) max.set(e.id, e.date);
+    }
+    return max;
   }
 
   private async linkAlternativeToItem(
@@ -173,4 +222,14 @@ export class DecisionsService {
       }
     }
   }
+}
+
+function byDateDesc(
+  a: { date: string },
+  b: { date: string },
+): number {
+  if (a.date === b.date) return 0;
+  if (a.date === "") return 1;
+  if (b.date === "") return -1;
+  return a.date < b.date ? 1 : -1;
 }

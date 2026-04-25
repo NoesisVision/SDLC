@@ -1,6 +1,6 @@
 import { Controller, Get } from "@nestjs/common";
-import { SchemaService } from "../../knowledge/schema/schema.service.js";
-import type { GraphSchemaData } from "./graph-schema-data.js";
+import type { GraphSchemaData } from "../../ui-contracts/graph-schema/graph-schema-data.js";
+import { SchemaService } from "./schema.service.js";
 
 @Controller("api/ui/graph-schema")
 export class GraphSchemaController {

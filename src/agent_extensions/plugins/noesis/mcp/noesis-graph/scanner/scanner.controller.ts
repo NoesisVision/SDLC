@@ -1,6 +1,6 @@
 import { Controller, Get, Post } from "@nestjs/common";
-import { ScannerService } from "../../scanner/scanner.service.js";
-import type { ModelExplorerData } from "./model-explorer-data.js";
+import type { ModelExplorerData } from "../ui-contracts/model-explorer/model-explorer-data.js";
+import { ScannerService } from "./scanner.service.js";
 
 @Controller("api/ui/model-explorer")
 export class ModelExplorerController {

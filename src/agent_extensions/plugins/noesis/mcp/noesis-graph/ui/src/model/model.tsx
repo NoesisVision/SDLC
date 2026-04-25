@@ -32,7 +32,7 @@ import type {
   DomainModelTree,
   ModelExplorerData,
   ModuleBranch,
-} from "./model-explorer-data.js";
+} from "../../../ui-contracts/model-explorer/model-explorer-data.js";
 import classes from "./model.module.css";
 
 type View =

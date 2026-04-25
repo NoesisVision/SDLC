@@ -17,7 +17,7 @@ import { SchemaTableNode } from "./schema-table-node.js";
 import type {
   GraphSchemaData,
   NodeTableSchema,
-} from "./graph-schema-data.js";
+} from "../../../ui-contracts/graph-schema/graph-schema-data.js";
 
 const NODE_WIDTH = 260;
 const NODE_BASE_HEIGHT = 60;

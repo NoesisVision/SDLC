@@ -15,7 +15,7 @@ import {
 } from "@xyflow/react";
 import { IconBolt } from "@tabler/icons-react";
 import { blockTypeStyle, type BehaviorMeta } from "./block-type.js";
-import type { InvocationGraphData } from "./invocation-graph-data.js";
+import type { InvocationGraphData } from "../../../ui-contracts/invocation-graph/invocation-graph-data.js";
 import classes from "./invocation-flow.module.css";
 
 interface BlockGroup {
