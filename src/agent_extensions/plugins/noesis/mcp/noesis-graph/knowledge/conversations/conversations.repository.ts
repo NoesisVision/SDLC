@@ -23,6 +23,19 @@ const IdeaUnitJoinRowSchema = z.object({
 });
 type IdeaUnitJoinRow = z.infer<typeof IdeaUnitJoinRowSchema>;
 
+const ConversationRefRowSchema = z.object({
+  conversation_id: z.string(),
+  main_topic: z.string(),
+  time: z.string(),
+});
+type ConversationRefRow = z.infer<typeof ConversationRefRowSchema>;
+
+export interface ConversationRef {
+  conversation_id: string;
+  main_topic: string;
+  time: string;
+}
+
 @Injectable()
 export class ConversationsRepository {
   constructor(private readonly db: DatabaseService) {}
@@ -71,6 +84,41 @@ export class ConversationsRepository {
     for (const turn of conversation.turns) {
       await this.insertTurn(conversation.conversation_id, turn);
     }
+  }
+
+  async listConversationsForTopic(topicId: string): Promise<ConversationRef[]> {
+    const rawRows = await this.db.query<ConversationRefRow>(
+      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) " +
+        "WHERE t.id = $topicId " +
+        "RETURN DISTINCT c.id AS conversation_id, c.main_topic AS main_topic, c.time AS time " +
+        "ORDER BY c.time DESC",
+      { topicId },
+    );
+    return z.array(ConversationRefRowSchema).parse(rawRows);
+  }
+
+  async listIdeaUnitsForTopicAndConversation(
+    topicId: string,
+    conversationId: string,
+  ): Promise<IdeaUnitDetail[]> {
+    const rawRows = await this.db.query<IdeaUnitJoinRow>(
+      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn) " +
+        "WHERE t.id = $topicId AND u.conversation_id = $conversationId " +
+        "RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, " +
+        "u.sentences AS sentences, u.categories AS categories, turn.speaker AS speaker, turn.time AS time " +
+        "ORDER BY u.turn_index, u.idea_unit_index",
+      { topicId, conversationId },
+    );
+    const rows = z.array(IdeaUnitJoinRowSchema).parse(rawRows);
+    return rows.map((r) => ({
+      conversation_id: r.conversation_id,
+      turn_index: Number(r.turn_index),
+      idea_unit_index: Number(r.idea_unit_index),
+      speaker: r.speaker,
+      time: r.time,
+      sentences: r.sentences,
+      categories: r.categories as IdeaUnitDetail["categories"],
+    }));
   }
 
   async requireIdeaUnit(

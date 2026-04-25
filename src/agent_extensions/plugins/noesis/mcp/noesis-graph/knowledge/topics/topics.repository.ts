@@ -41,6 +41,14 @@ export interface TopicDetail {
   path: string[];
 }
 
+export interface TopicWithParent {
+  id: string;
+  title: string;
+  short_summary: string;
+  long_summary: string;
+  parent_id: string | null;
+}
+
 @Injectable()
 export class TopicsRepository {
   constructor(private readonly db: DatabaseService) {}
@@ -129,6 +137,23 @@ export class TopicsRepository {
       "MATCH (t:Topic), (u:IdeaUnit) WHERE t.id = $topicId AND u.id = $iuId CREATE (t)-[:TOPIC_HAS_IDEA_UNIT]->(u)",
       { topicId, iuId },
     );
+  }
+
+  async listAllTopicsWithParents(): Promise<TopicWithParent[]> {
+    const RowSchema = z.object({
+      id: z.string(),
+      title: z.string(),
+      short_summary: z.string(),
+      long_summary: z.string(),
+      parent_id: z.string().nullable(),
+    });
+    const rawRows = await this.db.query<unknown>(
+      "MATCH (t:Topic) " +
+        "OPTIONAL MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(t) " +
+        "RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary, p.id AS parent_id " +
+        "ORDER BY t.title",
+    );
+    return z.array(RowSchema).parse(rawRows);
   }
 
   async listRootTopics(): Promise<TopicOverview[]> {

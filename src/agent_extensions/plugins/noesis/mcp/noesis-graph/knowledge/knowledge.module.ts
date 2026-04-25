@@ -8,11 +8,13 @@ import { DesignDocsModule } from "./design-docs/design-docs.module.js";
 import { DocumentsRepository } from "./documents/documents.repository.js";
 import { DocumentsService } from "./documents/documents.service.js";
 import { SchemaModule } from "./schema/schema.module.js";
+import { TopicsController } from "./topics/topics.controller.js";
 import { TopicsRepository } from "./topics/topics.repository.js";
 import { TopicsService } from "./topics/topics.service.js";
 
 @Module({
   imports: [DatabaseModule, SchemaModule, DesignDocsModule],
+  controllers: [TopicsController],
   providers: [
     TopicsService,
     TopicsRepository,

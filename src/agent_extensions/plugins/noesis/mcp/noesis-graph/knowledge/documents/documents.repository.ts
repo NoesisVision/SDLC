@@ -16,6 +16,20 @@ const DocumentFragmentJoinRowSchema = z.object({
 });
 type DocumentFragmentJoinRow = z.infer<typeof DocumentFragmentJoinRowSchema>;
 
+const DocumentRefRowSchema = z.object({
+  document_id: z.string(),
+  title: z.string(),
+  date: z.string(),
+});
+type DocumentRefRow = z.infer<typeof DocumentRefRowSchema>;
+
+const DocumentFragmentRowSchema = z.object({
+  start_offset: z.union([z.number(), z.bigint()]),
+  end_offset: z.union([z.number(), z.bigint()]),
+  document_content: z.string(),
+});
+type DocumentFragmentRow = z.infer<typeof DocumentFragmentRowSchema>;
+
 export interface DocumentFragmentDetail {
   document_id: string;
   document_title: string;
@@ -23,6 +37,18 @@ export interface DocumentFragmentDetail {
   end_offset: number;
   text: string;
   section_path: string[];
+}
+
+export interface DocumentRef {
+  document_id: string;
+  title: string;
+  date: string;
+}
+
+export interface TopicDocumentFragment {
+  start_offset: number;
+  end_offset: number;
+  text: string;
 }
 
 @Injectable()
@@ -92,6 +118,40 @@ export class DocumentsRepository {
         end_offset: end,
         text: r.document_content.slice(start, end).trim(),
         section_path: [],
+      };
+    });
+  }
+
+  async listDocumentsForTopic(topicId: string): Promise<DocumentRef[]> {
+    const rawRows = await this.db.query<DocumentRefRow>(
+      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
+        "WHERE t.id = $topicId " +
+        "RETURN DISTINCT d.id AS document_id, d.title AS title, d.date AS date " +
+        "ORDER BY d.date DESC",
+      { topicId },
+    );
+    return z.array(DocumentRefRowSchema).parse(rawRows);
+  }
+
+  async listFragmentsForTopicAndDocument(
+    topicId: string,
+    documentId: string,
+  ): Promise<TopicDocumentFragment[]> {
+    const rawRows = await this.db.query<DocumentFragmentRow>(
+      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
+        "WHERE t.id = $topicId AND d.id = $documentId " +
+        "RETURN f.start_offset AS start_offset, f.end_offset AS end_offset, d.content AS document_content " +
+        "ORDER BY f.start_offset",
+      { topicId, documentId },
+    );
+    const rows = z.array(DocumentFragmentRowSchema).parse(rawRows);
+    return rows.map((r) => {
+      const start = Number(r.start_offset);
+      const end = Number(r.end_offset);
+      return {
+        start_offset: start,
+        end_offset: end,
+        text: r.document_content.slice(start, end),
       };
     });
   }
