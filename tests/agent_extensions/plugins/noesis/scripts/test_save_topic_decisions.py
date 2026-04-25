@@ -14,8 +14,8 @@ from models_core import (
     Turn,
 )
 from models_extraction import DecisionExtractionResult
-from save_topic_decisions import save_topic_decisions
 from sample_data import SAMPLE_CONVERSATION_ID
+from save_topic_decisions import save_topic_decisions
 
 
 def _sample_turns() -> list[Turn]:

@@ -13,8 +13,8 @@ from models_core import (
     Turn,
 )
 from models_extraction import IdeaUnitReassignment, TopicReviewResult
-from save_topic_review import save_topic_review
 from sample_data import SAMPLE_CONVERSATION_ID
+from save_topic_review import save_topic_review
 
 
 def _sample_turns() -> list[Turn]:

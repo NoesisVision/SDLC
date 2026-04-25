@@ -3,11 +3,11 @@
 from pathlib import Path
 
 from models_transcript import RawTranscript
-from structure_transcript import structure_transcript
 from sample_data import (
     SAMPLE_CONVERSATION_ID,
     SAMPLE_TRANSCRIPT_WITH_ID,
 )
+from structure_transcript import structure_transcript
 
 
 class TestTranscriptParsing:

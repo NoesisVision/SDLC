@@ -11,8 +11,8 @@ from models_core import (
     Turn,
 )
 from models_extraction import ChunkResult, IdeaUnitTopicAssignment
-from save_chunk_result import save_chunk_result
 from sample_data import SAMPLE_CONVERSATION_ID
+from save_chunk_result import save_chunk_result
 
 
 def _sample_turn(index: int) -> Turn:

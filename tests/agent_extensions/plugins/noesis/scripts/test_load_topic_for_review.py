@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from load_topic_for_review import load_topic_for_review
 from models_core import (
     Conversation,
     IdeaUnit,
@@ -12,7 +13,6 @@ from models_core import (
     Topic,
     Turn,
 )
-from load_topic_for_review import load_topic_for_review
 from sample_data import SAMPLE_CONVERSATION_ID
 
 

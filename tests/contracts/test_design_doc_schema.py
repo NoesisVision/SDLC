@@ -1,7 +1,7 @@
 from contracts.design_doc_schema import (
     Actor,
-    Behaviour,
     BehaviorType,
+    Behaviour,
     BoundedContext,
     BuildingBlock,
     BuildingBlockType,

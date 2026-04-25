@@ -1,8 +1,8 @@
 """Tests for merge_to_knowledge_graph.py — merging conversation into knowledge graph."""
 
-import json
 from pathlib import Path
 
+from merge_to_knowledge_graph import merge_to_knowledge_graph
 from models_core import (
     Conversation,
     Decision,
@@ -17,7 +17,6 @@ from models_core import (
     Turn,
 )
 from models_knowledge_graph import KnowledgeGraph
-from merge_to_knowledge_graph import merge_to_knowledge_graph
 from sample_data import SAMPLE_CONVERSATION_ID
 
 

@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from models_core import Conversation, PotentialTopic, PotentialTopics
 from models_transcript import RawTranscript, RawTurn
 from sample_data import (

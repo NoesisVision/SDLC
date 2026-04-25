@@ -24,11 +24,11 @@ from models_core import (
 )
 from models_extraction import ChunkResult, IdeaUnitTopicAssignment
 from models_transcript import RawTranscript
+from sample_data import SAMPLE_TRANSCRIPT
 from save_chunk_result import save_chunk_result
 from save_potential_topics import save_potential_topics
 from structure_transcript import structure_transcript
 from working_dir import get_working_dir
-from sample_data import SAMPLE_TRANSCRIPT
 
 
 class TestFullPipeline:

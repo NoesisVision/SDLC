@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pysbd
 from langdetect import LangDetectException, detect
-from models import CleanedConversation, SpeakerTurn, CONVERSATION_ID_PATTERN
+from models import CONVERSATION_ID_PATTERN, CleanedConversation, SpeakerTurn
 
 _PYSBD_LANGUAGES = set(pysbd.languages.LANGUAGE_CODES.keys())
 _SEGMENTER_CACHE: dict[str, pysbd.Segmenter] = {}

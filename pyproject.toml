@@ -54,6 +54,18 @@ addopts = [
 [tool.ruff]
 line-length = 120
 target-version = "py314"
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "build",
+]
+
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -65,14 +77,4 @@ select = [
 ]
 ignore = [
     "E501",  # line too long
-]
-exclude = [
-    ".git",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".venv",
-    "venv",
-    "node_modules",
-    "dist",
-    "build",
 ]

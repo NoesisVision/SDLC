@@ -1,9 +1,6 @@
 from enum import Enum
-from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field
-
-T = TypeVar("T")
 
 
 class BuildingBlockType(str, Enum):
@@ -67,7 +64,7 @@ class Scenario(BaseModel):
     then: str = Field(description="Expected outcome or postcondition")
 
 
-class ChangeSet(BaseModel, Generic[T]):
+class ChangeSet[T](BaseModel):
     """Diff for a collection of elements.
 
     `added` contains new elements (all fields should be populated).
