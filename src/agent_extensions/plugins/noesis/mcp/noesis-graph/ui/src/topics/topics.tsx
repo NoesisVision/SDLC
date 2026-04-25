@@ -22,6 +22,10 @@ import {
 } from "@tabler/icons-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  categoryColor,
+  groupIdeaUnitsByTurn,
+} from "../shared/idea-units.js";
 import classes from "./topics.module.css";
 import type {
   TopicConversationDetail,
@@ -748,50 +752,6 @@ function ConversationDetails({
       </Stack>
     </Box>
   );
-}
-
-interface TurnGroup {
-  turn_index: number;
-  speaker: string;
-  time: string;
-  idea_units: TopicConversationDetail["idea_units"];
-}
-
-function groupIdeaUnitsByTurn(
-  ideaUnits: TopicConversationDetail["idea_units"],
-): TurnGroup[] {
-  const groups = new Map<number, TurnGroup>();
-  for (const iu of ideaUnits) {
-    let group = groups.get(iu.turn_index);
-    if (group === undefined) {
-      group = {
-        turn_index: iu.turn_index,
-        speaker: iu.speaker,
-        time: iu.time,
-        idea_units: [],
-      };
-      groups.set(iu.turn_index, group);
-    }
-    group.idea_units.push(iu);
-  }
-  return Array.from(groups.values()).sort(
-    (a, b) => a.turn_index - b.turn_index,
-  );
-}
-
-function categoryColor(category: string): string {
-  switch (category) {
-    case "Decision":
-      return "noesisGreen";
-    case "Position":
-      return "noesisIndigo";
-    case "Argument":
-      return "yellow";
-    case "Information":
-      return "noesisBlue";
-    default:
-      return "gray";
-  }
 }
 
 function DocumentDetails({

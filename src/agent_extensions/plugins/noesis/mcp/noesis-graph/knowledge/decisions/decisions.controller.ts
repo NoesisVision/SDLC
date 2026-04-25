@@ -1,6 +1,8 @@
 import { Controller, Get, Param } from "@nestjs/common";
 import type {
+  DecisionConversationDetailData,
   DecisionDetailData,
+  DecisionDocumentDetailData,
   DecisionsPageData,
 } from "../../ui-contracts/decisions/decisions-data.js";
 import { DecisionsService } from "./decisions.service.js";
@@ -19,5 +21,31 @@ export class DecisionsController {
     @Param("decisionId") decisionId: string,
   ): Promise<DecisionDetailData> {
     return this.decisions.getDecisionDetail(decisionId);
+  }
+
+  @Get(":decisionId/slots/:slot/conversations/:conversationId")
+  async getConversation(
+    @Param("decisionId") decisionId: string,
+    @Param("slot") slot: string,
+    @Param("conversationId") conversationId: string,
+  ): Promise<DecisionConversationDetailData> {
+    return this.decisions.getDecisionConversationDetail(
+      decisionId,
+      slot,
+      conversationId,
+    );
+  }
+
+  @Get(":decisionId/slots/:slot/documents/:documentId")
+  async getDocument(
+    @Param("decisionId") decisionId: string,
+    @Param("slot") slot: string,
+    @Param("documentId") documentId: string,
+  ): Promise<DecisionDocumentDetailData> {
+    return this.decisions.getDecisionDocumentDetail(
+      decisionId,
+      slot,
+      documentId,
+    );
   }
 }

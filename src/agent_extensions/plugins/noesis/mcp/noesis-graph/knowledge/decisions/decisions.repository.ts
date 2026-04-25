@@ -1,12 +1,14 @@
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
-import { DatabaseService } from "../../database/database.service.js";
+import { DatabaseService, type QueryParams } from "../../database/database.service.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
+import type { IdeaUnitDetail } from "../../../../shared-contracts/conversation.js";
 import type {
   Decision,
   DecisionOption,
   TopicItem,
 } from "../../../../shared-contracts/topics.js";
+import type { TopicDocumentFragment } from "../../ui-contracts/topics/topics-data.js";
 import { alternativeOptionNodeId } from "./node-ids.js";
 import type { DecisionSupportSlot } from "./decision-support.js";
 
@@ -35,6 +37,76 @@ type AlternativeRowRaw = z.infer<typeof AlternativeRowSchema>;
 
 const IdRowSchema = z.object({ id: z.string() });
 type IdRow = z.infer<typeof IdRowSchema>;
+
+const ConversationRefRowSchema = z.object({
+  conversation_id: z.string(),
+  title: z.string(),
+  date: z.string(),
+});
+type ConversationRefRow = z.infer<typeof ConversationRefRowSchema>;
+
+const DocumentRefRowSchema = z.object({
+  document_id: z.string(),
+  title: z.string(),
+  date: z.string(),
+});
+type DocumentRefRow = z.infer<typeof DocumentRefRowSchema>;
+
+const IdeaUnitJoinRowSchema = z.object({
+  conversation_id: z.string(),
+  turn_index: z.union([z.number(), z.bigint()]),
+  idea_unit_index: z.union([z.number(), z.bigint()]),
+  sentences: z.array(z.string()),
+  categories: z.array(z.string()),
+  speaker: z.string(),
+  time: z.string(),
+});
+type IdeaUnitJoinRow = z.infer<typeof IdeaUnitJoinRowSchema>;
+
+const DocumentFragmentJoinRowSchema = z.object({
+  start_offset: z.union([z.number(), z.bigint()]),
+  end_offset: z.union([z.number(), z.bigint()]),
+  document_content: z.string(),
+});
+type DocumentFragmentJoinRow = z.infer<typeof DocumentFragmentJoinRowSchema>;
+
+const ConversationHeadRowSchema = z.object({
+  conversation_id: z.string(),
+  main_topic: z.string(),
+  time: z.string(),
+});
+type ConversationHeadRow = z.infer<typeof ConversationHeadRowSchema>;
+
+const DocumentHeadRowSchema = z.object({
+  document_id: z.string(),
+  title: z.string(),
+  date: z.string(),
+});
+type DocumentHeadRow = z.infer<typeof DocumentHeadRowSchema>;
+
+export interface ConversationHead {
+  conversation_id: string;
+  main_topic: string;
+  time: string;
+}
+
+export interface DocumentHead {
+  document_id: string;
+  title: string;
+  date: string;
+}
+
+export interface DecisionConversationRef {
+  conversation_id: string;
+  title: string;
+  date: string;
+}
+
+export interface DecisionDocumentRef {
+  document_id: string;
+  title: string;
+  date: string;
+}
 
 export interface DecisionOverview {
   id: string;
@@ -180,6 +252,99 @@ export class DecisionsRepository {
     );
   }
 
+  async listConversationsForDecisionSlot(
+    decisionId: string,
+    slot: DecisionSupportSlot,
+  ): Promise<DecisionConversationRef[]> {
+    const cypher = decisionSlotConversationCypher(slot);
+    const params = decisionSlotParams(decisionId, slot);
+    const rawRows = await this.db.query<ConversationRefRow>(cypher, params);
+    return z.array(ConversationRefRowSchema).parse(rawRows);
+  }
+
+  async listDocumentsForDecisionSlot(
+    decisionId: string,
+    slot: DecisionSupportSlot,
+  ): Promise<DecisionDocumentRef[]> {
+    const cypher = decisionSlotDocumentCypher(slot);
+    const params = decisionSlotParams(decisionId, slot);
+    const rawRows = await this.db.query<DocumentRefRow>(cypher, params);
+    return z.array(DocumentRefRowSchema).parse(rawRows);
+  }
+
+  async listFragmentsForDecisionSlotAndDocument(
+    decisionId: string,
+    slot: DecisionSupportSlot,
+    documentId: string,
+  ): Promise<TopicDocumentFragment[]> {
+    const cypher =
+      `${decisionSlotMatch(slot, "DOC_FRAGMENT")}` +
+      `(f:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(doc:Document) ` +
+      `${decisionSlotWhere(slot)} AND doc.id = $documentId ` +
+      `RETURN f.start_offset AS start_offset, f.end_offset AS end_offset, doc.content AS document_content ` +
+      `ORDER BY f.start_offset`;
+    const params = { ...decisionSlotParams(decisionId, slot), documentId };
+    const rawRows = await this.db.query<DocumentFragmentJoinRow>(cypher, params);
+    const rows = z.array(DocumentFragmentJoinRowSchema).parse(rawRows);
+    return rows.map((r) => {
+      const start = Number(r.start_offset);
+      const end = Number(r.end_offset);
+      return {
+        start_offset: start,
+        end_offset: end,
+        text: r.document_content.slice(start, end),
+      };
+    });
+  }
+
+  async listIdeaUnitsForDecisionSlotAndConversation(
+    decisionId: string,
+    slot: DecisionSupportSlot,
+    conversationId: string,
+  ): Promise<IdeaUnitDetail[]> {
+    const cypher =
+      `${decisionSlotMatch(slot, "IDEA_UNIT")}` +
+      `(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn) ` +
+      `${decisionSlotWhere(slot)} AND u.conversation_id = $conversationId ` +
+      `RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, ` +
+      `u.sentences AS sentences, u.categories AS categories, turn.speaker AS speaker, turn.time AS time ` +
+      `ORDER BY u.turn_index, u.idea_unit_index`;
+    const params = { ...decisionSlotParams(decisionId, slot), conversationId };
+    const rawRows = await this.db.query<IdeaUnitJoinRow>(cypher, params);
+    const rows = z.array(IdeaUnitJoinRowSchema).parse(rawRows);
+    return rows.map((r) => ({
+      conversation_id: r.conversation_id,
+      turn_index: Number(r.turn_index),
+      idea_unit_index: Number(r.idea_unit_index),
+      speaker: r.speaker,
+      time: r.time,
+      sentences: r.sentences,
+      categories: r.categories as IdeaUnitDetail["categories"],
+    }));
+  }
+
+  async readConversationHead(
+    conversationId: string,
+  ): Promise<ConversationHead | null> {
+    const rawRows = await this.db.query<ConversationHeadRow>(
+      "MATCH (c:Conversation) WHERE c.id = $id " +
+        "RETURN c.id AS conversation_id, c.main_topic AS main_topic, c.time AS time LIMIT 1",
+      { id: conversationId },
+    );
+    if (rawRows.length === 0) return null;
+    return ConversationHeadRowSchema.parse(rawRows[0]);
+  }
+
+  async readDocumentHead(documentId: string): Promise<DocumentHead | null> {
+    const rawRows = await this.db.query<DocumentHeadRow>(
+      "MATCH (d:Document) WHERE d.id = $id " +
+        "RETURN d.id AS document_id, d.title AS title, d.date AS date LIMIT 1",
+      { id: documentId },
+    );
+    if (rawRows.length === 0) return null;
+    return DocumentHeadRowSchema.parse(rawRows[0]);
+  }
+
   async listDecisionSourceDates(): Promise<DecisionDateEntry[]> {
     const DateRowSchema = z.object({ id: z.string(), date: z.string() });
     const queries = [
@@ -301,6 +466,70 @@ export class DecisionsRepository {
     if (!(await this.exists(decisionId))) {
       throw new Error(`Decision not found: ${decisionId}`);
     }
+  }
+}
+
+function decisionSlotConversationCypher(slot: DecisionSupportSlot): string {
+  return (
+    `${decisionSlotMatch(slot, "IDEA_UNIT")}(:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) ` +
+    `${decisionSlotWhere(slot)} ` +
+    `RETURN DISTINCT c.id AS conversation_id, c.main_topic AS title, c.time AS date ` +
+    `ORDER BY date DESC`
+  );
+}
+
+function decisionSlotDocumentCypher(slot: DecisionSupportSlot): string {
+  return (
+    `${decisionSlotMatch(slot, "DOC_FRAGMENT")}(:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(doc:Document) ` +
+    `${decisionSlotWhere(slot)} ` +
+    `RETURN DISTINCT doc.id AS document_id, doc.title AS title, doc.date AS date ` +
+    `ORDER BY date DESC`
+  );
+}
+
+function decisionSlotMatch(
+  slot: DecisionSupportSlot,
+  itemSuffix: "IDEA_UNIT" | "DOC_FRAGMENT",
+): string {
+  switch (slot.slot) {
+    case "context":
+      return `MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_${itemSuffix}]->`;
+    case "decision":
+      return `MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_${itemSuffix}]->`;
+    case "alternative":
+      return (
+        `MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->` +
+        `(a:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_${itemSuffix}]->`
+      );
+    default:
+      return assertNever(slot);
+  }
+}
+
+function decisionSlotParams(
+  decisionId: string,
+  slot: DecisionSupportSlot,
+): QueryParams {
+  switch (slot.slot) {
+    case "context":
+    case "decision":
+      return { decisionId };
+    case "alternative":
+      return { decisionId, optionIndex: slot.alternative_index };
+    default:
+      return assertNever(slot);
+  }
+}
+
+function decisionSlotWhere(slot: DecisionSupportSlot): string {
+  switch (slot.slot) {
+    case "context":
+    case "decision":
+      return `WHERE d.id = $decisionId`;
+    case "alternative":
+      return `WHERE d.id = $decisionId AND a.option_index = $optionIndex`;
+    default:
+      return assertNever(slot);
   }
 }
 

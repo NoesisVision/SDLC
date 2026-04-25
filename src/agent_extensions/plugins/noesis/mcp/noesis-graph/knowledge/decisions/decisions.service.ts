@@ -5,7 +5,9 @@ import type {
   TopicItem,
 } from "../../../../shared-contracts/topics.js";
 import type {
+  DecisionConversationDetailData,
   DecisionDetailData,
+  DecisionDocumentDetailData,
   DecisionsPageData,
 } from "../../ui-contracts/decisions/decisions-data.js";
 import { ideaUnitNodeId } from "../conversations/node-ids.js";
@@ -98,6 +100,49 @@ export class DecisionsService {
     const detail = await this.repository.readDecision(decisionId);
     if (detail === null) throw new Error(`Decision not found: ${decisionId}`);
     const dateMap = await this.computeDecisionDates();
+    const contextSlot: DecisionSupportSlot = { slot: "context" };
+    const decisionSlot: DecisionSupportSlot = { slot: "decision" };
+    const contextConversations =
+      await this.repository.listConversationsForDecisionSlot(
+        decisionId,
+        contextSlot,
+      );
+    const contextDocuments =
+      await this.repository.listDocumentsForDecisionSlot(decisionId, contextSlot);
+    const decisionConversations =
+      await this.repository.listConversationsForDecisionSlot(
+        decisionId,
+        decisionSlot,
+      );
+    const decisionDocuments =
+      await this.repository.listDocumentsForDecisionSlot(
+        decisionId,
+        decisionSlot,
+      );
+    const alternatives = await Promise.all(
+      detail.alternatives.map(async (a) => {
+        const altSlot: DecisionSupportSlot = {
+          slot: "alternative",
+          alternative_index: a.option_index,
+        };
+        const conversations =
+          await this.repository.listConversationsForDecisionSlot(
+            decisionId,
+            altSlot,
+          );
+        const documents = await this.repository.listDocumentsForDecisionSlot(
+          decisionId,
+          altSlot,
+        );
+        return {
+          option_index: a.option_index,
+          text: a.text,
+          rationale: a.rationale,
+          conversations,
+          documents,
+        };
+      }),
+    );
     return {
       id: detail.id,
       topic_id: detail.topic_id,
@@ -106,13 +151,90 @@ export class DecisionsService {
       status: detail.status,
       date: dateMap.get(detail.id) ?? "",
       context_text: detail.context_text,
+      context_conversations: contextConversations,
+      context_documents: contextDocuments,
       decision_text: detail.decision_text,
       decision_rationale: detail.decision_rationale,
-      alternatives: detail.alternatives.map((a) => ({
-        option_index: a.option_index,
-        text: a.text,
-        rationale: a.rationale,
+      decision_conversations: decisionConversations,
+      decision_documents: decisionDocuments,
+      alternatives,
+    };
+  }
+
+  async getDecisionConversationDetail(
+    decisionId: string,
+    slotPath: string,
+    conversationId: string,
+  ): Promise<DecisionConversationDetailData> {
+    const slot = parseDecisionSlotPath(slotPath);
+    const decision = await this.repository.readDecision(decisionId);
+    if (decision === null) throw new Error(`Decision not found: ${decisionId}`);
+    if (slot.slot === "alternative") {
+      await this.repository.requireAlternative(
+        decisionId,
+        slot.alternative_index,
+      );
+    }
+    const conversation = await this.repository.readConversationHead(conversationId);
+    if (conversation === null) {
+      throw new Error(`Conversation not found: ${conversationId}`);
+    }
+    const ideaUnits =
+      await this.repository.listIdeaUnitsForDecisionSlotAndConversation(
+        decisionId,
+        slot,
+        conversationId,
+      );
+    return {
+      decision_id: decision.id,
+      decision_title: decision.title,
+      slot_label: slotLabel(slot),
+      conversation_id: conversation.conversation_id,
+      conversation_title: conversation.main_topic,
+      conversation_date: conversation.time,
+      idea_units: ideaUnits.map((iu) => ({
+        turn_index: iu.turn_index,
+        idea_unit_index: iu.idea_unit_index,
+        time: iu.time,
+        speaker: iu.speaker,
+        sentences: iu.sentences,
+        categories: iu.categories,
       })),
+    };
+  }
+
+  async getDecisionDocumentDetail(
+    decisionId: string,
+    slotPath: string,
+    documentId: string,
+  ): Promise<DecisionDocumentDetailData> {
+    const slot = parseDecisionSlotPath(slotPath);
+    const decision = await this.repository.readDecision(decisionId);
+    if (decision === null) throw new Error(`Decision not found: ${decisionId}`);
+    if (slot.slot === "alternative") {
+      await this.repository.requireAlternative(
+        decisionId,
+        slot.alternative_index,
+      );
+    }
+    const document = await this.repository.readDocumentHead(documentId);
+    if (document === null) {
+      throw new Error(`Document not found: ${documentId}`);
+    }
+    const fragments =
+      await this.repository.listFragmentsForDecisionSlotAndDocument(
+        decisionId,
+        slot,
+        documentId,
+      );
+    return {
+      decision_id: decision.id,
+      decision_title: decision.title,
+      slot_label: slotLabel(slot),
+      document_id: document.document_id,
+      document_title: document.title,
+      document_date: document.date,
+      fragments,
     };
   }
 
@@ -249,4 +371,30 @@ function byDateDesc(
   if (a.date === "") return 1;
   if (b.date === "") return -1;
   return a.date < b.date ? 1 : -1;
+}
+
+function parseDecisionSlotPath(slotPath: string): DecisionSupportSlot {
+  if (slotPath === "context") return { slot: "context" };
+  if (slotPath === "decision") return { slot: "decision" };
+  const altMatch = slotPath.match(/^alternative-(\d+)$/);
+  if (altMatch !== null) {
+    return {
+      slot: "alternative",
+      alternative_index: Number(altMatch[1]),
+    };
+  }
+  throw new Error(`Invalid decision slot path: ${slotPath}`);
+}
+
+function slotLabel(slot: DecisionSupportSlot): string {
+  switch (slot.slot) {
+    case "context":
+      return "Context";
+    case "decision":
+      return "Decision";
+    case "alternative":
+      return `Option ${slot.alternative_index + 1}`;
+    default:
+      return assertNever(slot);
+  }
 }

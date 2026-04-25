@@ -9,19 +9,59 @@ import {
   Text,
   ThemeIcon,
   Title,
+  UnstyledButton,
 } from "@mantine/core";
-import { IconGavel } from "@tabler/icons-react";
+import {
+  IconArrowLeft,
+  IconChevronRight,
+  IconFileText,
+  IconGavel,
+  IconMessageCircle,
+} from "@tabler/icons-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  categoryColor,
+  groupIdeaUnitsByTurn,
+} from "../shared/idea-units.js";
 import classes from "./decisions.module.css";
 import type {
+  DecisionConversationDetailData,
+  DecisionConversationRef,
   DecisionDetailData,
+  DecisionDocumentDetailData,
+  DecisionDocumentRef,
   DecisionListItem,
+  DecisionSlotPath,
   DecisionsPageData,
 } from "../../../ui-contracts/decisions/decisions-data.js";
+
+type View =
+  | { kind: "decision"; decisionId: string }
+  | {
+      kind: "conversation";
+      decisionId: string;
+      slot: DecisionSlotPath;
+      slotLabel: string;
+      conversation: DecisionConversationRef;
+    }
+  | {
+      kind: "document";
+      decisionId: string;
+      slot: DecisionSlotPath;
+      slotLabel: string;
+      document: DecisionDocumentRef;
+    };
+
+interface NavState {
+  current: View | null;
+  stack: View[];
+}
 
 export function DecisionsPage() {
   const [data, setData] = useState<DecisionsPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [nav, setNav] = useState<NavState>({ current: null, stack: [] });
 
   useEffect(() => {
     fetch("/api/ui/decisions")
@@ -33,11 +73,30 @@ export function DecisionsPage() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
-  const handleSelect = useCallback((id: string) => {
-    setSelectedId(id);
+  const pushView = useCallback((view: View) => {
+    setNav((prev) => {
+      if (prev.current === null) return { current: view, stack: [] };
+      if (isSameView(prev.current, view)) return prev;
+      return { current: view, stack: [...prev.stack, prev.current] };
+    });
   }, []);
 
+  const goBack = useCallback(() => {
+    setNav((prev) => {
+      if (prev.stack.length === 0) return prev;
+      const next = prev.stack[prev.stack.length - 1];
+      return { current: next, stack: prev.stack.slice(0, -1) };
+    });
+  }, []);
+
+  const selectDecision = useCallback(
+    (id: string) => pushView({ kind: "decision", decisionId: id }),
+    [pushView],
+  );
+
   const hasDecisions = data !== null && data.decisions.length > 0;
+  const activeDecisionId =
+    nav.current !== null ? viewDecisionId(nav.current) : null;
 
   return (
     <Box className={classes.page}>
@@ -83,8 +142,8 @@ export function DecisionsPage() {
                   <DecisionListRow
                     key={d.id}
                     decision={d}
-                    active={d.id === selectedId}
-                    onSelect={() => handleSelect(d.id)}
+                    active={d.id === activeDecisionId}
+                    onSelect={() => selectDecision(d.id)}
                   />
                 ))}
               </Stack>
@@ -92,19 +151,29 @@ export function DecisionsPage() {
           </Box>
 
           <Box className={classes.detailsColumn}>
-            {selectedId === null ? (
-              <Box className={classes.detailsEmpty}>
-                <Text size="sm" c="dimmed">
-                  Select a decision on the left to see details.
-                </Text>
-              </Box>
-            ) : (
-              <Box className={classes.detailsShell}>
-                <Box className={classes.detailsBody}>
-                  <DecisionDetails decisionId={selectedId} />
-                </Box>
-              </Box>
-            )}
+            <DetailsPanel
+              current={nav.current}
+              canGoBack={nav.stack.length > 0}
+              onBack={goBack}
+              onSelectConversation={(decisionId, slot, slotLabel, conversation) =>
+                pushView({
+                  kind: "conversation",
+                  decisionId,
+                  slot,
+                  slotLabel,
+                  conversation,
+                })
+              }
+              onSelectDocument={(decisionId, slot, slotLabel, document) =>
+                pushView({
+                  kind: "document",
+                  decisionId,
+                  slot,
+                  slotLabel,
+                  document,
+                })
+              }
+            />
           </Box>
         </Box>
       ) : data !== null ? (
@@ -112,6 +181,29 @@ export function DecisionsPage() {
       ) : null}
     </Box>
   );
+}
+
+function viewDecisionId(view: View): string {
+  return view.decisionId;
+}
+
+function isSameView(a: View, b: View): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "decision" && b.kind === "decision")
+    return a.decisionId === b.decisionId;
+  if (a.kind === "conversation" && b.kind === "conversation")
+    return (
+      a.decisionId === b.decisionId &&
+      a.slot === b.slot &&
+      a.conversation.conversation_id === b.conversation.conversation_id
+    );
+  if (a.kind === "document" && b.kind === "document")
+    return (
+      a.decisionId === b.decisionId &&
+      a.slot === b.slot &&
+      a.document.document_id === b.document.document_id
+    );
+  return false;
 }
 
 function DecisionListRow({
@@ -164,7 +256,106 @@ function statusColor(status: string): string {
   }
 }
 
-function DecisionDetails({ decisionId }: { decisionId: string }) {
+type SelectConversationFn = (
+  decisionId: string,
+  slot: DecisionSlotPath,
+  slotLabel: string,
+  conversation: DecisionConversationRef,
+) => void;
+
+type SelectDocumentFn = (
+  decisionId: string,
+  slot: DecisionSlotPath,
+  slotLabel: string,
+  document: DecisionDocumentRef,
+) => void;
+
+function DetailsPanel({
+  current,
+  canGoBack,
+  onBack,
+  onSelectConversation,
+  onSelectDocument,
+}: {
+  current: View | null;
+  canGoBack: boolean;
+  onBack: () => void;
+  onSelectConversation: SelectConversationFn;
+  onSelectDocument: SelectDocumentFn;
+}) {
+  if (current === null) {
+    return (
+      <Box className={classes.detailsEmpty}>
+        <Text size="sm" c="dimmed">
+          Select a decision on the left to see details.
+        </Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box className={classes.detailsShell}>
+      <Box className={classes.detailsHeader}>
+        <BackButton canGoBack={canGoBack} onBack={onBack} />
+      </Box>
+      <Box className={classes.detailsBody}>
+        {current.kind === "decision" && (
+          <DecisionDetails
+            decisionId={current.decisionId}
+            onSelectConversation={onSelectConversation}
+            onSelectDocument={onSelectDocument}
+          />
+        )}
+        {current.kind === "conversation" && (
+          <ConversationDetails
+            decisionId={current.decisionId}
+            slot={current.slot}
+            slotLabel={current.slotLabel}
+            conversation={current.conversation}
+          />
+        )}
+        {current.kind === "document" && (
+          <DocumentDetails
+            decisionId={current.decisionId}
+            slot={current.slot}
+            slotLabel={current.slotLabel}
+            document={current.document}
+          />
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+function BackButton({
+  canGoBack,
+  onBack,
+}: {
+  canGoBack: boolean;
+  onBack: () => void;
+}) {
+  return (
+    <UnstyledButton
+      onClick={onBack}
+      disabled={!canGoBack}
+      className={classes.backButton}
+      data-disabled={!canGoBack}
+    >
+      <IconArrowLeft size={14} stroke={1.75} />
+      <span>Back</span>
+    </UnstyledButton>
+  );
+}
+
+function DecisionDetails({
+  decisionId,
+  onSelectConversation,
+  onSelectDocument,
+}: {
+  decisionId: string;
+  onSelectConversation: SelectConversationFn;
+  onSelectDocument: SelectDocumentFn;
+}) {
   const [data, setData] = useState<DecisionDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -245,6 +436,15 @@ function DecisionDetails({ decisionId }: { decisionId: string }) {
         <Text className={classes.sectionBody}>
           {data.context_text === "" ? "—" : data.context_text}
         </Text>
+        <SourceLists
+          decisionId={data.id}
+          slot="context"
+          slotLabel="Context"
+          conversations={data.context_conversations}
+          documents={data.context_documents}
+          onSelectConversation={onSelectConversation}
+          onSelectDocument={onSelectDocument}
+        />
       </Box>
 
       <Box className={classes.section}>
@@ -259,6 +459,15 @@ function DecisionDetails({ decisionId }: { decisionId: string }) {
             Rationale: {data.decision_rationale}
           </Text>
         )}
+        <SourceLists
+          decisionId={data.id}
+          slot="decision"
+          slotLabel="Decision"
+          conversations={data.decision_conversations}
+          documents={data.decision_documents}
+          onSelectConversation={onSelectConversation}
+          onSelectDocument={onSelectDocument}
+        />
       </Box>
 
       <Box className={classes.section}>
@@ -271,25 +480,441 @@ function DecisionDetails({ decisionId }: { decisionId: string }) {
           </Text>
         ) : (
           <Stack gap="md">
-            {data.alternatives.map((a) => (
-              <Box key={a.option_index}>
-                <Title order={3} size="h5" c="gray.2" fw={600} mb={4}>
-                  Option {a.option_index + 1}
-                </Title>
-                <Text className={classes.sectionBody}>
-                  {a.text === "" ? "—" : a.text}
-                </Text>
-                {a.rationale !== "" && (
-                  <Text className={classes.rationale}>
-                    Rationale: {a.rationale}
+            {data.alternatives.map((a) => {
+              const optionLabel = `Option ${a.option_index + 1}`;
+              return (
+                <Box key={a.option_index}>
+                  <Title order={3} size="h5" c="gray.2" fw={600} mb={4}>
+                    {optionLabel}
+                  </Title>
+                  <Text className={classes.sectionBody}>
+                    {a.text === "" ? "—" : a.text}
                   </Text>
-                )}
-              </Box>
-            ))}
+                  {a.rationale !== "" && (
+                    <Text className={classes.rationale}>
+                      Rationale: {a.rationale}
+                    </Text>
+                  )}
+                  <SourceLists
+                    decisionId={data.id}
+                    slot={`alternative-${a.option_index}` as DecisionSlotPath}
+                    slotLabel={optionLabel}
+                    conversations={a.conversations}
+                    documents={a.documents}
+                    onSelectConversation={onSelectConversation}
+                    onSelectDocument={onSelectDocument}
+                  />
+                </Box>
+              );
+            })}
           </Stack>
         )}
       </Box>
     </Stack>
+  );
+}
+
+function SourceLists({
+  decisionId,
+  slot,
+  slotLabel,
+  conversations,
+  documents,
+  onSelectConversation,
+  onSelectDocument,
+}: {
+  decisionId: string;
+  slot: DecisionSlotPath;
+  slotLabel: string;
+  conversations: DecisionConversationRef[];
+  documents: DecisionDocumentRef[];
+  onSelectConversation: SelectConversationFn;
+  onSelectDocument: SelectDocumentFn;
+}) {
+  if (conversations.length === 0 && documents.length === 0) return null;
+  return (
+    <Stack gap="sm" mt="md">
+      {conversations.length > 0 && (
+        <Stack gap={4}>
+          <SubsectionLabel>Conversations</SubsectionLabel>
+          <Stack gap={4}>
+            {conversations.map((c) => (
+              <ConversationRow
+                key={c.conversation_id}
+                conversation={c}
+                onSelect={() =>
+                  onSelectConversation(decisionId, slot, slotLabel, c)
+                }
+              />
+            ))}
+          </Stack>
+        </Stack>
+      )}
+      {documents.length > 0 && (
+        <Stack gap={4}>
+          <SubsectionLabel>Documents</SubsectionLabel>
+          <Stack gap={4}>
+            {documents.map((d) => (
+              <DocumentRow
+                key={d.document_id}
+                document={d}
+                onSelect={() => onSelectDocument(decisionId, slot, slotLabel, d)}
+              />
+            ))}
+          </Stack>
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
+function SubsectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text
+      size="xs"
+      fw={700}
+      c="dimmed"
+      style={{ letterSpacing: "0.18em", textTransform: "uppercase" }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+function ConversationRow({
+  conversation,
+  onSelect,
+}: {
+  conversation: DecisionConversationRef;
+  onSelect: () => void;
+}) {
+  return (
+    <UnstyledButton
+      onClick={onSelect}
+      py={8}
+      px="sm"
+      w="100%"
+      className={`${classes.refRow} ${classes.refRowClickable}`}
+    >
+      <Group gap="xs" justify="space-between" wrap="nowrap">
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          <ThemeIcon size="sm" variant="light" color="noesisBlue" radius="sm">
+            <IconMessageCircle size={14} stroke={1.5} />
+          </ThemeIcon>
+          <Stack gap={0} style={{ minWidth: 0 }}>
+            <Text size="sm" c="gray.2" lineClamp={1}>
+              {conversation.title}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {conversation.date}
+            </Text>
+          </Stack>
+        </Group>
+        <IconChevronRight
+          size={14}
+          stroke={1.5}
+          color="var(--mantine-color-dark-2)"
+        />
+      </Group>
+    </UnstyledButton>
+  );
+}
+
+function DocumentRow({
+  document,
+  onSelect,
+}: {
+  document: DecisionDocumentRef;
+  onSelect: () => void;
+}) {
+  return (
+    <UnstyledButton
+      onClick={onSelect}
+      py={8}
+      px="sm"
+      w="100%"
+      className={`${classes.refRow} ${classes.refRowClickable}`}
+    >
+      <Group gap="xs" justify="space-between" wrap="nowrap">
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          <ThemeIcon size="sm" variant="light" color="noesisGreen" radius="sm">
+            <IconFileText size={14} stroke={1.5} />
+          </ThemeIcon>
+          <Stack gap={0} style={{ minWidth: 0 }}>
+            <Text size="sm" c="gray.2" lineClamp={1}>
+              {document.title}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {document.date}
+            </Text>
+          </Stack>
+        </Group>
+        <IconChevronRight
+          size={14}
+          stroke={1.5}
+          color="var(--mantine-color-dark-2)"
+        />
+      </Group>
+    </UnstyledButton>
+  );
+}
+
+function ConversationDetails({
+  decisionId,
+  slot,
+  slotLabel,
+  conversation,
+}: {
+  decisionId: string;
+  slot: DecisionSlotPath;
+  slotLabel: string;
+  conversation: DecisionConversationRef;
+}) {
+  const [data, setData] = useState<DecisionConversationDetailData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setError(null);
+    fetch(
+      `/api/ui/decisions/${encodeURIComponent(decisionId)}/slots/${encodeURIComponent(slot)}/conversations/${encodeURIComponent(conversation.conversation_id)}`,
+    )
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load conversation (${res.status})`);
+        return res.json() as Promise<DecisionConversationDetailData>;
+      })
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [decisionId, slot, conversation.conversation_id]);
+
+  if (error !== null) {
+    return (
+      <Box p="lg">
+        <Text size="sm" c="red.4">
+          {error}
+        </Text>
+      </Box>
+    );
+  }
+
+  if (data === null) {
+    return (
+      <Box p="lg">
+        <Group gap="xs">
+          <Loader size={14} color="noesisBlue" />
+          <Text size="sm" c="dimmed">
+            Loading {conversation.title}
+          </Text>
+        </Group>
+      </Box>
+    );
+  }
+
+  const turnGroups = groupIdeaUnitsByTurn(data.idea_units);
+
+  return (
+    <Box p="lg">
+      <Stack gap="lg">
+        <Group gap="sm" align="center">
+          <ThemeIcon size="lg" variant="light" color="noesisBlue" radius="sm">
+            <IconMessageCircle size={18} stroke={1.5} />
+          </ThemeIcon>
+          <Stack gap={2}>
+            <Text size="xl" fw={700} c="gray.1">
+              {data.conversation_title}
+            </Text>
+            <Group gap={6}>
+              <Badge size="xs" variant="light" color="noesisBlue" radius="xl">
+                Conversation
+              </Badge>
+              <Text size="xs" c="dimmed">
+                {data.conversation_date}
+              </Text>
+              <Text size="xs" c="dimmed">
+                ·
+              </Text>
+              <Text size="xs" c="dark.1">
+                {data.decision_title} — {slotLabel}
+              </Text>
+            </Group>
+          </Stack>
+        </Group>
+
+        {turnGroups.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            No idea units linked to this slot from this conversation.
+          </Text>
+        ) : (
+          <Stack gap="sm">
+            {turnGroups.map((turn) => (
+              <Box key={turn.turn_index} className={classes.turnGroup}>
+                <Box className={classes.turnHeader}>
+                  <Badge size="xs" variant="light" color="noesisIndigo" radius="xl">
+                    T{turn.turn_index}
+                  </Badge>
+                  <Text size="sm" fw={600} c="gray.1">
+                    {turn.speaker}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {turn.time}
+                  </Text>
+                </Box>
+                <Stack gap={0}>
+                  {turn.idea_units.map((iu) => (
+                    <Box
+                      key={iu.idea_unit_index}
+                      className={classes.ideaUnit}
+                    >
+                      <Group gap={6} mb={4}>
+                        {iu.categories.map((cat) => (
+                          <Badge
+                            key={cat}
+                            size="xs"
+                            variant="light"
+                            color={categoryColor(cat)}
+                            radius="xl"
+                          >
+                            {cat}
+                          </Badge>
+                        ))}
+                      </Group>
+                      <Text size="sm" c="gray.2">
+                        {iu.sentences.join(" ")}
+                      </Text>
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
+function DocumentDetails({
+  decisionId,
+  slot,
+  slotLabel,
+  document,
+}: {
+  decisionId: string;
+  slot: DecisionSlotPath;
+  slotLabel: string;
+  document: DecisionDocumentRef;
+}) {
+  const [data, setData] = useState<DecisionDocumentDetailData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setError(null);
+    fetch(
+      `/api/ui/decisions/${encodeURIComponent(decisionId)}/slots/${encodeURIComponent(slot)}/documents/${encodeURIComponent(document.document_id)}`,
+    )
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load document (${res.status})`);
+        return res.json() as Promise<DecisionDocumentDetailData>;
+      })
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [decisionId, slot, document.document_id]);
+
+  if (error !== null) {
+    return (
+      <Box p="lg">
+        <Text size="sm" c="red.4">
+          {error}
+        </Text>
+      </Box>
+    );
+  }
+
+  if (data === null) {
+    return (
+      <Box p="lg">
+        <Group gap="xs">
+          <Loader size={14} color="noesisBlue" />
+          <Text size="sm" c="dimmed">
+            Loading {document.title}
+          </Text>
+        </Group>
+      </Box>
+    );
+  }
+
+  return (
+    <Box p="lg">
+      <Stack gap="lg">
+        <Group gap="sm" align="center">
+          <ThemeIcon size="lg" variant="light" color="noesisGreen" radius="sm">
+            <IconFileText size={18} stroke={1.5} />
+          </ThemeIcon>
+          <Stack gap={2}>
+            <Text size="xl" fw={700} c="gray.1">
+              {data.document_title}
+            </Text>
+            <Group gap={6}>
+              <Badge size="xs" variant="light" color="noesisGreen" radius="xl">
+                Document
+              </Badge>
+              <Text size="xs" c="dimmed">
+                {data.document_date}
+              </Text>
+              <Text size="xs" c="dimmed">
+                ·
+              </Text>
+              <Text size="xs" c="dark.1">
+                {data.decision_title} — {slotLabel}
+              </Text>
+            </Group>
+          </Stack>
+        </Group>
+
+        {data.fragments.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            No document fragments linked to this slot from this document.
+          </Text>
+        ) : (
+          <Stack gap="sm">
+            {data.fragments.map((f) => (
+              <Box
+                key={`${f.start_offset}:${f.end_offset}`}
+                className={classes.fragmentCard}
+              >
+                <Group gap={6} mb={6}>
+                  <Badge size="xs" variant="light" color="dark.2" radius="xl">
+                    {f.start_offset}–{f.end_offset}
+                  </Badge>
+                </Group>
+                <Box className={classes.fragmentMarkdown}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {f.text}
+                  </ReactMarkdown>
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        )}
+      </Stack>
+    </Box>
   );
 }
 
