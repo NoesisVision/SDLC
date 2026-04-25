@@ -277,4 +277,179 @@ describe("TopicsService", () => {
       expect(detail).toBeNull();
     });
   });
+
+  describe("listTopicSummariesForSources", () => {
+    test("returns topics linked to the given conversation ids", async () => {
+      const path = join(ctx.tmpDir, "conv.json");
+      await writeFile(path, JSON.stringify(sampleConversation("conv-1")));
+      await conversations.addConversationFromFile(path);
+
+      await topics.addTopic({
+        id: "t1",
+        title: "T1",
+        short_summary: "s",
+        long_summary: "long-1",
+      });
+      await topics.addTopic({
+        id: "t2",
+        title: "T2",
+        short_summary: "s",
+        long_summary: "long-2",
+      });
+      await topics.addItemsToTopic("t1", [
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-1",
+          turn_index: 0,
+          idea_unit_index: 0,
+        },
+      ]);
+
+      const rows = await topics.listTopicSummariesForSources(["conv-1"], []);
+      expect(rows.map((r) => r.id)).toEqual(["t1"]);
+      expect(rows[0].long_summary).toBe("long-1");
+    });
+
+    test("merges results across conversations and documents", async () => {
+      const convPath = join(ctx.tmpDir, "conv2.json");
+      await writeFile(convPath, JSON.stringify(sampleConversation("conv-2")));
+      await conversations.addConversationFromFile(convPath);
+
+      const docPath = join(ctx.tmpDir, "doc2.json");
+      await writeFile(
+        docPath,
+        JSON.stringify({
+          id: "doc-2",
+          title: "D",
+          date: "2026-04-17",
+          content: "lorem ipsum text",
+        }),
+      );
+      await documents.addDocumentFromFile(docPath);
+
+      await topics.addTopic({ id: "ta", title: "Alpha", short_summary: "" });
+      await topics.addTopic({ id: "tb", title: "Beta", short_summary: "" });
+
+      await topics.addItemsToTopic("ta", [
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-2",
+          turn_index: 0,
+          idea_unit_index: 0,
+        },
+      ]);
+      await topics.addItemsToTopic("tb", [
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-2",
+          start_offset: 0,
+          end_offset: 5,
+        },
+      ]);
+
+      const rows = await topics.listTopicSummariesForSources(
+        ["conv-2"],
+        ["doc-2"],
+      );
+      expect(rows.map((r) => r.title)).toEqual(["Alpha", "Beta"]);
+    });
+
+    test("returns empty list when no sources provided", async () => {
+      const rows = await topics.listTopicSummariesForSources([], []);
+      expect(rows).toEqual([]);
+    });
+  });
+
+  describe("listTopicItemsSince", () => {
+    test("returns idea units and document fragments attached to a topic", async () => {
+      const convPath = join(ctx.tmpDir, "conv3.json");
+      await writeFile(convPath, JSON.stringify(sampleConversation("conv-3")));
+      await conversations.addConversationFromFile(convPath);
+
+      const docPath = join(ctx.tmpDir, "doc3.json");
+      await writeFile(
+        docPath,
+        JSON.stringify({
+          id: "doc-3",
+          title: "D",
+          date: "2026-04-20",
+          content: "abcdef ghijk",
+        }),
+      );
+      await documents.addDocumentFromFile(docPath);
+
+      await topics.addTopic({ id: "tx", title: "Tx", short_summary: "" });
+      await topics.addItemsToTopic("tx", [
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-3",
+          turn_index: 0,
+          idea_unit_index: 0,
+        },
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-3",
+          start_offset: 0,
+          end_offset: 6,
+        },
+      ]);
+
+      const items = await topics.listTopicItemsSince("tx", null);
+      expect(items).toHaveLength(2);
+      const types = items.map((i) => i.type).sort();
+      expect(types).toEqual(["document_fragment", "idea_unit"]);
+    });
+
+    test("filters by `since` against source date", async () => {
+      const oldConv = join(ctx.tmpDir, "conv-old.json");
+      const newConv = join(ctx.tmpDir, "conv-new.json");
+      await writeFile(
+        oldConv,
+        JSON.stringify({
+          ...(sampleConversation("conv-old") as object),
+          time: "2026-01-01T00:00:00Z",
+        }),
+      );
+      await writeFile(
+        newConv,
+        JSON.stringify({
+          ...(sampleConversation("conv-new") as object),
+          time: "2026-04-01T00:00:00Z",
+        }),
+      );
+      await conversations.addConversationFromFile(oldConv);
+      await conversations.addConversationFromFile(newConv);
+
+      await topics.addTopic({ id: "tf", title: "Tf", short_summary: "" });
+      await topics.addItemsToTopic("tf", [
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-old",
+          turn_index: 0,
+          idea_unit_index: 0,
+        },
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-new",
+          turn_index: 0,
+          idea_unit_index: 0,
+        },
+      ]);
+
+      const items = await topics.listTopicItemsSince(
+        "tf",
+        "2026-03-01T00:00:00Z",
+      );
+      expect(items).toHaveLength(1);
+      expect(items[0].type === "idea_unit" && items[0].conversation_id).toBe(
+        "conv-new",
+      );
+    });
+
+    test("fails when topic does not exist", async () => {
+      await expect(topics.listTopicItemsSince("ghost", null)).rejects.toThrow(
+        /Topic not found/,
+      );
+    });
+  });
 });

@@ -347,4 +347,52 @@ describe("DecisionsService", () => {
       );
     });
   });
+
+  describe("listDecisionsForSources", () => {
+    test("returns decisions whose supporting items reference the given conversations", async () => {
+      const convPath = join(ctx.tmpDir, "conv-src-1.json");
+      await writeFile(
+        convPath,
+        JSON.stringify(sampleConversation("conv-src-1")),
+      );
+      await conversations.addConversationFromFile(convPath);
+      await topics.addTopic({ id: "t-src", title: "T", short_summary: "" });
+
+      const iu = {
+        type: "idea_unit_ref" as const,
+        conversation_id: "conv-src-1",
+        turn_index: 0,
+        idea_unit_index: 0,
+      };
+
+      await decisions.addDecision("t-src", {
+        id: "dec-src-1",
+        title: "Source-linked",
+        status: "accepted",
+        context: { text: "c", supporting_items: [iu] },
+        decision: { text: "d", rationale: "", supporting_items: [] },
+        alternative_options: [],
+      });
+      await decisions.addDecision("t-src", {
+        id: "dec-other",
+        title: "Unlinked",
+        status: "proposed",
+        context: { text: "", supporting_items: [] },
+        decision: { text: "", rationale: "", supporting_items: [] },
+        alternative_options: [],
+      });
+
+      const rows = await decisions.listDecisionsForSources(
+        ["conv-src-1"],
+        [],
+      );
+      expect(rows.map((r) => r.id)).toEqual(["dec-src-1"]);
+      expect(rows[0].context_text).toBe("c");
+    });
+
+    test("returns empty list when no sources match", async () => {
+      const rows = await decisions.listDecisionsForSources(["ghost"], []);
+      expect(rows).toEqual([]);
+    });
+  });
 });

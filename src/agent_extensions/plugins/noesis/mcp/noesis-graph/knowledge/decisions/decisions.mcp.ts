@@ -33,6 +33,7 @@ export function registerDecisionsTools(
   registerAddItemsToDecision(mcp, decisions);
   registerListDecisions(mcp, decisions);
   registerReadDecision(mcp, decisions);
+  registerListDecisionsForSources(mcp, decisions);
 }
 
 function registerAddDecision(
@@ -147,6 +148,47 @@ function registerReadDecision(
   );
 }
 
+function registerListDecisionsForSources(
+  mcp: McpServer,
+  decisions: DecisionsService,
+): void {
+  mcp.registerTool(
+    "list_decisions_for_sources",
+    {
+      description:
+        "List Decisions whose supporting items (context, decision, or alternatives) reference any of " +
+        "the given Conversations or Documents. Writes Markdown (one section per decision: title, status, " +
+        "context, decision text, rationale, alternatives) to a tmp file and returns the file path — " +
+        "read it with the Read tool.",
+      inputSchema: {
+        conversation_ids: z
+          .array(z.string())
+          .default([])
+          .describe("Conversation ids whose decisions should be returned."),
+        document_ids: z
+          .array(z.string())
+          .default([])
+          .describe("Document ids whose decisions should be returned."),
+      },
+    },
+    async ({ conversation_ids, document_ids }) =>
+      runFileOutputTool(
+        "list_decisions_for_sources",
+        () =>
+          decisions.listDecisionsForSources(
+            conversation_ids ?? [],
+            document_ids ?? [],
+          ),
+        (rows) =>
+          formatDecisionsForSources(
+            rows,
+            conversation_ids ?? [],
+            document_ids ?? [],
+          ),
+      ),
+  );
+}
+
 function resolveSlot(
   slot: "context" | "decision" | "alternative",
   alternativeIndex: number | undefined,
@@ -198,6 +240,49 @@ function formatDecisionDetail(
     }
   }
   return lines.join("\n").trimEnd();
+}
+
+function formatDecisionsForSources(
+  details: DecisionDetail[],
+  conversationIds: string[],
+  documentIds: string[],
+): string {
+  const header =
+    `# Decisions for sources\n` +
+    `- **Conversations:** ${conversationIds.length === 0 ? "(none)" : conversationIds.join(", ")}\n` +
+    `- **Documents:** ${documentIds.length === 0 ? "(none)" : documentIds.join(", ")}`;
+  if (details.length === 0) {
+    return `${header}\n\n(no decisions linked to these sources)`;
+  }
+  const parts: string[] = [header, ""];
+  for (const detail of details) {
+    parts.push(`## ${detail.title}`);
+    parts.push(`- **ID:** ${detail.id}`);
+    parts.push(`- **Topic:** ${detail.topic_title} (${detail.topic_id})`);
+    parts.push(`- **Status:** ${detail.status}`);
+    parts.push("");
+    parts.push("### Context");
+    parts.push(detail.context_text || "(empty)");
+    parts.push("");
+    parts.push("### Decision");
+    parts.push(detail.decision_text || "(empty)");
+    if (detail.decision_rationale) {
+      parts.push("");
+      parts.push(`**Rationale:** ${detail.decision_rationale}`);
+    }
+    if (detail.alternatives.length > 0) {
+      parts.push("");
+      parts.push("### Alternatives");
+      for (const alt of detail.alternatives) {
+        parts.push(`#### Option ${alt.option_index}`);
+        parts.push(alt.text);
+        if (alt.rationale) parts.push(`**Rationale:** ${alt.rationale}`);
+        parts.push("");
+      }
+    }
+    parts.push("");
+  }
+  return parts.join("\n").trimEnd();
 }
 
 function formatDecisionList(

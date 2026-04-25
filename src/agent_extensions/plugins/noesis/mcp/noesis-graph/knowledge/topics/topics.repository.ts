@@ -49,6 +49,38 @@ export interface TopicWithParent {
   parent_id: string | null;
 }
 
+export interface TopicSummaryRow {
+  id: string;
+  title: string;
+  short_summary: string;
+  long_summary: string;
+}
+
+export interface TopicIdeaUnitItem {
+  type: "idea_unit";
+  conversation_id: string;
+  conversation_main_topic: string;
+  conversation_time: string;
+  turn_index: number;
+  idea_unit_index: number;
+  speaker: string;
+  time: string;
+  sentences: string[];
+  categories: string[];
+}
+
+export interface TopicDocumentFragmentItem {
+  type: "document_fragment";
+  document_id: string;
+  document_title: string;
+  document_date: string;
+  start_offset: number;
+  end_offset: number;
+  text: string;
+}
+
+export type TopicItemEntry = TopicIdeaUnitItem | TopicDocumentFragmentItem;
+
 @Injectable()
 export class TopicsRepository {
   constructor(private readonly db: DatabaseService) {}
@@ -164,6 +196,120 @@ export class TopicsRepository {
   async listSubtopics(parentId: string): Promise<TopicOverview[]> {
     const rows = await this.querySubtopicRows(parentId);
     return this.enrichTopics(rows);
+  }
+
+  async listTopicsForSources(
+    conversationIds: string[],
+    documentIds: string[],
+  ): Promise<TopicSummaryRow[]> {
+    const ids = new Set<string>();
+    if (conversationIds.length > 0) {
+      const rawRows = await this.db.query<TopicRow>(
+        "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
+          "WHERE u.conversation_id IN $ids " +
+          "RETURN DISTINCT t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary",
+        { ids: conversationIds },
+      );
+      for (const row of z.array(TopicRowSchema).parse(rawRows)) {
+        ids.add(JSON.stringify(row));
+      }
+    }
+    if (documentIds.length > 0) {
+      const rawRows = await this.db.query<TopicRow>(
+        "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment) " +
+          "WHERE f.document_id IN $ids " +
+          "RETURN DISTINCT t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary",
+        { ids: documentIds },
+      );
+      for (const row of z.array(TopicRowSchema).parse(rawRows)) {
+        ids.add(JSON.stringify(row));
+      }
+    }
+    const merged: TopicSummaryRow[] = Array.from(ids).map((s) =>
+      JSON.parse(s) as TopicSummaryRow,
+    );
+    merged.sort((a, b) => a.title.localeCompare(b.title));
+    return merged;
+  }
+
+  async listIdeaUnitItemsForTopic(
+    topicId: string,
+    since: string | null,
+  ): Promise<TopicIdeaUnitItem[]> {
+    const RowSchema = z.object({
+      conversation_id: z.string(),
+      conversation_main_topic: z.string(),
+      conversation_time: z.string(),
+      turn_index: z.union([z.number(), z.bigint()]),
+      idea_unit_index: z.union([z.number(), z.bigint()]),
+      speaker: z.string(),
+      time: z.string(),
+      sentences: z.array(z.string()),
+      categories: z.array(z.string()),
+    });
+    const baseMatch =
+      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) " +
+      "WHERE t.id = $topicId";
+    const dateFilter = since === null ? "" : " AND c.time > $since";
+    const rawRows = await this.db.query<unknown>(
+      `${baseMatch}${dateFilter} ` +
+        "RETURN c.id AS conversation_id, c.main_topic AS conversation_main_topic, c.time AS conversation_time, " +
+        "u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, " +
+        "turn.speaker AS speaker, turn.time AS time, " +
+        "u.sentences AS sentences, u.categories AS categories " +
+        "ORDER BY c.time DESC, u.turn_index, u.idea_unit_index",
+      since === null ? { topicId } : { topicId, since },
+    );
+    return z.array(RowSchema).parse(rawRows).map((r) => ({
+      type: "idea_unit",
+      conversation_id: r.conversation_id,
+      conversation_main_topic: r.conversation_main_topic,
+      conversation_time: r.conversation_time,
+      turn_index: Number(r.turn_index),
+      idea_unit_index: Number(r.idea_unit_index),
+      speaker: r.speaker,
+      time: r.time,
+      sentences: r.sentences,
+      categories: r.categories,
+    }));
+  }
+
+  async listDocumentFragmentItemsForTopic(
+    topicId: string,
+    since: string | null,
+  ): Promise<TopicDocumentFragmentItem[]> {
+    const RowSchema = z.object({
+      document_id: z.string(),
+      document_title: z.string(),
+      document_date: z.string(),
+      document_content: z.string(),
+      start_offset: z.union([z.number(), z.bigint()]),
+      end_offset: z.union([z.number(), z.bigint()]),
+    });
+    const baseMatch =
+      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
+      "WHERE t.id = $topicId";
+    const dateFilter = since === null ? "" : " AND d.date > $since";
+    const rawRows = await this.db.query<unknown>(
+      `${baseMatch}${dateFilter} ` +
+        "RETURN d.id AS document_id, d.title AS document_title, d.date AS document_date, d.content AS document_content, " +
+        "f.start_offset AS start_offset, f.end_offset AS end_offset " +
+        "ORDER BY d.date DESC, f.start_offset",
+      since === null ? { topicId } : { topicId, since },
+    );
+    return z.array(RowSchema).parse(rawRows).map((r) => {
+      const start = Number(r.start_offset);
+      const end = Number(r.end_offset);
+      return {
+        type: "document_fragment" as const,
+        document_id: r.document_id,
+        document_title: r.document_title,
+        document_date: r.document_date,
+        start_offset: start,
+        end_offset: end,
+        text: r.document_content.slice(start, end).trim(),
+      };
+    });
   }
 
   async readTopic(topicId: string): Promise<TopicDetail | null> {

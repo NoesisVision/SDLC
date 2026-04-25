@@ -308,6 +308,153 @@ describe("DesignDocsService", () => {
     });
   });
 
+  describe("readBoundedContextMap", () => {
+    test("returns BCs grouped by design doc with their modules", async () => {
+      await service.saveDesignDocFromFile(
+        await writeDoc(
+          {
+            id: "dd-map-a",
+            name: "alpha",
+            description: "first",
+            boundedContexts: {
+              added: [
+                {
+                  name: "Sales",
+                  description: "Sales context",
+                  modules: { added: [{ name: "Ordering" }] },
+                },
+                { name: "Catalog", description: "Catalog context" },
+              ],
+            },
+          },
+          "map-a.json",
+        ),
+      );
+      await service.saveDesignDocFromFile(
+        await writeDoc(
+          {
+            id: "dd-map-b",
+            name: "beta",
+            description: "second",
+            boundedContexts: {
+              added: [{ name: "Billing" }],
+            },
+          },
+          "map-b.json",
+        ),
+      );
+
+      const map = await service.readBoundedContextMap();
+      expect(map).toHaveLength(3);
+      const sales = map.find((e) => e.bounded_context_name === "Sales")!;
+      expect(sales.design_doc_id).toBe("dd-map-a");
+      expect(sales.description).toBe("Sales context");
+      expect(sales.modules.map((m) => m.name)).toEqual(["Ordering"]);
+      const billing = map.find((e) => e.bounded_context_name === "Billing")!;
+      expect(billing.design_doc_id).toBe("dd-map-b");
+      expect(billing.modules).toEqual([]);
+    });
+
+    test("returns empty list when no design docs exist", async () => {
+      expect(await service.readBoundedContextMap()).toEqual([]);
+    });
+  });
+
+  describe("readModelForTargets", () => {
+    test("returns the full BC when module_name is null", async () => {
+      await service.saveDesignDocFromFile(
+        await writeDoc(
+          {
+            id: "dd-target",
+            name: "t",
+            description: "d",
+            boundedContexts: {
+              added: [
+                {
+                  name: "Sales",
+                  modules: {
+                    added: [
+                      {
+                        name: "Ordering",
+                        buildingBlocks: {
+                          added: [{ name: "Order", type: "aggregate" }],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+          "target.json",
+        ),
+      );
+
+      const ctxList = await service.readModelForTargets([
+        {
+          design_doc_id: "dd-target",
+          bounded_context_name: "Sales",
+          module_name: null,
+        },
+      ]);
+      expect(ctxList).toHaveLength(1);
+      expect(ctxList[0].name).toBe("Sales");
+      expect(ctxList[0].modules?.added.map((m) => m.name)).toEqual(["Ordering"]);
+    });
+
+    test("filters to a single module when module_name is provided", async () => {
+      await service.saveDesignDocFromFile(
+        await writeDoc(
+          {
+            id: "dd-multi",
+            name: "m",
+            description: "d",
+            boundedContexts: {
+              added: [
+                {
+                  name: "Sales",
+                  modules: {
+                    added: [
+                      { name: "Ordering" },
+                      { name: "Pricing" },
+                    ],
+                  },
+                  buildingBlocks: {
+                    added: [{ name: "BareBlock" }],
+                  },
+                },
+              ],
+            },
+          },
+          "multi.json",
+        ),
+      );
+
+      const ctxList = await service.readModelForTargets([
+        {
+          design_doc_id: "dd-multi",
+          bounded_context_name: "Sales",
+          module_name: "Pricing",
+        },
+      ]);
+      expect(ctxList).toHaveLength(1);
+      const modules = ctxList[0].modules?.added.map((m) => m.name);
+      expect(modules).toEqual(["Pricing"]);
+      expect(ctxList[0].buildingBlocks?.added).toEqual([]);
+    });
+
+    test("skips targets that do not exist", async () => {
+      const ctxList = await service.readModelForTargets([
+        {
+          design_doc_id: "ghost",
+          bounded_context_name: "X",
+          module_name: null,
+        },
+      ]);
+      expect(ctxList).toEqual([]);
+    });
+  });
+
   describe("deleteDesignDoc", () => {
     test("removes a DesignDoc and all descendants", async () => {
       await service.saveDesignDocFromFile(

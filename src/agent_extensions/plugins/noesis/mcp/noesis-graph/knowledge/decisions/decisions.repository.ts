@@ -200,6 +200,40 @@ export class DecisionsRepository {
     return all;
   }
 
+  async listDecisionIdsForSources(
+    conversationIds: string[],
+    documentIds: string[],
+  ): Promise<string[]> {
+    const ids = new Set<string>();
+    if (conversationIds.length > 0) {
+      const queries = [
+        "MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) WHERE u.conversation_id IN $ids RETURN DISTINCT d.id AS id",
+        "MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) WHERE u.conversation_id IN $ids RETURN DISTINCT d.id AS id",
+        "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) WHERE u.conversation_id IN $ids RETURN DISTINCT d.id AS id",
+      ];
+      for (const q of queries) {
+        const rows = await this.db.query<IdRow>(q, { ids: conversationIds });
+        for (const row of z.array(IdRowSchema).parse(rows)) {
+          ids.add(row.id);
+        }
+      }
+    }
+    if (documentIds.length > 0) {
+      const queries = [
+        "MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) WHERE f.document_id IN $ids RETURN DISTINCT d.id AS id",
+        "MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) WHERE f.document_id IN $ids RETURN DISTINCT d.id AS id",
+        "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) WHERE f.document_id IN $ids RETURN DISTINCT d.id AS id",
+      ];
+      for (const q of queries) {
+        const rows = await this.db.query<IdRow>(q, { ids: documentIds });
+        for (const row of z.array(IdRowSchema).parse(rows)) {
+          ids.add(row.id);
+        }
+      }
+    }
+    return Array.from(ids);
+  }
+
   async listDecisions(
     topicId: string | null,
   ): Promise<DecisionOverview[]> {

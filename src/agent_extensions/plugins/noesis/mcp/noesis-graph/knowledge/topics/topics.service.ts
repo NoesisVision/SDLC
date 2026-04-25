@@ -18,9 +18,18 @@ import {
   TopicsRepository,
   type NewTopicInput,
   type TopicDetail,
+  type TopicItemEntry,
   type TopicOverview,
   type TopicWithParent,
 } from "./topics.repository.js";
+
+export interface TopicSummaryWithPath {
+  id: string;
+  title: string;
+  path: string[];
+  short_summary: string;
+  long_summary: string;
+}
 
 export interface AddTopicInput {
   id?: string;
@@ -197,6 +206,44 @@ export class TopicsService {
     return parentId === null
       ? this.repository.listRootTopics()
       : this.repository.listSubtopics(parentId);
+  }
+
+  async listTopicSummariesForSources(
+    conversationIds: string[],
+    documentIds: string[],
+  ): Promise<TopicSummaryWithPath[]> {
+    const rows = await this.repository.listTopicsForSources(
+      conversationIds,
+      documentIds,
+    );
+    const out: TopicSummaryWithPath[] = [];
+    for (const row of rows) {
+      const path = await this.repository.getTopicPath(row.id);
+      out.push({
+        id: row.id,
+        title: row.title,
+        path,
+        short_summary: row.short_summary,
+        long_summary: row.long_summary,
+      });
+    }
+    return out;
+  }
+
+  async listTopicItemsSince(
+    topicId: string,
+    since: string | null,
+  ): Promise<TopicItemEntry[]> {
+    await this.repository.require(topicId);
+    const ideaUnits = await this.repository.listIdeaUnitItemsForTopic(
+      topicId,
+      since,
+    );
+    const fragments = await this.repository.listDocumentFragmentItemsForTopic(
+      topicId,
+      since,
+    );
+    return [...ideaUnits, ...fragments];
   }
 
   async readTopic(topicId: string): Promise<TopicDetail | null> {

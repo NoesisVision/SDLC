@@ -133,6 +133,23 @@ export class DecisionsService {
     return this.repository.listDecisions(topicId);
   }
 
+  async listDecisionsForSources(
+    conversationIds: string[],
+    documentIds: string[],
+  ): Promise<DecisionDetail[]> {
+    const ids = await this.repository.listDecisionIdsForSources(
+      conversationIds,
+      documentIds,
+    );
+    const out: DecisionDetail[] = [];
+    for (const id of ids) {
+      const detail = await this.repository.readDecision(id);
+      if (detail !== null) out.push(detail);
+    }
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return out;
+  }
+
   async readDecision(decisionId: string): Promise<DecisionDetail | null> {
     return this.repository.readDecision(decisionId);
   }

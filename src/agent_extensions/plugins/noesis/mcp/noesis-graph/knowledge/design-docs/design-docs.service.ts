@@ -4,8 +4,13 @@ import {
   DesignDocSchema,
   type DesignDoc,
   type DesignDocOverview,
+  type DesignedBoundedContext,
 } from "../../../../shared-contracts/design-doc.js";
-import { DesignDocsRepository } from "./design-docs.repository.js";
+import {
+  DesignDocsRepository,
+  type BoundedContextMapEntry,
+  type ModelTarget,
+} from "./design-docs.repository.js";
 
 export interface SaveDesignDocResult {
   design_doc_id: string;
@@ -33,6 +38,16 @@ export class DesignDocsService implements OnModuleInit {
 
   async readDesignDoc(designDocId: string): Promise<DesignDoc | null> {
     return this.repository.readDesignDoc(designDocId);
+  }
+
+  async readBoundedContextMap(): Promise<BoundedContextMapEntry[]> {
+    return this.repository.readBoundedContextMap();
+  }
+
+  async readModelForTargets(
+    targets: ModelTarget[],
+  ): Promise<DesignedBoundedContext[]> {
+    return this.repository.readModelForTargets(targets);
   }
 
   async saveDesignDocFromFile(path: string): Promise<SaveDesignDocResult> {

@@ -5,8 +5,12 @@ import {
   runFileOutputTool,
   runInlineJsonTool,
 } from "../../mcp-tool-output.js";
-import type { TopicDetail, TopicOverview } from "./topics.repository.js";
-import { TopicsService } from "./topics.service.js";
+import type {
+  TopicDetail,
+  TopicItemEntry,
+  TopicOverview,
+} from "./topics.repository.js";
+import { TopicsService, type TopicSummaryWithPath } from "./topics.service.js";
 
 const TopicFields = {
   id: z
@@ -31,6 +35,8 @@ export function registerTopicsTools(
   registerAddItemsToTopic(mcp, topics);
   registerListTopics(mcp, topics);
   registerReadTopic(mcp, topics);
+  registerListTopicSummariesForSources(mcp, topics);
+  registerListTopicItemsSince(mcp, topics);
 }
 
 function registerAddItemsToTopic(
@@ -164,6 +170,80 @@ function registerReparentTopic(mcp: McpServer, topics: TopicsService): void {
   );
 }
 
+function registerListTopicSummariesForSources(
+  mcp: McpServer,
+  topics: TopicsService,
+): void {
+  mcp.registerTool(
+    "list_topic_summaries_for_sources",
+    {
+      description:
+        "List Topics whose IdeaUnits or DocumentFragments come from the given Conversations or Documents. " +
+        "Writes Markdown (one section per topic: id, path, short summary, long summary) to a tmp file " +
+        "and returns the file path — read it with the Read tool.",
+      inputSchema: {
+        conversation_ids: z
+          .array(z.string())
+          .default([])
+          .describe("Conversation ids whose linked topics should be returned."),
+        document_ids: z
+          .array(z.string())
+          .default([])
+          .describe("Document ids whose linked topics should be returned."),
+      },
+    },
+    async ({ conversation_ids, document_ids }) =>
+      runFileOutputTool(
+        "list_topic_summaries_for_sources",
+        () =>
+          topics.listTopicSummariesForSources(
+            conversation_ids ?? [],
+            document_ids ?? [],
+          ),
+        (rows) =>
+          formatTopicSummariesForSources(
+            rows,
+            conversation_ids ?? [],
+            document_ids ?? [],
+          ),
+      ),
+  );
+}
+
+function registerListTopicItemsSince(
+  mcp: McpServer,
+  topics: TopicsService,
+): void {
+  mcp.registerTool(
+    "list_topic_items_since",
+    {
+      description:
+        "Load supporting items (IdeaUnits and DocumentFragments) attached to a Topic, optionally " +
+        "filtered to those whose source (conversation time or document date) is strictly after `since`. " +
+        "Writes Markdown grouped by source to a tmp file and returns the file path — read it with the Read tool.",
+      inputSchema: {
+        topic_id: z.string().describe("Id of the Topic to load items for."),
+        since: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            "ISO timestamp (e.g. '2026-04-01' or '2026-04-01T00:00:00Z'). " +
+              "When provided, only items with a source date strictly greater than this value are returned. " +
+              "Compared lexicographically — use the same format as Conversation.time / Document.date.",
+          ),
+      },
+    },
+    async ({ topic_id, since }) =>
+      runFileOutputTool(
+        "list_topic_items_since",
+        () => topics.listTopicItemsSince(topic_id, since ?? null),
+        (entries) =>
+          formatTopicItemsSince(topic_id, since ?? null, entries),
+      ),
+  );
+}
+
 function formatTopicDetail(
   topic: TopicDetail | null,
   requestedId: string,
@@ -207,6 +287,108 @@ function formatTopicList(
       parts.push(`- **Long summary:** ${t.long_summary}`);
     }
     parts.push("");
+  }
+  return parts.join("\n").trimEnd();
+}
+
+function formatTopicSummariesForSources(
+  rows: TopicSummaryWithPath[],
+  conversationIds: string[],
+  documentIds: string[],
+): string {
+  const header =
+    `# Topics for sources\n` +
+    `- **Conversations:** ${conversationIds.length === 0 ? "(none)" : conversationIds.join(", ")}\n` +
+    `- **Documents:** ${documentIds.length === 0 ? "(none)" : documentIds.join(", ")}`;
+  if (rows.length === 0) {
+    return `${header}\n\n(no topics linked to these sources)`;
+  }
+  const parts: string[] = [header, ""];
+  for (const row of rows) {
+    const pathLine = row.path.length > 0 ? row.path.join(" / ") : "(root)";
+    parts.push(`## ${row.title}`);
+    parts.push(`- **ID:** ${row.id}`);
+    parts.push(`- **Path:** ${pathLine}`);
+    parts.push(`- **Short summary:** ${row.short_summary || "(empty)"}`);
+    parts.push("");
+    parts.push("### Long summary");
+    parts.push("");
+    parts.push(row.long_summary || "(empty)");
+    parts.push("");
+  }
+  return parts.join("\n").trimEnd();
+}
+
+function formatTopicItemsSince(
+  topicId: string,
+  since: string | null,
+  entries: TopicItemEntry[],
+): string {
+  const header =
+    `# Topic items: ${topicId}\n` +
+    `- **Since:** ${since ?? "(no filter — all items)"}`;
+  if (entries.length === 0) {
+    return `${header}\n\n(no items match)`;
+  }
+  const ideaUnits = entries.filter(
+    (e): e is Extract<TopicItemEntry, { type: "idea_unit" }> =>
+      e.type === "idea_unit",
+  );
+  const fragments = entries.filter(
+    (e): e is Extract<TopicItemEntry, { type: "document_fragment" }> =>
+      e.type === "document_fragment",
+  );
+  const parts: string[] = [header, ""];
+  if (ideaUnits.length > 0) {
+    parts.push("## Idea Units");
+    parts.push("");
+    const byConversation = new Map<
+      string,
+      Extract<TopicItemEntry, { type: "idea_unit" }>[]
+    >();
+    for (const iu of ideaUnits) {
+      const list = byConversation.get(iu.conversation_id) ?? [];
+      list.push(iu);
+      byConversation.set(iu.conversation_id, list);
+    }
+    for (const [convId, items] of byConversation) {
+      const head = items[0];
+      parts.push(
+        `### Conversation: ${head.conversation_main_topic} (${convId}) — ${head.conversation_time}`,
+      );
+      for (const iu of items) {
+        const cats = iu.categories.join(", ");
+        parts.push(
+          `- **[T${iu.turn_index}:IU${iu.idea_unit_index}]** ${iu.time} — ${iu.speaker} [${cats}]`,
+        );
+        parts.push(`  ${iu.sentences.join(" ")}`);
+      }
+      parts.push("");
+    }
+  }
+  if (fragments.length > 0) {
+    parts.push("## Document Fragments");
+    parts.push("");
+    const byDocument = new Map<
+      string,
+      Extract<TopicItemEntry, { type: "document_fragment" }>[]
+    >();
+    for (const f of fragments) {
+      const list = byDocument.get(f.document_id) ?? [];
+      list.push(f);
+      byDocument.set(f.document_id, list);
+    }
+    for (const [docId, items] of byDocument) {
+      const head = items[0];
+      parts.push(
+        `### Document: ${head.document_title} (${docId}) — ${head.document_date}`,
+      );
+      for (const f of items) {
+        parts.push(`- **[${f.start_offset}–${f.end_offset}]**`);
+        parts.push(`  ${f.text}`);
+      }
+      parts.push("");
+    }
   }
   return parts.join("\n").trimEnd();
 }

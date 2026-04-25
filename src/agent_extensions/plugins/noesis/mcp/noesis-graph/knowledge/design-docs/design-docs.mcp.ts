@@ -13,6 +13,10 @@ import type {
   DesignedScenario,
 } from "../../../../shared-contracts/design-doc.js";
 import { DesignDocsService } from "./design-docs.service.js";
+import type {
+  BoundedContextMapEntry,
+  ModelTarget,
+} from "./design-docs.repository.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -26,6 +30,8 @@ export function registerDesignDocsTools(
   registerReadDesignDoc(mcp, service);
   registerListDesignDocs(mcp, service);
   registerDeleteDesignDoc(mcp, service);
+  registerReadBoundedContextMap(mcp, service);
+  registerReadModelForModules(mcp, service);
 }
 
 function registerSaveDesignDoc(
@@ -115,6 +121,148 @@ function registerDeleteDesignDoc(
     async ({ design_doc_id }) =>
       runInlineJsonTool(() => service.deleteDesignDoc(design_doc_id)),
   );
+}
+
+function registerReadBoundedContextMap(
+  mcp: McpServer,
+  service: DesignDocsService,
+): void {
+  mcp.registerTool(
+    "read_bounded_context_map",
+    {
+      description:
+        "Return a hierarchical Markdown map of every Bounded Context across all Design Docs " +
+        "with their Modules. Result is returned inline (small payload) — no tmp file.",
+      inputSchema: {},
+    },
+    async () =>
+      runInlineJsonTool(async () => ({
+        markdown: formatBoundedContextMap(await service.readBoundedContextMap()),
+      })),
+  );
+}
+
+function registerReadModelForModules(
+  mcp: McpServer,
+  service: DesignDocsService,
+): void {
+  mcp.registerTool(
+    "read_model_for_modules",
+    {
+      description:
+        "Render the existing model (Bounded Context → Module → Building Block → Behaviour, with rules and scenarios) " +
+        "for the listed targets. Each target picks one Bounded Context within a Design Doc, optionally narrowed to " +
+        "a single Module. Writes Markdown to a tmp file and returns the file path — read it with the Read tool.",
+      inputSchema: {
+        targets: z
+          .array(
+            z.object({
+              design_doc_id: z
+                .string()
+                .describe("Design Doc id from the BC map."),
+              bounded_context_name: z
+                .string()
+                .describe("Bounded Context name as listed in the BC map."),
+              module_name: z
+                .string()
+                .nullable()
+                .optional()
+                .describe(
+                  "Optional module name. When provided, only that module is included; " +
+                    "otherwise the whole Bounded Context is rendered.",
+                ),
+            }),
+          )
+          .describe("Bounded Contexts (and optionally Modules) to render."),
+      },
+    },
+    async ({ targets }) =>
+      runFileOutputTool(
+        "read_model_for_modules",
+        () =>
+          service.readModelForTargets(
+            targets.map((t): ModelTarget => ({
+              design_doc_id: t.design_doc_id,
+              bounded_context_name: t.bounded_context_name,
+              module_name: t.module_name ?? null,
+            })),
+          ),
+        (contexts) =>
+          formatModelForModules(
+            contexts,
+            targets.map((t) => ({
+              design_doc_id: t.design_doc_id,
+              bounded_context_name: t.bounded_context_name,
+              module_name: t.module_name ?? null,
+            })),
+          ),
+      ),
+  );
+}
+
+function formatBoundedContextMap(entries: BoundedContextMapEntry[]): string {
+  if (entries.length === 0) {
+    return "# Bounded Context map\n\n(no design docs in the graph yet)";
+  }
+  const byDesignDoc = new Map<
+    string,
+    { name: string; entries: BoundedContextMapEntry[] }
+  >();
+  for (const entry of entries) {
+    const slot = byDesignDoc.get(entry.design_doc_id) ?? {
+      name: entry.design_doc_name,
+      entries: [],
+    };
+    slot.entries.push(entry);
+    byDesignDoc.set(entry.design_doc_id, slot);
+  }
+  const parts: string[] = ["# Bounded Context map", ""];
+  for (const [designDocId, group] of byDesignDoc) {
+    parts.push(`## ${group.name} (design_doc_id: ${designDocId})`);
+    parts.push("");
+    for (const bc of group.entries) {
+      parts.push(`- **${bc.bounded_context_name}**${bc.description ? ` — ${bc.description}` : ""}`);
+      for (const mod of bc.modules) {
+        parts.push(`  - Module: ${mod.name}${mod.description ? ` — ${mod.description}` : ""}`);
+      }
+    }
+    parts.push("");
+  }
+  parts.push("## Relations");
+  parts.push("");
+  parts.push("(no Bounded Context relations modelled in the graph yet)");
+  return parts.join("\n").trimEnd();
+}
+
+function formatModelForModules(
+  contexts: DesignedBoundedContext[],
+  targets: ModelTarget[],
+): string {
+  const parts: string[] = ["# Model for selected modules", ""];
+  parts.push("**Targets:**");
+  for (const t of targets) {
+    const moduleSuffix = t.module_name ? ` / ${t.module_name}` : "";
+    parts.push(
+      `- ${t.bounded_context_name}${moduleSuffix} _(design_doc_id: ${t.design_doc_id})_`,
+    );
+  }
+  parts.push("");
+  if (contexts.length === 0) {
+    parts.push("(no matching Bounded Contexts found)");
+    return parts.join("\n").trimEnd();
+  }
+  for (const bc of contexts) {
+    parts.push(`## ${bc.name}`);
+    if (bc.description) parts.push(bc.description);
+    parts.push("");
+    for (const m of bc.modules?.added ?? []) {
+      appendModule(parts, m, 3);
+    }
+    for (const bb of bc.buildingBlocks?.added ?? []) {
+      appendBuildingBlock(parts, bb, 3);
+    }
+  }
+  return parts.join("\n").trimEnd();
 }
 
 function formatDesignDoc(

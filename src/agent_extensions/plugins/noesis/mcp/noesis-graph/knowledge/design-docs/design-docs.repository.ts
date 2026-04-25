@@ -133,6 +133,25 @@ type IdRow = z.infer<typeof IdRowSchema>;
 const CountRowSchema = z.object({ c: z.union([z.number(), z.bigint()]) });
 type CountRow = z.infer<typeof CountRowSchema>;
 
+export interface BoundedContextMapModule {
+  name: string;
+  description: string | null;
+}
+
+export interface BoundedContextMapEntry {
+  design_doc_id: string;
+  design_doc_name: string;
+  bounded_context_name: string;
+  description: string | null;
+  modules: BoundedContextMapModule[];
+}
+
+export interface ModelTarget {
+  design_doc_id: string;
+  bounded_context_name: string;
+  module_name: string | null;
+}
+
 export interface ApplyResult {
   design_doc_id: string;
   actors_added: number;
@@ -236,6 +255,73 @@ export class DesignDocsRepository {
       { id: designDocId },
     );
     return rows.length === 0 ? 0 : Number(rows[0].c);
+  }
+
+  async readBoundedContextMap(): Promise<BoundedContextMapEntry[]> {
+    const RowSchema = z.object({
+      design_doc_id: z.string(),
+      design_doc_name: z.string(),
+      bc_id: z.string(),
+      bc_name: z.string(),
+      bc_description: z.string(),
+    });
+    const ModuleRowSchema = z.object({
+      name: z.string(),
+      description: z.string(),
+    });
+    const rawRows = await this.db.query<unknown>(
+      "MATCH (d:DesignDoc)-[:DD_HAS_BC]->(b:DesignedBoundedContext) " +
+        "RETURN d.id AS design_doc_id, d.name AS design_doc_name, " +
+        "b.id AS bc_id, b.name AS bc_name, b.description AS bc_description " +
+        "ORDER BY d.name, b.name",
+    );
+    const rows = z.array(RowSchema).parse(rawRows);
+    const out: BoundedContextMapEntry[] = [];
+    for (const row of rows) {
+      const rawModules = await this.db.query<unknown>(
+        "MATCH (b:DesignedBoundedContext)-[:DBC_HAS_MODULE]->(m:DesignedDomainModule) WHERE b.id = $id " +
+          "RETURN m.name AS name, m.description AS description ORDER BY m.name",
+        { id: row.bc_id },
+      );
+      const modules = z.array(ModuleRowSchema).parse(rawModules).map((m) => ({
+        name: m.name,
+        description: emptyToNull(m.description),
+      }));
+      out.push({
+        design_doc_id: row.design_doc_id,
+        design_doc_name: row.design_doc_name,
+        bounded_context_name: row.bc_name,
+        description: emptyToNull(row.bc_description),
+        modules,
+      });
+    }
+    return out;
+  }
+
+  async readModelForTargets(
+    targets: ModelTarget[],
+  ): Promise<DesignedBoundedContext[]> {
+    const out: DesignedBoundedContext[] = [];
+    for (const target of targets) {
+      const bc = await this.fetchBoundedContextByName(
+        target.design_doc_id,
+        target.bounded_context_name,
+      );
+      if (bc === null) continue;
+      if (target.module_name === null) {
+        out.push(bc);
+        continue;
+      }
+      const filteredModules = (bc.modules?.added ?? []).filter(
+        (m) => m.name === target.module_name,
+      );
+      out.push({
+        ...bc,
+        modules: { added: filteredModules, removed: [], modified: [] },
+        buildingBlocks: { added: [], removed: [], modified: [] },
+      });
+    }
+    return out;
   }
 
   async readDesignDoc(designDocId: string): Promise<DesignDoc | null> {
@@ -949,6 +1035,29 @@ export class DesignDocsRepository {
       });
     }
     return out;
+  }
+
+  private async fetchBoundedContextByName(
+    designDocId: string,
+    bcName: string,
+  ): Promise<DesignedBoundedContext | null> {
+    const rawRows = await this.db.query<BoundedContextRow>(
+      "MATCH (d:DesignDoc)-[:DD_HAS_BC]->(b:DesignedBoundedContext) " +
+        "WHERE d.id = $designDocId AND b.name = $bcName " +
+        "RETURN b.id AS id, b.name AS name, b.description AS description LIMIT 1",
+      { designDocId, bcName },
+    );
+    const rows = z.array(BoundedContextRowSchema).parse(rawRows);
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    const modules = await this.fetchModules(row.id);
+    const buildingBlocks = await this.fetchBuildingBlocksOfContext(row.id);
+    return {
+      name: row.name,
+      description: emptyToNull(row.description),
+      modules: { added: modules, removed: [], modified: [] },
+      buildingBlocks: { added: buildingBlocks, removed: [], modified: [] },
+    };
   }
 
   private async fetchModules(
