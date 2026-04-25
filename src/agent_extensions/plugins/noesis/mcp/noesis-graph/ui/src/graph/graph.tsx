@@ -50,7 +50,7 @@ export function GraphPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/graph/schema")
+    fetch("/api/knowledge/schema")
       .then((res) => res.json())
       .then((data: GraphSchema) => {
         setSchema(data);

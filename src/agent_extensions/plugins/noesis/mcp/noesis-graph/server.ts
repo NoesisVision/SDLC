@@ -7,10 +7,16 @@ import { FileLogger } from "./logging/file-logger.js";
 import { ScannerService } from "./scanner/scanner.service.js";
 import { InvocationsService } from "./scanner/invocations/invocations.service.js";
 import { registerScannerTools } from "./scanner/scanner.mcp.js";
-import { KnowledgeService } from "./knowledge/knowledge.service.js";
-import { registerKnowledgeTools } from "./knowledge/knowledge.mcp.js";
-import { DesignDocService } from "./design-doc/design-doc.service.js";
-import { registerDesignDocTools } from "./design-doc/design-doc.mcp.js";
+import { ConversationsService } from "./knowledge/conversations/conversations.service.js";
+import { registerConversationsTools } from "./knowledge/conversations/conversations.mcp.js";
+import { DecisionsService } from "./knowledge/decisions/decisions.service.js";
+import { registerDecisionsTools } from "./knowledge/decisions/decisions.mcp.js";
+import { DesignDocsService } from "./knowledge/design-docs/design-docs.service.js";
+import { registerDesignDocsTools } from "./knowledge/design-docs/design-docs.mcp.js";
+import { DocumentsService } from "./knowledge/documents/documents.service.js";
+import { registerDocumentsTools } from "./knowledge/documents/documents.mcp.js";
+import { TopicsService } from "./knowledge/topics/topics.service.js";
+import { registerTopicsTools } from "./knowledge/topics/topics.mcp.js";
 
 export async function startServer(): Promise<void> {
   const [argDataDir, argProjectDir] = process.argv.slice(2);
@@ -49,8 +55,15 @@ export async function startServer(): Promise<void> {
     await app.listen(0);
 
     registerScannerTools(mcp, app.get(ScannerService), app.get(InvocationsService));
-    registerKnowledgeTools(mcp, app.get(KnowledgeService), app.get(DesignDocService));
-    registerDesignDocTools(mcp, app.get(DesignDocService));
+    registerTopicsTools(mcp, app.get(TopicsService));
+    registerDecisionsTools(mcp, app.get(DecisionsService));
+    registerConversationsTools(mcp, app.get(ConversationsService));
+    registerDocumentsTools(
+      mcp,
+      app.get(DocumentsService),
+      app.get(DesignDocsService),
+    );
+    registerDesignDocsTools(mcp, app.get(DesignDocsService));
     logger.log("MCP tools registered", "Bootstrap");
 
     const url = await app.getUrl();

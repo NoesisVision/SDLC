@@ -4,21 +4,21 @@ import {
   DesignDocSchema,
   type DesignDoc,
   type DesignDocOverview,
-} from "../../../shared-contracts/design-doc.js";
+} from "../../../../shared-contracts/design-doc.js";
 import {
-  DesignDocRepository,
+  DesignDocsRepository,
   type ApplyResult,
-} from "./design-doc.repository.js";
+} from "./design-docs.repository.js";
 
 export interface SaveDesignDocResult extends ApplyResult {
   output_path: string | null;
 }
 
 @Injectable()
-export class DesignDocService implements OnModuleInit {
-  private readonly logger = new Logger(DesignDocService.name);
+export class DesignDocsService implements OnModuleInit {
+  private readonly logger = new Logger(DesignDocsService.name);
 
-  constructor(private readonly repository: DesignDocRepository) {}
+  constructor(private readonly repository: DesignDocsRepository) {}
 
   async onModuleInit(): Promise<void> {
     await this.repository.initSchema();

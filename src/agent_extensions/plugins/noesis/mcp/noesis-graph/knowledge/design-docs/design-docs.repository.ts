@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
-import { DatabaseService } from "../database/database.service.js";
+import { DatabaseService } from "../../database/database.service.js";
 import type {
   DesignDoc,
   DesignDocOverview,
@@ -13,7 +13,7 @@ import type {
   DesignedQualityAttribute,
   DesignedRule,
   DesignedScenario,
-} from "../../../shared-contracts/design-doc.js";
+} from "../../../../shared-contracts/design-doc.js";
 import {
   actorNodeId,
   behaviourNodeId,
@@ -153,8 +153,8 @@ interface CounterRef {
 }
 
 @Injectable()
-export class DesignDocRepository {
-  private readonly logger = new Logger(DesignDocRepository.name);
+export class DesignDocsRepository {
+  private readonly logger = new Logger(DesignDocsRepository.name);
 
   constructor(private readonly db: DatabaseService) {}
 

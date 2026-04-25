@@ -1,12 +1,35 @@
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../database/database.module.js";
-import { DesignDocModule } from "../design-doc/design-doc.module.js";
-import { KnowledgeRepository } from "./knowledge.repository.js";
-import { KnowledgeService } from "./knowledge.service.js";
+import { ConversationsRepository } from "./conversations/conversations.repository.js";
+import { ConversationsService } from "./conversations/conversations.service.js";
+import { DecisionsRepository } from "./decisions/decisions.repository.js";
+import { DecisionsService } from "./decisions/decisions.service.js";
+import { DesignDocsModule } from "./design-docs/design-docs.module.js";
+import { DocumentsRepository } from "./documents/documents.repository.js";
+import { DocumentsService } from "./documents/documents.service.js";
+import { SchemaModule } from "./schema/schema.module.js";
+import { TopicsRepository } from "./topics/topics.repository.js";
+import { TopicsService } from "./topics/topics.service.js";
 
 @Module({
-  imports: [DatabaseModule, DesignDocModule],
-  providers: [KnowledgeService, KnowledgeRepository],
-  exports: [KnowledgeService],
+  imports: [DatabaseModule, SchemaModule, DesignDocsModule],
+  providers: [
+    TopicsService,
+    TopicsRepository,
+    DecisionsService,
+    DecisionsRepository,
+    ConversationsService,
+    ConversationsRepository,
+    DocumentsService,
+    DocumentsRepository,
+  ],
+  exports: [
+    TopicsService,
+    DecisionsService,
+    ConversationsService,
+    DocumentsService,
+    SchemaModule,
+    DesignDocsModule,
+  ],
 })
 export class KnowledgeModule {}

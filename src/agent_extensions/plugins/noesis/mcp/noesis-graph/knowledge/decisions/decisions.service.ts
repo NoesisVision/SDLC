@@ -1,0 +1,176 @@
+import { Injectable } from "@nestjs/common";
+import { assertNever } from "../../../../shared-contracts/assert-never.js";
+import type {
+  Decision,
+  TopicItem,
+} from "../../../../shared-contracts/topics.js";
+import { ideaUnitNodeId } from "../conversations/node-ids.js";
+import { ConversationsRepository } from "../conversations/conversations.repository.js";
+import { DocumentsRepository } from "../documents/documents.repository.js";
+import { TopicsRepository } from "../topics/topics.repository.js";
+import {
+  DecisionsRepository,
+  type DecisionDetail,
+  type DecisionOverview,
+} from "./decisions.repository.js";
+import type { DecisionSupportSlot } from "./decision-support.js";
+import { alternativeOptionNodeId } from "./node-ids.js";
+
+export type { DecisionSupportSlot } from "./decision-support.js";
+
+@Injectable()
+export class DecisionsService {
+  constructor(
+    private readonly repository: DecisionsRepository,
+    private readonly topics: TopicsRepository,
+    private readonly conversations: ConversationsRepository,
+    private readonly documents: DocumentsRepository,
+  ) {}
+
+  async addDecision(
+    topicId: string,
+    decision: Decision,
+  ): Promise<{ id: string }> {
+    await this.topics.require(topicId);
+    await this.requireSupportingItems(decision.context.supporting_items);
+    await this.requireSupportingItems(decision.decision.supporting_items);
+    for (const alt of decision.alternative_options) {
+      await this.requireSupportingItems(alt.supporting_items);
+    }
+    await this.repository.ensureNotExists(decision.id);
+
+    await this.repository.insertDecisionNode(decision);
+    await this.repository.linkTopicToDecision(topicId, decision.id);
+
+    for (const item of decision.context.supporting_items) {
+      await this.linkSlotToItem(decision.id, { slot: "context" }, item);
+    }
+    for (const item of decision.decision.supporting_items) {
+      await this.linkSlotToItem(decision.id, { slot: "decision" }, item);
+    }
+
+    for (let i = 0; i < decision.alternative_options.length; i++) {
+      const alt = decision.alternative_options[i];
+      const altId = alternativeOptionNodeId(decision.id, i);
+      await this.repository.insertAlternativeOption(altId, i, alt);
+      await this.repository.linkDecisionToAlternative(decision.id, altId);
+      for (const item of alt.supporting_items) {
+        await this.linkAlternativeToItem(altId, item);
+      }
+    }
+    return { id: decision.id };
+  }
+
+  async addItemsToDecisionSlot(
+    decisionId: string,
+    slot: DecisionSupportSlot,
+    items: TopicItem[],
+  ): Promise<{ added: number }> {
+    await this.repository.requireDecision(decisionId);
+    if (slot.slot === "alternative") {
+      await this.repository.requireAlternative(decisionId, slot.alternative_index);
+    }
+    await this.requireSupportingItems(items);
+
+    for (const item of items) {
+      switch (slot.slot) {
+        case "alternative": {
+          const altId = alternativeOptionNodeId(decisionId, slot.alternative_index);
+          await this.linkAlternativeToItem(altId, item);
+          break;
+        }
+        case "context":
+        case "decision":
+          await this.linkSlotToItem(decisionId, slot, item);
+          break;
+        default:
+          assertNever(slot);
+      }
+    }
+    return { added: items.length };
+  }
+
+  async listDecisions(topicId: string | null): Promise<DecisionOverview[]> {
+    return this.repository.listDecisions(topicId);
+  }
+
+  async readDecision(decisionId: string): Promise<DecisionDetail | null> {
+    return this.repository.readDecision(decisionId);
+  }
+
+  private async linkAlternativeToItem(
+    altId: string,
+    item: TopicItem,
+  ): Promise<void> {
+    switch (item.type) {
+      case "idea_unit_ref": {
+        const iuId = ideaUnitNodeId(
+          item.conversation_id,
+          item.turn_index,
+          item.idea_unit_index,
+        );
+        await this.repository.linkAlternativeToIdeaUnit(altId, iuId);
+        return;
+      }
+      case "document_fragment_ref": {
+        const fragId = await this.documents.ensureFragmentNode(
+          item.document_id,
+          item.start_offset,
+          item.end_offset,
+        );
+        await this.repository.linkAlternativeToFragment(altId, fragId);
+        return;
+      }
+      default:
+        assertNever(item);
+    }
+  }
+
+  private async linkSlotToItem(
+    decisionId: string,
+    slot: DecisionSupportSlot,
+    item: TopicItem,
+  ): Promise<void> {
+    switch (item.type) {
+      case "idea_unit_ref": {
+        const iuId = ideaUnitNodeId(
+          item.conversation_id,
+          item.turn_index,
+          item.idea_unit_index,
+        );
+        await this.repository.linkDecisionSlotToIdeaUnit(decisionId, slot, iuId);
+        return;
+      }
+      case "document_fragment_ref": {
+        const fragId = await this.documents.ensureFragmentNode(
+          item.document_id,
+          item.start_offset,
+          item.end_offset,
+        );
+        await this.repository.linkDecisionSlotToFragment(decisionId, slot, fragId);
+        return;
+      }
+      default:
+        assertNever(item);
+    }
+  }
+
+  private async requireSupportingItems(items: TopicItem[]): Promise<void> {
+    for (const item of items) {
+      switch (item.type) {
+        case "idea_unit_ref":
+          await this.conversations.requireIdeaUnit(
+            item.conversation_id,
+            item.turn_index,
+            item.idea_unit_index,
+          );
+          break;
+        case "document_fragment_ref":
+          await this.documents.requireDocument(item.document_id);
+          break;
+        default:
+          assertNever(item);
+      }
+    }
+  }
+}

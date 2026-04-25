@@ -1,6 +1,7 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { z } from "zod";
-import { DatabaseService } from "../database/database.service.js";
+import { DatabaseService } from "../../database/database.service.js";
+import { SCHEMA_STATEMENTS } from "./schema.statements.js";
 
 export interface NodeTableSchema {
   name: string;
@@ -47,8 +48,8 @@ const ConnectionRowSchema = z.object({
 type ConnectionRow = z.infer<typeof ConnectionRowSchema>;
 
 @Injectable()
-export class GraphService {
-  private readonly logger = new Logger(GraphService.name);
+export class SchemaService implements OnModuleInit {
+  private readonly logger = new Logger(SchemaService.name);
 
   constructor(private readonly db: DatabaseService) {}
 
@@ -96,5 +97,12 @@ export class GraphService {
       `Schema: ${nodeTables.length} node tables, ${relTables.length} rel tables`,
     );
     return { nodeTables, relTables };
+  }
+
+  async onModuleInit(): Promise<void> {
+    for (const stmt of SCHEMA_STATEMENTS) {
+      await this.db.query(stmt);
+    }
+    this.logger.log("Knowledge graph schema initialized");
   }
 }

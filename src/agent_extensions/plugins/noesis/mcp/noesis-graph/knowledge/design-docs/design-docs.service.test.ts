@@ -13,11 +13,11 @@ import { mkdtempSync, rmSync } from "fs";
 import { writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { DatabaseService } from "../database/database.service.js";
-import { DATA_DIR } from "../config/config.module.js";
-import { DesignDocRepository } from "./design-doc.repository.js";
-import { DesignDocService } from "./design-doc.service.js";
-import type { DesignDoc } from "../../../shared-contracts/design-doc.js";
+import { DatabaseService } from "../../database/database.service.js";
+import { DATA_DIR } from "../../config/config.module.js";
+import { DesignDocsRepository } from "./design-docs.repository.js";
+import { DesignDocsService } from "./design-docs.service.js";
+import type { DesignDoc } from "../../../../shared-contracts/design-doc.js";
 
 const NODE_LABELS = [
   "DesignedScenario",
@@ -31,9 +31,9 @@ const NODE_LABELS = [
   "DesignDoc",
 ];
 
-describe("DesignDocService", () => {
+describe("DesignDocsService", () => {
   let module: TestingModule;
-  let service: DesignDocService;
+  let service: DesignDocsService;
   let db: DatabaseService;
   let tmpDir: string;
   let workDir: string;
@@ -43,14 +43,14 @@ describe("DesignDocService", () => {
     module = await Test.createTestingModule({
       providers: [
         DatabaseService,
-        DesignDocRepository,
-        DesignDocService,
+        DesignDocsRepository,
+        DesignDocsService,
         { provide: DATA_DIR, useValue: tmpDir },
       ],
     }).compile();
     await module.init();
     db = module.get(DatabaseService);
-    service = module.get(DesignDocService);
+    service = module.get(DesignDocsService);
     workDir = mkdtempSync(join(tmpdir(), "noesis-dd-work-"));
   });
 

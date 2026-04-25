@@ -11,16 +11,16 @@ import type {
   DesignedQualityAttribute,
   DesignedRule,
   DesignedScenario,
-} from "../../../shared-contracts/design-doc.js";
-import { DesignDocService } from "./design-doc.service.js";
+} from "../../../../shared-contracts/design-doc.js";
+import { DesignDocsService } from "./design-docs.service.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
-} from "../mcp-tool-output.js";
+} from "../../mcp-tool-output.js";
 
-export function registerDesignDocTools(
+export function registerDesignDocsTools(
   mcp: McpServer,
-  service: DesignDocService,
+  service: DesignDocsService,
 ): void {
   registerSaveDesignDoc(mcp, service);
   registerReadDesignDoc(mcp, service);
@@ -30,7 +30,7 @@ export function registerDesignDocTools(
 
 function registerSaveDesignDoc(
   mcp: McpServer,
-  service: DesignDocService,
+  service: DesignDocsService,
 ): void {
   mcp.registerTool(
     "save_design_doc",
@@ -62,7 +62,7 @@ function registerSaveDesignDoc(
 
 function registerReadDesignDoc(
   mcp: McpServer,
-  service: DesignDocService,
+  service: DesignDocsService,
 ): void {
   mcp.registerTool(
     "read_design_doc",
@@ -86,7 +86,7 @@ function registerReadDesignDoc(
 
 function registerListDesignDocs(
   mcp: McpServer,
-  service: DesignDocService,
+  service: DesignDocsService,
 ): void {
   mcp.registerTool(
     "list_design_docs",
@@ -107,7 +107,7 @@ function registerListDesignDocs(
 
 function registerDeleteDesignDoc(
   mcp: McpServer,
-  service: DesignDocService,
+  service: DesignDocsService,
 ): void {
   mcp.registerTool(
     "delete_design_doc",
