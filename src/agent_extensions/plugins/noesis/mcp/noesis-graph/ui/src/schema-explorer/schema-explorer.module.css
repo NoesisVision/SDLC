@@ -102,6 +102,12 @@
   color: var(--mantine-color-gray-0);
 }
 
+.popoverFloating {
+  position: fixed;
+  z-index: 50;
+  pointer-events: auto;
+}
+
 .popover {
   background-color: var(--mantine-color-dark-7);
   border: 1px solid var(--mantine-color-dark-4);
@@ -122,6 +128,12 @@
   padding: 12px 14px;
   border-bottom: 1px solid var(--mantine-color-dark-4);
   background-color: var(--mantine-color-dark-6);
+  cursor: grab;
+  user-select: none;
+}
+
+.popoverHeader:active {
+  cursor: grabbing;
 }
 
 .popoverSwatch {

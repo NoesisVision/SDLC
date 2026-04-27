@@ -6,12 +6,11 @@ import {
   Controls,
   MarkerType,
   MiniMap,
-  NodeToolbar,
-  Position,
   ReactFlow,
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useViewport,
   type Edge,
   type EdgeTypes,
   type Node,
@@ -50,6 +49,7 @@ const REL_VERBS = new Set([
   "LINKED",
   "CONNECTED",
 ]);
+const REL_PREPOSITIONS = new Set(["BY", "TO", "OF", "ON", "WITH", "FROM"]);
 
 export function SchemaExplorerPage() {
   const [schema, setSchema] = useState<SchemaExplorerData | null>(null);
@@ -250,22 +250,111 @@ function SchemaExplorerCanvas({ schema }: { schema: SchemaExplorerData }) {
           maskColor="rgba(0,0,0,0.7)"
           style={{ backgroundColor: "var(--mantine-color-dark-7)" }}
         />
-        {popupAnchor !== null && (
-          <NodeToolbar
-            nodeId={popupAnchor}
-            isVisible
-            position={Position.Right}
-            offset={16}
-          >
-            <SelectionPopup
-              selection={selection}
-              nodeIndex={nodeIndex}
-              edgeIndex={edgeIndex}
-              onClose={closePopup}
-            />
-          </NodeToolbar>
-        )}
       </ReactFlow>
+      <DraggableSelectionPopup
+        anchorNodeId={popupAnchor}
+        selection={selection}
+        nodeIndex={nodeIndex}
+        edgeIndex={edgeIndex}
+        onClose={closePopup}
+      />
+    </div>
+  );
+}
+
+function DraggableSelectionPopup({
+  anchorNodeId,
+  selection,
+  nodeIndex,
+  edgeIndex,
+  onClose,
+}: {
+  anchorNodeId: string | null;
+  selection: SelectionRef;
+  nodeIndex: Map<string, NodeTableSchema>;
+  edgeIndex: Map<string, RelTableSchema>;
+  onClose: () => void;
+}) {
+  const { getNode, flowToScreenPosition } = useReactFlow();
+  const viewport = useViewport();
+  const [flowPosition, setFlowPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (anchorNodeId === null) {
+      setFlowPosition(null);
+      return;
+    }
+    const node = getNode(anchorNodeId);
+    if (node === undefined) {
+      setFlowPosition(null);
+      return;
+    }
+    const screenGap = 16;
+    setFlowPosition({
+      x: node.position.x + NODE_DIAMETER + screenGap / viewport.zoom,
+      y: node.position.y,
+    });
+    // Initial position only depends on anchor change; viewport intentionally
+    // omitted so panning while a popup is open doesn't reset its position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorNodeId, getNode]);
+
+  const screenPosition = useMemo(() => {
+    if (flowPosition === null) return null;
+    return flowToScreenPosition(flowPosition);
+    // viewport included so we recompute on pan/zoom.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowPosition, viewport, flowToScreenPosition]);
+
+  const onHeaderPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (flowPosition === null) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-no-drag]") !== null) return;
+      event.preventDefault();
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
+      const startFlowX = flowPosition.x;
+      const startFlowY = flowPosition.y;
+      const dragZoom = viewport.zoom;
+
+      const onMove = (ev: PointerEvent) => {
+        setFlowPosition({
+          x: startFlowX + (ev.clientX - startClientX) / dragZoom,
+          y: startFlowY + (ev.clientY - startClientY) / dragZoom,
+        });
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    [flowPosition, viewport.zoom],
+  );
+
+  if (anchorNodeId === null || selection === null || screenPosition === null) {
+    return null;
+  }
+
+  return (
+    <div
+      className={classes.popoverFloating}
+      style={{ left: screenPosition.x, top: screenPosition.y }}
+    >
+      <SelectionPopup
+        selection={selection}
+        nodeIndex={nodeIndex}
+        edgeIndex={edgeIndex}
+        onClose={onClose}
+        onHeaderPointerDown={onHeaderPointerDown}
+      />
     </div>
   );
 }
@@ -275,23 +364,29 @@ function SelectionPopup({
   nodeIndex,
   edgeIndex,
   onClose,
+  onHeaderPointerDown,
 }: {
   selection: SelectionRef;
   nodeIndex: Map<string, NodeTableSchema>;
   edgeIndex: Map<string, RelTableSchema>;
   onClose: () => void;
+  onHeaderPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
 }) {
   const content = renderSelection(selection, nodeIndex, edgeIndex);
   if (content === null) return null;
   return (
     <div className={classes.popover}>
-      <div className={classes.popoverHeader}>
+      <div
+        className={classes.popoverHeader}
+        onPointerDown={onHeaderPointerDown}
+      >
         {content.swatch}
         <div className={classes.popoverTitle}>
           <span className={classes.popoverKindLabel}>{content.kindLabel}</span>
           <span className={classes.popoverName}>{content.name}</span>
         </div>
         <ActionIcon
+          data-no-drag
           variant="subtle"
           color="gray"
           size="sm"
@@ -743,8 +838,13 @@ function mulberry32(seed: number): () => number {
 function formatRelLabel(name: string): string {
   const parts = name.split("_");
   const verbIdx = parts.findIndex((p) => REL_VERBS.has(p));
-  const startIdx = verbIdx >= 0 ? verbIdx : 0;
-  return parts.slice(startIdx).join(" ").toLowerCase();
+  if (verbIdx < 0) return parts.join(" ").toLowerCase();
+  const phrase = [parts[verbIdx]];
+  const next = parts[verbIdx + 1];
+  if (next !== undefined && REL_PREPOSITIONS.has(next)) {
+    phrase.push(next);
+  }
+  return phrase.join(" ").toLowerCase();
 }
 
 function formatTableName(name: string): string {
