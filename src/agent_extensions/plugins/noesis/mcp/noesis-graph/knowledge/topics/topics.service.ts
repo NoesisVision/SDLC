@@ -96,6 +96,17 @@ export class TopicsService {
     return { id: topic.id };
   }
 
+  generateTopicIds(count: number): { ids: string[] } {
+    if (!Number.isInteger(count) || count < 1 || count > 50) {
+      throw new Error(
+        `count must be an integer between 1 and 50; received ${count}`,
+      );
+    }
+    const ids: string[] = [];
+    for (let i = 0; i < count; i++) ids.push(randomUUID());
+    return { ids };
+  }
+
   async addTopic(input: AddTopicInput): Promise<{ id: string }> {
     const topic = toNewTopic(input);
     await this.repository.ensureNotExists(topic.id);

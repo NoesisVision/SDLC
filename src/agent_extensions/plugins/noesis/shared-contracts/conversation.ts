@@ -47,6 +47,14 @@ export const IdeaUnitDetailSchema = z.object({
 });
 export type IdeaUnitDetail = z.infer<typeof IdeaUnitDetailSchema>;
 
+export const EnrichedSubtopicSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  short_summary: z.string(),
+  reviewed: z.boolean(),
+});
+export type EnrichedSubtopic = z.infer<typeof EnrichedSubtopicSchema>;
+
 export const EnrichedTopicSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -54,6 +62,7 @@ export const EnrichedTopicSchema = z.object({
   long_summary: z.string(),
   conversation_id: z.string(),
   idea_units: z.array(IdeaUnitDetailSchema),
+  subtopics: z.array(EnrichedSubtopicSchema),
 });
 export type EnrichedTopic = z.infer<typeof EnrichedTopicSchema>;
 
@@ -100,6 +109,19 @@ export function formatEnrichedTopicMarkdown(topic: EnrichedTopic): string {
     lines.push(`- **Long summary:** ${topic.long_summary}`);
   }
   lines.push("");
+
+  if (topic.subtopics.length > 0) {
+    lines.push("## Subtopics");
+    lines.push("");
+    for (const sub of topic.subtopics) {
+      const summary = sub.reviewed && sub.short_summary !== ""
+        ? sub.short_summary
+        : "_(pending review)_";
+      lines.push(`- **${sub.title}** — ${summary}`);
+    }
+    lines.push("");
+  }
+
   lines.push("## Idea Units");
   lines.push("");
 

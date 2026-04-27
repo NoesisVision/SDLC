@@ -112,8 +112,9 @@ describe("DocumentsService", () => {
           id: "existing-dec-1",
           title: "Existing decision",
           status: "accepted",
-          context: { text: "", supporting_items: [] },
-          decision: { text: "", rationale: "", supporting_items: [] },
+          referenced_items: [],
+          context: { text: "", supporting_item_indices: [] },
+          decision: { text: "", rationale: "", supporting_item_indices: [] },
           alternative_options: [],
         });
 
@@ -170,11 +171,12 @@ describe("DocumentsService", () => {
                   id: "new-dec-1",
                   title: "New decision",
                   status: "accepted",
-                  context: { text: "ctx", supporting_items: [] },
+                  referenced_items: [],
+                  context: { text: "ctx", supporting_item_indices: [] },
                   decision: {
                     text: "do it",
                     rationale: "because",
-                    supporting_items: [],
+                    supporting_item_indices: [],
                   },
                   alternative_options: [],
                 },

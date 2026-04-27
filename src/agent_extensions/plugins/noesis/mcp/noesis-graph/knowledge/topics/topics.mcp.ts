@@ -33,10 +33,36 @@ export function registerTopicsTools(
   registerAddSubtopic(mcp, topics);
   registerReparentTopic(mcp, topics);
   registerAddItemsToTopic(mcp, topics);
+  registerGenerateTopicIds(mcp, topics);
   registerListTopics(mcp, topics);
   registerReadTopic(mcp, topics);
   registerListTopicSummariesForSources(mcp, topics);
   registerListTopicItemsSince(mcp, topics);
+}
+
+function registerGenerateTopicIds(
+  mcp: McpServer,
+  topics: TopicsService,
+): void {
+  mcp.registerTool(
+    "generate_topic_ids",
+    {
+      description:
+        "Generate fresh Topic UUIDs for the agent to use when authoring new topics in output.json. " +
+        "Pure function — no graph mutation. Use during analyze-conversation Step 3 once the count of " +
+        "new topics is known. Returns { ids: string[] }.",
+      inputSchema: {
+        count: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .describe("Number of UUIDs to generate (1–50)."),
+      },
+    },
+    async ({ count }) =>
+      runInlineJsonTool(() => Promise.resolve(topics.generateTopicIds(count))),
+  );
 }
 
 function registerAddItemsToTopic(

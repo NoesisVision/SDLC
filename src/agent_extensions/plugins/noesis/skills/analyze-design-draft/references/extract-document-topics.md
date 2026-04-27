@@ -4,7 +4,7 @@ Used by `noesis:analyze-design-draft` Step 3.
 
 ## Inputs
 
-- `<cleaned_path>` — the cleaned source document (Markdown). Use it to read fragment content in context.
+- `<document_path>` — the source document (Markdown). Use it to read fragment content in context. The prep script does not modify the source and does not write a sidecar copy — fragment offsets refer directly to this file.
 - `<analysis_path>` — `analysis.json`. The `fragments` array is pre-populated by the prep script:
   ```json
   {

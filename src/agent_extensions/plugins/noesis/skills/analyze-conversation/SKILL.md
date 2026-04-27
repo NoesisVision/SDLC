@@ -11,7 +11,7 @@ The main agent does the reasoning. Use the Read tool freely to load as much (or 
 
 Get from `$ARGUMENTS`, ask the user if missing:
 
-- **transcript_path** — absolute path to the raw transcript Markdown.
+- **transcript_path** — absolute path to the raw transcript Markdown. If the value is not absolute or the file does not exist at the given path, resolve it via Glob (`**/<basename>`) within the current working directory; if multiple matches exist, ask the user which one. Do not extend `prepare.ts` with a search step — the script remains a strict file consumer.
 - **conversation_time** — `YYYY-MM-DD HH:MM:SS`.
 - **main_topic** — short description of the conversation's subject.
 
@@ -65,8 +65,8 @@ Read `<cleaned_path>` (Read tool — windowing is up to you). Edit `<working_dir
 
 - `conversation_id`, `time`, `main_topic` — already set from Step 1.
 - `turns` — one `Turn` per cleaned-md `### [N] <time> — <speaker>` block. Group consecutive sentences within a turn into idea units, assign categories. `IdeaUnit` shape: `{ index, sentences, categories }`.
-- `topics` — list of `Topic` objects covering all non-Irrelevant idea units. Reuse existing topics from `output.json:potential_topics` when they fit; only create new topics when nothing existing fits. Each `Topic`: `{ id, title, short_summary: "", long_summary: "", items: [IdeaUnitRef, ...], decisions: [], reviewed: false, decisions_extracted: false }`. Use a fresh UUID for new topics. Leave summaries empty — they are produced in Step 4.
-- For new topics that should sit under an existing parent, append the new entry to `output.json:potential_topics.topics` with `is_new: true` and `parent_id: <existing parent id>` so the merge step can wire the parent.
+- `topics` — list of `Topic` objects covering all non-Irrelevant idea units. Reuse existing topics from `output.json:potential_topics` when they fit; only create new topics when nothing existing fits. Each `Topic`: `{ id, title, short_summary: "", long_summary: "", items: [IdeaUnitRef, ...], decisions: [], reviewed: false, decisions_extracted: false }`. For new topics, call MCP tool `noesis-graph:generate_topic_ids` with `{ "count": <number of new topics> }` once you know how many you need; use the returned ids. Leave summaries empty — they are produced in Step 4.
+- For every newly-created topic, append an entry to `output.json:potential_topics.topics` with `is_new: true`. Set `parent_id` to the existing parent's id, or to `null` if the topic is a new root. The `id` MUST match the corresponding `conversation.topics[].id`.
 
 `IdeaUnitRef`: `{ "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": N, "idea_unit_index": N }`.
 

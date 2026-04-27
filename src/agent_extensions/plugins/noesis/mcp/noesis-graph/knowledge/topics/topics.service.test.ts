@@ -46,6 +46,25 @@ describe("TopicsService", () => {
     await clearGraph(ctx.db);
   });
 
+  describe("generateTopicIds", () => {
+    test("returns the requested number of unique UUIDs", () => {
+      const { ids } = topics.generateTopicIds(5);
+      expect(ids).toHaveLength(5);
+      expect(new Set(ids).size).toBe(5);
+      for (const id of ids) {
+        expect(id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        );
+      }
+    });
+
+    test("rejects counts outside the [1, 50] range", () => {
+      expect(() => topics.generateTopicIds(0)).toThrow();
+      expect(() => topics.generateTopicIds(51)).toThrow();
+      expect(() => topics.generateTopicIds(1.5)).toThrow();
+    });
+  });
+
   describe("addTopic", () => {
     test("creates a top-level topic with provided id", async () => {
       const { id } = await topics.addTopic({

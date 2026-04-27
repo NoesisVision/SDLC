@@ -17,6 +17,11 @@ Used by `noesis:analyze-conversation` Step 4.
 - **Summary:** <short_summary>
 - **Long summary:** <long_summary>
 
+## Subtopics
+
+- **<child title>** — <child short_summary>
+- **<child title>** — _(pending review)_
+
 ## Idea Units
 
 ### [T<turn_index>:IU<idea_unit_index>] <HH:MM:SS> — <speaker> [<categories>]
@@ -29,15 +34,25 @@ Use `[prior conversation]` units as context, but never reassign or modify them �
 
 `Irrelevant`-only idea units are already filtered out.
 
+The `## Subtopics` block lists the topic's direct children with their finalized `short_summary`. Topics are returned by the server in **post-order** (leaves first, parents last), so by the time you review a parent every child summary is final. A child rendered as `_(pending review)_` only appears in degenerate cases (e.g. an orphan that the post-order skipped); treat it as missing context.
+
+The `## Subtopics` block is omitted when the topic has no children.
+
 ## Coherence check
 
-Validate that each current-conversation idea unit truly belongs to this topic. A reassignment is justified ONLY when the mismatch is clear AND another existing topic in `potential_topics.json` is a better match. When in doubt, keep the unit where it is.
+Validate that each current-conversation idea unit truly belongs to this topic. A reassignment is justified ONLY when the mismatch is clear AND another existing topic in `output.json:potential_topics.topics` is a better match. When in doubt, keep the unit where it is.
 
-If a current-conversation unit fits no existing topic, create a new topic (placeholder UUID, `is_new: true`, sensible `parent_id`, path) and append it to `potential_topics.json` — then remove the unit from this topic's `items` and add it to the new topic's `items` (in `conversation.json`).
+If a current-conversation unit fits no existing topic, create a new topic — call `noesis-graph:generate_topic_ids` with `{ "count": 1 }` for its id, set `is_new: true`, sensible `parent_id`, and `path` — and append it to `output.json:potential_topics.topics`. Then remove the unit from this topic's `items` and add it to the new topic's `items` (in `conversation.topics[]`).
 
 ## Summaries
 
-Always regenerate both summaries from ALL idea units (current + prior). If you reassigned units away, recompute on the remaining set. If after reassignment only `[prior conversation]` units remain, set both summaries to empty strings.
+Both summaries are always regenerated. The exact rule depends on the topic's shape:
+
+- **Topic with idea units, no subtopics.** Summaries come from those idea units (current + prior).
+- **Topic with subtopics, no own idea units (a "container" topic).** Both `short_summary` and `long_summary` are written from the children's summaries listed in the `## Subtopics` block — synthesise an umbrella view that names the area covered and what the child topics contribute. Never leave a container's summaries empty.
+- **Topic with both.** Start from the topic's own idea units, then weave in the children's contributions where they extend or qualify the picture. The children's summaries are context to take into account, not a separate section to glue on.
+
+If you reassigned units away, recompute on the remaining set. If after reassignment only `[prior conversation]` units remain and the topic has no subtopics, set both summaries to empty strings.
 
 - **`short_summary`** — max 3 sentences. Optimize for search: subject, scope, distinguishing aspect. An LLM should be able to judge query relevance from this alone.
 - **`long_summary`** — 10–20 sentences. Knowledge for coding agents preparing design docs. Cover:
@@ -65,25 +80,33 @@ A `Decision` proposed early but later overturned is an **alternative**, not the 
 
 ### Decision shape
 
+Do not set `id`. The server fills it during merge.
+
+Each `Decision` lists every cited idea unit once in `referenced_items`; the slots reference those items by index. Do not repeat the same `IdeaUnitRef` across slots; do not include items that no slot references.
+
 ```json
 {
-  "id": "<uuid>",
   "title": "Short descriptive title",
-  "status": "accepted" | "proposed",
+  "status": "accepted",
+  "referenced_items": [
+    { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 26, "idea_unit_index": 0 },
+    { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 27, "idea_unit_index": 1 },
+    { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 28, "idea_unit_index": 0 }
+  ],
   "context": {
     "text": "1–2 sentence problem statement",
-    "supporting_items": [ IdeaUnitRef, ... ]
+    "supporting_item_indices": [0]
   },
   "decision": {
     "text": "What was decided",
     "rationale": "Why",
-    "supporting_items": [ IdeaUnitRef, ... ]
+    "supporting_item_indices": [1, 2]
   },
   "alternative_options": [
     {
       "text": "Rejected option",
       "rationale": "Why considered, why rejected",
-      "supporting_items": [ IdeaUnitRef, ... ]
+      "supporting_item_indices": [0]
     }
   ]
 }
@@ -97,9 +120,9 @@ A `Decision` proposed early but later overturned is an **alternative**, not the 
 
 Keep `context.text`, `decision.text`, `rationale` to 1–2 sentences each.
 
-## Updating conversation.json
+## Updating output.json
 
-After processing one topic, edit `<working_dir>/conversation.json` (Edit tool). For the topic with this `topic_id` set:
+After processing one topic, edit `<working_dir>/output.json` (Edit tool). For the topic with this `topic_id` under `conversation.topics[]` set:
 
 - `short_summary`, `long_summary` — generated above.
 - `decisions` — array of `Decision` (may be `[]`).

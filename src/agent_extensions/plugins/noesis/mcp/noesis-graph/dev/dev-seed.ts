@@ -602,14 +602,15 @@ async function seedKnowledgeData(
     id: DECISION_ID,
     title: "Adopt repository pattern",
     status: "accepted",
+    referenced_items: [],
     context: {
       text: "Aggregates currently leak persistence concerns into the domain layer.",
-      supporting_items: [],
+      supporting_item_indices: [],
     },
     decision: {
       text: "Introduce a repository per aggregate.",
       rationale: "Keeps aggregates pure and easier to test.",
-      supporting_items: [],
+      supporting_item_indices: [],
     },
     alternative_options: [],
   });
@@ -619,7 +620,7 @@ async function seedKnowledgeData(
   await decisionsRepo.insertAlternativeOption(altId, 0, {
     text: "Inline ORM calls inside aggregates.",
     rationale: "Less indirection but couples domain to persistence.",
-    supporting_items: [],
+    supporting_item_indices: [],
   });
   await decisionsRepo.linkDecisionToAlternative(DECISION_ID, altId);
 

@@ -20,9 +20,9 @@ const SlotSchema = z
   .enum(["context", "decision", "alternative"])
   .describe(
     "Which supporting-items slot on the Decision to attach items to. " +
-      "'context' = context.supporting_items, " +
-      "'decision' = decision.supporting_items, " +
-      "'alternative' = alternative_options[alternative_index].supporting_items.",
+      "'context' = context slot, " +
+      "'decision' = decision slot, " +
+      "'alternative' = alternative_options[alternative_index] slot.",
   );
 
 export function registerDecisionsTools(

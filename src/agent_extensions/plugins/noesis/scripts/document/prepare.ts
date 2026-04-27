@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { randomUUID } from "crypto";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
@@ -19,7 +19,6 @@ interface PrepareResult {
   status: "Ok";
   working_dir: string;
   document_id: string;
-  cleaned_path: string;
   output_path: string;
   section_tree_path: string;
   num_fragments: number;
@@ -35,34 +34,21 @@ interface PrepareOptions {
 
 // --- Public functions ---
 
-export function buildCleanedMarkdown(documentId: string, content: string): string {
-  const stripped = stripDocumentIdLine(content);
-  return `<!-- document_id: ${documentId} -->\n${stripped}`;
-}
-
-export function getCleanedPath(documentPath: string): string {
-  return documentPath.replace(/\.[^./]+$/, "") + "-cleaned.md";
-}
-
 export function prepareDocument(
   documentPath: string,
   title: string,
   date: string,
   options: PrepareOptions,
 ): PrepareResult {
-  const cleanedPath = getCleanedPath(documentPath);
-  const documentId = resolveDocumentId(documentPath, cleanedPath);
-
   const sourceContent = readFileSync(documentPath, "utf-8");
-  const cleanedContent = buildCleanedMarkdown(documentId, sourceContent);
-  writeFileSync(cleanedPath, cleanedContent, "utf-8");
+  const documentId = resolveDocumentId(sourceContent);
 
   const resolvedTitle =
     title.trim() !== ""
       ? title
-      : extractTitleFromContent(cleanedContent) ?? defaultTitle(documentPath);
+      : extractTitleFromContent(sourceContent) ?? defaultTitle(documentPath);
 
-  const { fragments, section_tree } = fragmentMarkdown(cleanedContent);
+  const { fragments, section_tree } = fragmentMarkdown(sourceContent);
 
   const baseDir = options.workingDirBase ?? resolveScriptTmpDir();
   const workingDir = join(baseDir, `noesis-doc-${documentId}`);
@@ -73,7 +59,7 @@ export function prepareDocument(
       id: documentId,
       title: resolvedTitle,
       date,
-      content: cleanedContent,
+      content: sourceContent,
     },
     fragments,
     section_tree,
@@ -101,7 +87,6 @@ export function prepareDocument(
     status: "Ok",
     working_dir: workingDir,
     document_id: documentId,
-    cleaned_path: cleanedPath,
     output_path: outputPath,
     section_tree_path: sectionTreePath,
     num_fragments: fragments.length,
@@ -127,28 +112,11 @@ function extractTitleFromContent(content: string): string | null {
   return null;
 }
 
-function readIdFromHeader(path: string): string | null {
-  if (!existsSync(path)) return null;
-  const firstLine = readFileSync(path, "utf-8").split("\n", 1)[0];
+function resolveDocumentId(sourceContent: string): string {
+  const firstLine = sourceContent.split("\n", 1)[0];
   const match = DOCUMENT_ID_PATTERN.exec(firstLine);
-  return match !== null ? match[1] : null;
-}
-
-function resolveDocumentId(documentPath: string, cleanedPath: string): string {
-  const fromCleaned = readIdFromHeader(cleanedPath);
-  if (fromCleaned !== null) return fromCleaned;
-  const fromSource = readIdFromHeader(documentPath);
-  if (fromSource !== null) return fromSource;
+  if (match !== null) return match[1];
   return randomUUID();
-}
-
-function stripDocumentIdLine(content: string): string {
-  const newlineIndex = content.indexOf("\n");
-  const firstLine = newlineIndex === -1 ? content : content.slice(0, newlineIndex);
-  if (DOCUMENT_ID_PATTERN.test(firstLine)) {
-    return newlineIndex === -1 ? "" : content.slice(newlineIndex + 1);
-  }
-  return content;
 }
 
 // --- Entry point ---

@@ -5,7 +5,7 @@ description: Analyze a software design draft (Markdown document) and integrate i
 
 # Analyze Design Draft
 
-The main agent does the reasoning. Use the Read tool freely to load as much (or as little) of the cleaned document as you need to keep output quality high — full document, partial windows, overlapping re-reads — that judgement is yours. The knowledge graph lives in the `noesis-graph` MCP server. Persist via the dedicated tools — `save_design_doc` for the design model (Step 6) and `merge_document` for topics, fragments, decisions, and attachments (Step 7) — never write graph data directly.
+The main agent does the reasoning. Use the Read tool freely to load as much (or as little) of the source document as you need to keep output quality high — full document, partial windows, overlapping re-reads — that judgement is yours. The knowledge graph lives in the `noesis-graph` MCP server. Persist via the dedicated tools — `save_design_doc` for the design model (Step 6) and `merge_document` for topics, fragments, decisions, and attachments (Step 7) — never write graph data directly.
 
 A document is a **monologue**: one author, no off-topic noise. The atomic item is a `DocumentFragment` (offset range), not an idea unit. Headings are **hints** — the topic structure must respect existing graph topics first; promote a heading to a topic only when no existing topic fits.
 
@@ -32,7 +32,7 @@ Get from `$ARGUMENTS`, ask if missing:
 
 Run `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/document/prepare.ts <document_path> "<title>" "<date>"` plus optional flags `--design_doc_id <id>` or `--design_doc_title <title>`.
 
-The script generates a stable `document_id`, writes `<document>-cleaned.md` next to the source (with the id stamped at the top), parses Markdown into a section tree + fragment list (with offsets), creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], potential_topics: { topics: [] }, design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md`.
+The script generates a `document_id` (or reuses one stamped in the source's first line as `<!-- document_id: X -->`), parses the source Markdown into a section tree + fragment list (with offsets against the raw source), creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], potential_topics: { topics: [] }, design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md`. The source file is **not** modified and **no** sidecar file is written next to it.
 
 It returns:
 ```json
@@ -40,7 +40,6 @@ It returns:
   "status": "Ok",
   "working_dir": "<absolute path returned by the script>",
   "document_id": "<id>",
-  "cleaned_path": "<document>-cleaned.md",
   "output_path": "<working_dir>/output.json",
   "section_tree_path": "<working_dir>/section_tree.md",
   "num_fragments": <n>,
@@ -77,7 +76,7 @@ Identify topics in the graph already covering the document's subject area, so St
 
 Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/extract-document-topics.md`.
 
-Prefer `<section_tree_path>` for structural questions and selective fragment reads from `<output_path>` for content questions. Only read `<cleaned_path>` end-to-end when you need flowing narrative across sections; otherwise an end-to-end read of a 50 KB document is wasted work.
+Prefer `<section_tree_path>` for structural questions and selective fragment reads from `<output_path>` for content questions. Only read `<document_path>` (the source) end-to-end when you need flowing narrative across sections; otherwise an end-to-end read of a 50 KB document is wasted work.
 
 Read `<output_path>` to see the fragment list (under `fragments`) with `index`, `start_offset`, `end_offset`, `section_path`, `kind`, `text`.
 
@@ -135,7 +134,7 @@ Report `topics_added`, `topics_updated`, `decisions_added`, and `decision_attach
 
 ## Rules
 
-- Read tool is fine for `<cleaned_path>`, `<output_path>`, `<section_tree_path>`, `<design_doc_path>`, and any path returned by an MCP tool. Do not browse the working dir for other files.
+- Read tool is fine for `<document_path>` (the source), `<output_path>`, `<section_tree_path>`, `<design_doc_path>`, and any path returned by an MCP tool. Do not browse the working dir for other files.
 - Persist graph state only via `noesis-graph` MCP tools. Edit `output.json` / write the design doc JSON to `<design_doc_path>` with Edit/Write.
 - Do NOT load `references/design-doc-schema.md` unless Step 6 is actually entered — it is large.
 - Generate all titles, summaries, and free-text fields in the same language as the source document.

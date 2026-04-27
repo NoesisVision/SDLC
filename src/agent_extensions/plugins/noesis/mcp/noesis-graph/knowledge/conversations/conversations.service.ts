@@ -8,6 +8,7 @@ import {
   isIrrelevant,
   resolveIdeaUnitDetail,
   type Conversation,
+  type EnrichedSubtopic,
   type EnrichedTopic,
   type IdeaUnitDetail,
   type IdeaUnitRef,
@@ -70,8 +71,13 @@ export class ConversationsService {
   async getTopicForReview(
     outputPath: string,
   ): Promise<TopicForReview | null> {
-    const { conversation } = await this.readOutputFile(outputPath);
-    const topic = conversation.topics.find((t) => !t.reviewed) ?? null;
+    const output = await this.readOutputFile(outputPath);
+    const { conversation } = output;
+    const order = postOrderTopicIds(
+      conversation.topics,
+      output.potential_topics.topics,
+    );
+    const topic = pickNextUnreviewed(conversation.topics, order);
     if (topic === null) return null;
 
     const currentTurnMap = buildTurnMap(conversation.turns);
@@ -108,6 +114,12 @@ export class ConversationsService {
       details.push(prior);
     }
 
+    const subtopics = collectSubtopics(
+      topic.id,
+      conversation.topics,
+      output.potential_topics.topics,
+    );
+
     const enriched: EnrichedTopic = {
       id: topic.id,
       title: topic.title,
@@ -115,6 +127,7 @@ export class ConversationsService {
       long_summary: topic.long_summary,
       conversation_id: conversation.conversation_id,
       idea_units: details,
+      subtopics,
     };
 
     return {
@@ -225,12 +238,14 @@ export class ConversationsService {
   }
 }
 
-function countIdeaUnits(conversation: Conversation): number {
-  return conversation.turns.reduce((sum, t) => sum + t.idea_units.length, 0);
-}
-
-function itemKey(item: IdeaUnitRef): string {
-  return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
+function buildParentLookup(
+  potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
+): Map<string, string | null> {
+  const map = new Map<string, string | null>();
+  for (const t of potentialTopics) {
+    map.set(t.id, t.parent_id);
+  }
+  return map;
 }
 
 function buildParentMap(
@@ -241,4 +256,77 @@ function buildParentMap(
     if (t.is_new) map.set(t.id, t.parent_id);
   }
   return map;
+}
+
+function collectSubtopics(
+  parentId: string,
+  topics: Conversation["topics"],
+  potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
+): EnrichedSubtopic[] {
+  const parents = buildParentLookup(potentialTopics);
+  const subtopics: EnrichedSubtopic[] = [];
+  for (const t of topics) {
+    if ((parents.get(t.id) ?? null) !== parentId) continue;
+    subtopics.push({
+      id: t.id,
+      title: t.title,
+      short_summary: t.short_summary,
+      reviewed: t.reviewed,
+    });
+  }
+  return subtopics;
+}
+
+function countIdeaUnits(conversation: Conversation): number {
+  return conversation.turns.reduce((sum, t) => sum + t.idea_units.length, 0);
+}
+
+function itemKey(item: IdeaUnitRef): string {
+  return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
+}
+
+function pickNextUnreviewed(
+  topics: Conversation["topics"],
+  order: string[],
+): Conversation["topics"][number] | null {
+  const byId = new Map(topics.map((t) => [t.id, t] as const));
+  for (const id of order) {
+    const topic = byId.get(id);
+    if (topic !== undefined && !topic.reviewed) return topic;
+  }
+  return null;
+}
+
+function postOrderTopicIds(
+  topics: Conversation["topics"],
+  potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
+): string[] {
+  const idSet = new Set(topics.map((t) => t.id));
+  const parents = buildParentLookup(potentialTopics);
+  const childrenByParent = new Map<string, string[]>();
+  const roots: string[] = [];
+  for (const t of topics) {
+    const declaredParent = parents.get(t.id) ?? null;
+    const effectiveParent =
+      declaredParent !== null && idSet.has(declaredParent) ? declaredParent : null;
+    if (effectiveParent === null) {
+      roots.push(t.id);
+      continue;
+    }
+    const siblings = childrenByParent.get(effectiveParent) ?? [];
+    siblings.push(t.id);
+    childrenByParent.set(effectiveParent, siblings);
+  }
+
+  const out: string[] = [];
+  const visited = new Set<string>();
+  function visit(id: string): void {
+    if (visited.has(id)) return;
+    visited.add(id);
+    for (const child of childrenByParent.get(id) ?? []) visit(child);
+    out.push(id);
+  }
+  for (const root of roots) visit(root);
+  for (const t of topics) visit(t.id);
+  return out;
 }

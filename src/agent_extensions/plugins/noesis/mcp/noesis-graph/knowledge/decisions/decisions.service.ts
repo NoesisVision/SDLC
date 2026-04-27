@@ -38,21 +38,25 @@ export class DecisionsService {
     decision: Decision,
   ): Promise<{ id: string }> {
     await this.topics.require(topicId);
-    await this.requireSupportingItems(decision.context.supporting_items);
-    await this.requireSupportingItems(decision.decision.supporting_items);
-    for (const alt of decision.alternative_options) {
-      await this.requireSupportingItems(alt.supporting_items);
-    }
+    await this.requireSupportingItems(decision.referenced_items);
     await this.repository.ensureNotExists(decision.id);
 
     await this.repository.insertDecisionNode(decision);
     await this.repository.linkTopicToDecision(topicId, decision.id);
 
-    for (const item of decision.context.supporting_items) {
-      await this.linkSlotToItem(decision.id, { slot: "context" }, item);
+    for (const i of decision.context.supporting_item_indices) {
+      await this.linkSlotToItem(
+        decision.id,
+        { slot: "context" },
+        decision.referenced_items[i],
+      );
     }
-    for (const item of decision.decision.supporting_items) {
-      await this.linkSlotToItem(decision.id, { slot: "decision" }, item);
+    for (const i of decision.decision.supporting_item_indices) {
+      await this.linkSlotToItem(
+        decision.id,
+        { slot: "decision" },
+        decision.referenced_items[i],
+      );
     }
 
     for (let i = 0; i < decision.alternative_options.length; i++) {
@@ -60,8 +64,8 @@ export class DecisionsService {
       const altId = alternativeOptionNodeId(decision.id, i);
       await this.repository.insertAlternativeOption(altId, i, alt);
       await this.repository.linkDecisionToAlternative(decision.id, altId);
-      for (const item of alt.supporting_items) {
-        await this.linkAlternativeToItem(altId, item);
+      for (const idx of alt.supporting_item_indices) {
+        await this.linkAlternativeToItem(altId, decision.referenced_items[idx]);
       }
     }
     return { id: decision.id };

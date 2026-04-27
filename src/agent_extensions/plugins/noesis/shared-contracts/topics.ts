@@ -11,28 +11,62 @@ export type TopicItem = IdeaUnitRef | DocumentFragmentRef;
 
 export const DecisionContextSchema = z.object({
   text: z.string(),
-  supporting_items: z.array(TopicItemSchema),
+  supporting_item_indices: z.array(z.number().int().nonnegative()),
 });
 export type DecisionContext = z.infer<typeof DecisionContextSchema>;
 
 export const DecisionOptionSchema = z.object({
   text: z.string(),
   rationale: z.string(),
-  supporting_items: z.array(TopicItemSchema),
+  supporting_item_indices: z.array(z.number().int().nonnegative()),
 });
 export type DecisionOption = z.infer<typeof DecisionOptionSchema>;
 
 export const DecisionStatusSchema = z.enum(["accepted", "proposed"]);
 export type DecisionStatus = z.infer<typeof DecisionStatusSchema>;
 
-export const DecisionSchema = z.object({
-  id: z.string().default(() => randomUUID()),
-  title: z.string(),
-  status: DecisionStatusSchema,
-  context: DecisionContextSchema,
-  decision: DecisionOptionSchema,
-  alternative_options: z.array(DecisionOptionSchema),
-});
+export const DecisionSchema = z
+  .object({
+    id: z.string().default(() => randomUUID()),
+    title: z.string(),
+    status: DecisionStatusSchema,
+    referenced_items: z.array(TopicItemSchema),
+    context: DecisionContextSchema,
+    decision: DecisionOptionSchema,
+    alternative_options: z.array(DecisionOptionSchema),
+  })
+  .superRefine((decision, ctx) => {
+    const max = decision.referenced_items.length;
+    function checkIndices(indices: number[], path: (string | number)[]): void {
+      for (let i = 0; i < indices.length; i++) {
+        const idx = indices[i];
+        if (idx >= max) {
+          ctx.addIssue({
+            code: "custom",
+            path: [...path, i],
+            message:
+              `supporting_item_indices[${i}] = ${idx} is out of range; ` +
+              `referenced_items has length ${max}`,
+          });
+        }
+      }
+    }
+    checkIndices(decision.context.supporting_item_indices, [
+      "context",
+      "supporting_item_indices",
+    ]);
+    checkIndices(decision.decision.supporting_item_indices, [
+      "decision",
+      "supporting_item_indices",
+    ]);
+    for (let i = 0; i < decision.alternative_options.length; i++) {
+      checkIndices(decision.alternative_options[i].supporting_item_indices, [
+        "alternative_options",
+        i,
+        "supporting_item_indices",
+      ]);
+    }
+  });
 export type Decision = z.infer<typeof DecisionSchema>;
 
 export const TopicSchema = z.object({

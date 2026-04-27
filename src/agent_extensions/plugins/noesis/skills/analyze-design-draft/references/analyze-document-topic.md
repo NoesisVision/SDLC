@@ -85,25 +85,29 @@ Tangential mentions in coverage tables, recap sections, or table-of-contents ent
 
 The fragment introduces a decision arc not yet in the graph. Trace context (`Information`/`Position` fragments) and alternatives (`Position`/`Argument` fragments) within this topic. Build a `Decision`:
 
+Do not set `id`. The server fills it during merge.
+
+Each `Decision` lists every cited fragment once in `referenced_items`; the slots reference those fragments by index. Do not repeat the same `DocumentFragmentRef` across slots; do not include items that no slot references.
+
 ```json
 {
-  "id": "<uuid>",
   "title": "...",
   "status": "accepted" | "proposed",
+  "referenced_items": [ DocumentFragmentRef, ... ],
   "context": {
     "text": "1–2 sentence problem statement",
-    "supporting_items": [ DocumentFragmentRef, ... ]
+    "supporting_item_indices": [0, 1]
   },
   "decision": {
     "text": "What was decided",
     "rationale": "Why",
-    "supporting_items": [ DocumentFragmentRef, ... ]
+    "supporting_item_indices": [2]
   },
   "alternative_options": [
     {
       "text": "Rejected option",
       "rationale": "Why considered, why rejected",
-      "supporting_items": [ DocumentFragmentRef, ... ]
+      "supporting_item_indices": [3]
     }
   ]
 }

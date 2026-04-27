@@ -76,17 +76,18 @@ describe("DecisionsService", () => {
         id: "dec-1",
         title: "Pick Postgres",
         status: "accepted",
-        context: { text: "We need a DB.", supporting_items: [iuContext] },
+        referenced_items: [iuContext, iuDecision, iuAlt],
+        context: { text: "We need a DB.", supporting_item_indices: [0] },
         decision: {
           text: "Use Postgres.",
           rationale: "Team knows it.",
-          supporting_items: [iuDecision],
+          supporting_item_indices: [1],
         },
         alternative_options: [
           {
             text: "Use MySQL.",
             rationale: "Slightly faster.",
-            supporting_items: [iuAlt],
+            supporting_item_indices: [2],
           },
         ],
       });
@@ -108,6 +109,38 @@ describe("DecisionsService", () => {
       expect(asArray(alt).getAllSync()).toEqual([{ idx: 0 }]);
     });
 
+    test("dedupes shared idea units across slots via referenced_items indices", async () => {
+      const convPath = join(ctx.tmpDir, "conv-dedup.json");
+      await writeFile(convPath, JSON.stringify(sampleConversation("conv-dedup")));
+      await conversations.addConversationFromFile(convPath);
+      await topics.addTopic({ id: "t-dedup", title: "T", short_summary: "" });
+
+      const iu = {
+        type: "idea_unit_ref" as const,
+        conversation_id: "conv-dedup",
+        turn_index: 0,
+        idea_unit_index: 0,
+      };
+
+      await decisions.addDecision("t-dedup", {
+        id: "dec-shared",
+        title: "Shared item",
+        status: "accepted",
+        referenced_items: [iu],
+        context: { text: "", supporting_item_indices: [0] },
+        decision: { text: "", rationale: "", supporting_item_indices: [0] },
+        alternative_options: [
+          { text: "alt", rationale: "", supporting_item_indices: [0] },
+        ],
+      });
+
+      expect(await countRels(ctx.db, "CONTEXT_SUPPORTED_BY_IDEA_UNIT")).toBe(1);
+      expect(await countRels(ctx.db, "DECISION_SUPPORTED_BY_IDEA_UNIT")).toBe(1);
+      expect(await countRels(ctx.db, "ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT")).toBe(
+        1,
+      );
+    });
+
     test("fails when referenced idea unit is missing", async () => {
       await topics.addTopic({ id: "t1", title: "T", short_summary: "" });
       await expect(
@@ -115,18 +148,16 @@ describe("DecisionsService", () => {
           id: "dec-1",
           title: "X",
           status: "proposed",
-          context: {
-            text: "",
-            supporting_items: [
-              {
-                type: "idea_unit_ref",
-                conversation_id: "ghost",
-                turn_index: 0,
-                idea_unit_index: 0,
-              },
-            ],
-          },
-          decision: { text: "", rationale: "", supporting_items: [] },
+          referenced_items: [
+            {
+              type: "idea_unit_ref",
+              conversation_id: "ghost",
+              turn_index: 0,
+              idea_unit_index: 0,
+            },
+          ],
+          context: { text: "", supporting_item_indices: [0] },
+          decision: { text: "", rationale: "", supporting_item_indices: [] },
           alternative_options: [],
         }),
       ).rejects.toThrow(/Idea unit not found/);
@@ -138,8 +169,9 @@ describe("DecisionsService", () => {
           id: "dec-1",
           title: "X",
           status: "proposed",
-          context: { text: "", supporting_items: [] },
-          decision: { text: "", rationale: "", supporting_items: [] },
+          referenced_items: [],
+          context: { text: "", supporting_item_indices: [] },
+          decision: { text: "", rationale: "", supporting_item_indices: [] },
           alternative_options: [],
         }),
       ).rejects.toThrow(/Topic not found/);
@@ -156,10 +188,11 @@ describe("DecisionsService", () => {
         id: "dec-1",
         title: "X",
         status: "proposed",
-        context: { text: "", supporting_items: [] },
-        decision: { text: "", rationale: "", supporting_items: [] },
+        referenced_items: [],
+        context: { text: "", supporting_item_indices: [] },
+        decision: { text: "", rationale: "", supporting_item_indices: [] },
         alternative_options: [
-          { text: "Alt", rationale: "", supporting_items: [] },
+          { text: "Alt", rationale: "", supporting_item_indices: [] },
         ],
       });
 
@@ -189,8 +222,9 @@ describe("DecisionsService", () => {
         id: "dec-1",
         title: "X",
         status: "proposed",
-        context: { text: "", supporting_items: [] },
-        decision: { text: "", rationale: "", supporting_items: [] },
+        referenced_items: [],
+        context: { text: "", supporting_item_indices: [] },
+        decision: { text: "", rationale: "", supporting_item_indices: [] },
         alternative_options: [],
       });
 
@@ -212,16 +246,18 @@ describe("DecisionsService", () => {
         id: "dec-a-1",
         title: "A1",
         status: "accepted",
-        context: { text: "ctx", supporting_items: [] },
-        decision: { text: "do", rationale: "r", supporting_items: [] },
+        referenced_items: [],
+        context: { text: "ctx", supporting_item_indices: [] },
+        decision: { text: "do", rationale: "r", supporting_item_indices: [] },
         alternative_options: [],
       });
       await decisions.addDecision("t-b", {
         id: "dec-b-1",
         title: "B1",
         status: "proposed",
-        context: { text: "", supporting_items: [] },
-        decision: { text: "", rationale: "", supporting_items: [] },
+        referenced_items: [],
+        context: { text: "", supporting_item_indices: [] },
+        decision: { text: "", rationale: "", supporting_item_indices: [] },
         alternative_options: [],
       });
 
@@ -238,10 +274,11 @@ describe("DecisionsService", () => {
         id: "dec-c-1",
         title: "C1",
         status: "accepted",
-        context: { text: "ctx", supporting_items: [] },
-        decision: { text: "do", rationale: "because", supporting_items: [] },
+        referenced_items: [],
+        context: { text: "ctx", supporting_item_indices: [] },
+        decision: { text: "do", rationale: "because", supporting_item_indices: [] },
         alternative_options: [
-          { text: "alt1", rationale: "r1", supporting_items: [] },
+          { text: "alt1", rationale: "r1", supporting_item_indices: [] },
         ],
       });
       const detail = await decisions.readDecision("dec-c-1");
@@ -275,16 +312,18 @@ describe("DecisionsService", () => {
         id: "dec-with-date",
         title: "Has date",
         status: "accepted",
-        context: { text: "c", supporting_items: [iu] },
-        decision: { text: "d", rationale: "", supporting_items: [] },
+        referenced_items: [iu],
+        context: { text: "c", supporting_item_indices: [0] },
+        decision: { text: "d", rationale: "", supporting_item_indices: [] },
         alternative_options: [],
       });
       await decisions.addDecision("t-page", {
         id: "dec-no-date",
         title: "No date",
         status: "proposed",
-        context: { text: "c", supporting_items: [] },
-        decision: { text: "d", rationale: "", supporting_items: [] },
+        referenced_items: [],
+        context: { text: "c", supporting_item_indices: [] },
+        decision: { text: "d", rationale: "", supporting_item_indices: [] },
         alternative_options: [],
       });
 
@@ -318,14 +357,15 @@ describe("DecisionsService", () => {
         id: "dec-det-1",
         title: "Detail",
         status: "accepted",
-        context: { text: "ctx text", supporting_items: [iu] },
+        referenced_items: [iu],
+        context: { text: "ctx text", supporting_item_indices: [0] },
         decision: {
           text: "decision text",
           rationale: "because",
-          supporting_items: [],
+          supporting_item_indices: [],
         },
         alternative_options: [
-          { text: "alt 0", rationale: "r0", supporting_items: [] },
+          { text: "alt 0", rationale: "r0", supporting_item_indices: [] },
         ],
       });
 
@@ -369,16 +409,18 @@ describe("DecisionsService", () => {
         id: "dec-src-1",
         title: "Source-linked",
         status: "accepted",
-        context: { text: "c", supporting_items: [iu] },
-        decision: { text: "d", rationale: "", supporting_items: [] },
+        referenced_items: [iu],
+        context: { text: "c", supporting_item_indices: [0] },
+        decision: { text: "d", rationale: "", supporting_item_indices: [] },
         alternative_options: [],
       });
       await decisions.addDecision("t-src", {
         id: "dec-other",
         title: "Unlinked",
         status: "proposed",
-        context: { text: "", supporting_items: [] },
-        decision: { text: "", rationale: "", supporting_items: [] },
+        referenced_items: [],
+        context: { text: "", supporting_item_indices: [] },
+        decision: { text: "", rationale: "", supporting_item_indices: [] },
         alternative_options: [],
       });
 

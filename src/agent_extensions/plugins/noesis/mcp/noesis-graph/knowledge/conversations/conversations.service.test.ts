@@ -135,8 +135,9 @@ describe("ConversationsService", () => {
                   id: "m-dec-1",
                   title: "Pick A",
                   status: "accepted",
-                  context: { text: "", supporting_items: [] },
-                  decision: { text: "", rationale: "", supporting_items: [] },
+                  referenced_items: [],
+                  context: { text: "", supporting_item_indices: [] },
+                  decision: { text: "", rationale: "", supporting_item_indices: [] },
                   alternative_options: [],
                 },
               ],
@@ -237,6 +238,233 @@ describe("ConversationsService", () => {
         expect(review!.has_decision_units).toBe(false);
         expect(review!.markdown).toContain("# Topic");
         expect(review!.markdown).toContain("hello");
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+
+    test("returns topics in post-order (leaves before parents)", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
+      try {
+        const conv = {
+          conversation_id: "post-1",
+          time: "2026-04-17T10:00:00Z",
+          main_topic: "PostOrder",
+          turns: [
+            {
+              index: 0,
+              speaker: "alice",
+              time: "2026-04-17T10:00:00Z",
+              idea_units: [
+                { index: 0, sentences: ["hello"], categories: ["Information"] },
+              ],
+            },
+          ],
+          topics: [
+            {
+              id: "root",
+              title: "Root",
+              short_summary: "",
+              long_summary: "",
+              items: [],
+              decisions: [],
+              reviewed: false,
+              decisions_extracted: false,
+            },
+            {
+              id: "leaf",
+              title: "Leaf",
+              short_summary: "",
+              long_summary: "",
+              items: [
+                {
+                  type: "idea_unit_ref",
+                  conversation_id: "post-1",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+              ],
+              decisions: [],
+              reviewed: false,
+              decisions_extracted: false,
+            },
+          ],
+        };
+        const output = {
+          conversation: conv,
+          potential_topics: {
+            topics: [
+              {
+                id: "root",
+                title: "Root",
+                short_summary: "",
+                path: ["Root"],
+                is_new: true,
+                parent_id: null,
+              },
+              {
+                id: "leaf",
+                title: "Leaf",
+                short_summary: "",
+                path: ["Root", "Leaf"],
+                is_new: true,
+                parent_id: "root",
+              },
+            ],
+          },
+        };
+        await writeFile(
+          join(workingDir, "output.json"),
+          JSON.stringify(output),
+        );
+
+        const first = await conversations.getTopicForReview(
+          join(workingDir, "output.json"),
+        );
+        expect(first).not.toBeNull();
+        expect(first!.topic_id).toBe("leaf");
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+
+    test("renders ## Subtopics block with reviewed children's summaries and pending markers", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
+      try {
+        const conv = {
+          conversation_id: "sub-1",
+          time: "2026-04-17T10:00:00Z",
+          main_topic: "Sub",
+          turns: [],
+          topics: [
+            {
+              id: "parent",
+              title: "Parent",
+              short_summary: "",
+              long_summary: "",
+              items: [],
+              decisions: [],
+              reviewed: false,
+              decisions_extracted: false,
+            },
+            {
+              id: "child-a",
+              title: "Child A",
+              short_summary: "summary A",
+              long_summary: "long A",
+              items: [],
+              decisions: [],
+              reviewed: true,
+              decisions_extracted: true,
+            },
+            {
+              id: "child-b",
+              title: "Child B",
+              short_summary: "",
+              long_summary: "",
+              items: [],
+              decisions: [],
+              reviewed: true,
+              decisions_extracted: true,
+            },
+          ],
+        };
+        const output = {
+          conversation: conv,
+          potential_topics: {
+            topics: [
+              {
+                id: "parent",
+                title: "Parent",
+                short_summary: "",
+                path: ["Parent"],
+                is_new: true,
+                parent_id: null,
+              },
+              {
+                id: "child-a",
+                title: "Child A",
+                short_summary: "summary A",
+                path: ["Parent", "Child A"],
+                is_new: true,
+                parent_id: "parent",
+              },
+              {
+                id: "child-b",
+                title: "Child B",
+                short_summary: "",
+                path: ["Parent", "Child B"],
+                is_new: true,
+                parent_id: "parent",
+              },
+            ],
+          },
+        };
+        await writeFile(
+          join(workingDir, "output.json"),
+          JSON.stringify(output),
+        );
+
+        const review = await conversations.getTopicForReview(
+          join(workingDir, "output.json"),
+        );
+        expect(review).not.toBeNull();
+        expect(review!.topic_id).toBe("parent");
+        expect(review!.markdown).toContain("## Subtopics");
+        expect(review!.markdown).toContain("**Child A** — summary A");
+        expect(review!.markdown).toContain("**Child B** — _(pending review)_");
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+
+    test("omits ## Subtopics block when topic has no children", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
+      try {
+        const conv = {
+          conversation_id: "leaf-only",
+          time: "2026-04-17T10:00:00Z",
+          main_topic: "Leaf",
+          turns: [
+            {
+              index: 0,
+              speaker: "alice",
+              time: "2026-04-17T10:00:00Z",
+              idea_units: [
+                { index: 0, sentences: ["x"], categories: ["Information"] },
+              ],
+            },
+          ],
+          topics: [
+            {
+              id: "only",
+              title: "Only",
+              short_summary: "",
+              long_summary: "",
+              items: [
+                {
+                  type: "idea_unit_ref",
+                  conversation_id: "leaf-only",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+              ],
+              decisions: [],
+              reviewed: false,
+              decisions_extracted: false,
+            },
+          ],
+        };
+        await writeFile(
+          join(workingDir, "output.json"),
+          JSON.stringify({ conversation: conv, potential_topics: { topics: [] } }),
+        );
+
+        const review = await conversations.getTopicForReview(
+          join(workingDir, "output.json"),
+        );
+        expect(review).not.toBeNull();
+        expect(review!.markdown).not.toContain("## Subtopics");
       } finally {
         rmSync(workingDir, { recursive: true, force: true });
       }
