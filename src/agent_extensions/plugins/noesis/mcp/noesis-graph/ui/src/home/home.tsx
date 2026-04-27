@@ -12,6 +12,7 @@ import {
   IconMessageCircle,
   IconGavel,
   IconCube,
+  IconFileDescription,
   IconSchema,
 } from "@tabler/icons-react";
 import { ActionsGrid, type ActionItem } from "../actions-grid.js";
@@ -48,6 +49,7 @@ export function HomePage({ onNavigate }: { onNavigate: (path: string) => void })
   const actionItems: ActionItem[] = [
     { title: "Topics", icon: IconMessageCircle, color: "noesisGreen", onClick: () => onNavigate("/topics") },
     { title: "Decisions", icon: IconGavel, color: "noesisIndigo", onClick: () => onNavigate("/decisions") },
+    { title: "Design Docs", icon: IconFileDescription, color: "noesisIndigo", onClick: () => onNavigate("/design-docs") },
     { title: "Model Explorer", icon: IconCube, color: "noesisBlue", onClick: () => onNavigate("/model-explorer") },
     { title: "Schema Explorer", icon: IconSchema, color: "noesisGreen", onClick: () => onNavigate("/schema-explorer") },
   ];
@@ -56,7 +58,7 @@ export function HomePage({ onNavigate }: { onNavigate: (path: string) => void })
     <Container size="lg" py="xl">
       <Stack gap="xl">
         <HomeHeader />
-        <ActionsGrid title="Explore" items={actionItems} cols={4} />
+        <ActionsGrid title="Explore" items={actionItems} cols={5} />
         <Stack gap="sm">
           <Text size="sm" c="dimmed" fw={500} tt="uppercase">
             System Status
