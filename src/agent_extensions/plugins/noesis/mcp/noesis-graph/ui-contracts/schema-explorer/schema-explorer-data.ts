@@ -16,7 +16,7 @@ export interface RelTableSchema {
   properties: PropertySchema[];
 }
 
-export interface GraphSchemaData {
+export interface SchemaExplorerData {
   nodeTables: NodeTableSchema[];
   relTables: RelTableSchema[];
 }
