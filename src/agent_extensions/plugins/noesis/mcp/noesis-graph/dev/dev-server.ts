@@ -1,7 +1,7 @@
 import "reflect-metadata";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, resolve } from "path";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "../app.module.js";
@@ -18,9 +18,13 @@ import { clearDiscovery, writeDiscovery } from "./dev-discovery.js";
 
 export async function startDevServer(): Promise<void> {
   const logger = new Logger("DevServer");
-  const dataDir = mkdtempSync(join(tmpdir(), "noesis-graph-dev-"));
+  const externalDataDir = resolveExternalDataDir();
+  const dataDir =
+    externalDataDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-"));
+  const ownsDataDir = externalDataDir === null;
   const projectDir = process.cwd();
-  logger.log(`Data dir: ${dataDir}`);
+  const skipSeed = process.env["NOESIS_DEV_NO_SEED"] === "1";
+  logger.log(`Data dir: ${dataDir}${ownsDataDir ? " (ephemeral)" : ""}`);
 
   const app = await NestFactory.create(AppModule.forRoot(dataDir, projectDir), {
     logger,
@@ -28,16 +32,20 @@ export async function startDevServer(): Promise<void> {
   app.enableShutdownHooks();
   await app.init();
 
-  await seedDevDatabase({
-    scanner: app.get(ScannerRepository),
-    invocations: app.get(InvocationsRepository),
-    topics: app.get(TopicsRepository),
-    documents: app.get(DocumentsRepository),
-    conversations: app.get(ConversationsRepository),
-    decisions: app.get(DecisionsRepository),
-    designDocs: app.get(DesignDocsRepository),
-    db: app.get(DatabaseService),
-  });
+  if (skipSeed) {
+    logger.log("NOESIS_DEV_NO_SEED=1 — skipping fixture seeding");
+  } else {
+    await seedDevDatabase({
+      scanner: app.get(ScannerRepository),
+      invocations: app.get(InvocationsRepository),
+      topics: app.get(TopicsRepository),
+      documents: app.get(DocumentsRepository),
+      conversations: app.get(ConversationsRepository),
+      decisions: app.get(DecisionsRepository),
+      designDocs: app.get(DesignDocsRepository),
+      db: app.get(DatabaseService),
+    });
+  }
 
   await app.listen(0);
   const url = await app.getUrl();
@@ -59,10 +67,12 @@ export async function startDevServer(): Promise<void> {
         `Error closing app: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    try {
-      rmSync(dataDir, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
+    if (ownsDataDir) {
+      try {
+        rmSync(dataDir, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
     }
     process.exit(0);
   };
@@ -73,6 +83,16 @@ export async function startDevServer(): Promise<void> {
   process.on("SIGTERM", () => {
     void shutdown("SIGTERM");
   });
+}
+
+function resolveExternalDataDir(): string | null {
+  const value = process.env["NOESIS_DEV_DATA_DIR"];
+  if (value === undefined || value === "") return null;
+  const dir = resolve(value);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  return dir;
 }
 
 if (import.meta.main) {

@@ -36,6 +36,15 @@
    - **Browser**: open the Vite URL with `mcp__playwright__browser_navigate`, then drive interactions and assert state with `browser_snapshot` / `browser_evaluate` / `browser_console_messages`.
    Run backend and UI dev servers with `run_in_background: true`.
 
+## End-to-end smoke test
+
+`bun run smoke:noesis` drives a real `claude -p` session through the full skill chain (`analyze-conversation` → `analyze-design-draft` → `create-design-doc`) and verifies every UI view endpoint against the produced graph. See `tests/agent_extensions/plugins/noesis/smoke/README.md`.
+
+**It consumes LLM tokens.** Do NOT run it autonomously. Always:
+
+1. Ask the user for explicit approval first.
+2. Only after approval, run with `NOESIS_SMOKE_CONFIRM=1 bun run smoke:noesis`. Without that env var the test refuses to start.
+
 ## Python
 
 1. Use PEP 8 guidelines.
