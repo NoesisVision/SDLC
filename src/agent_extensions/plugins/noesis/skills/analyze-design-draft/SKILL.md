@@ -5,7 +5,7 @@ description: Analyze a software design draft (Markdown document) and integrate i
 
 # Analyze Design Draft
 
-The main agent does the reasoning. Use the Read tool freely to load as much (or as little) of the cleaned document as you need to keep output quality high — full document, partial windows, overlapping re-reads — that judgement is yours. The knowledge graph lives in the `noesis-graph` MCP server. Persist via `merge_document`; never write graph data directly.
+The main agent does the reasoning. Use the Read tool freely to load as much (or as little) of the cleaned document as you need to keep output quality high — full document, partial windows, overlapping re-reads — that judgement is yours. The knowledge graph lives in the `noesis-graph` MCP server. Persist via the dedicated tools — `save_design_doc` for the design model (Step 6) and `merge_document` for topics, fragments, decisions, and attachments (Step 7) — never write graph data directly.
 
 A document is a **monologue**: one author, no off-topic noise. The atomic item is a `DocumentFragment` (offset range), not an idea unit. Headings are **hints** — the topic structure must respect existing graph topics first; promote a heading to a topic only when no existing topic fits.
 
@@ -77,7 +77,9 @@ Identify topics in the graph already covering the document's subject area, so St
 
 Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/extract-document-topics.md`.
 
-Read `<cleaned_path>` to understand the document. Read `<output_path>` to see the fragment list (under `fragments`) with `index`, `start_offset`, `end_offset`, `section_path`, `kind`, `text`. Read `<section_tree_path>` for hierarchy hints if useful.
+Prefer `<section_tree_path>` for structural questions and selective fragment reads from `<output_path>` for content questions. Only read `<cleaned_path>` end-to-end when you need flowing narrative across sections; otherwise an end-to-end read of a 50 KB document is wasted work.
+
+Read `<output_path>` to see the fragment list (under `fragments`) with `index`, `start_offset`, `end_offset`, `section_path`, `kind`, `text`.
 
 For every fragment:
 - Assign one or more categories (`Information`, `Position`, `Argument`, `Decision`, `Irrelevant`).
@@ -123,7 +125,7 @@ Decide whether the document genuinely describes a domain model (Bounded Contexts
 
 If `<design_doc_id>` is provided, call `noesis-graph:read_design_doc` with that id, read the returned file, and produce a ChangeSet diff against the cached state. Otherwise produce a first-iteration design with everything in `added`.
 
-Write the validated `DesignDoc` payload directly to `<design_doc_path>` (the user-provided repository location — this file is version-controlled, not transient). Then call MCP tool `noesis-graph:save_design_doc` with `path: <design_doc_path>` to persist it into the knowledge graph. Set `<output_path>`'s `design_doc_extracted: true`.
+Write the validated `DesignDoc` payload directly to `<design_doc_path>` (the user-provided repository location — this file is version-controlled, not transient). Then call MCP tool `noesis-graph:save_design_doc` with `path: <design_doc_path>`. The tool returns `{ status: "Ok", design_doc_id }` on success; validation or storage failures surface as a tool error — fix the input and call the tool again. Once the save succeeds, set `<output_path>`'s `design_doc_extracted: true`.
 
 ### Step 7: Merge into the knowledge graph
 

@@ -6,7 +6,7 @@ Read this together with `design-doc-schema.md` (lexicon, full JSON schema, Chang
 
 ## Decide whether the document describes a model
 
-Walk the fragments grouped by `section_path`. Detect model-bearing sections using the lexicon in `design-doc-schema.md` Section 1. If no section matches the lexicon, the document does not describe a model — skip the rest of this step. Do NOT produce a `design_doc.json`. (`merge_document` will skip the design-doc apply when the file is absent.)
+Walk the fragments grouped by `section_path`. Detect model-bearing sections using the lexicon in `design-doc-schema.md` Section 1. If no section matches the lexicon, the document does not describe a model — skip the rest of this step. Do NOT produce a `design_doc.json`, and do NOT call `save_design_doc`.
 
 ## Build the DesignDoc
 
@@ -41,10 +41,9 @@ If a reference cannot be resolved, fix the omission (promote the referenced bloc
 
 ## Save
 
-1. Write the validated DesignDoc JSON to `<working_dir>/design_doc.json` with the Write tool.
-2. Edit `<analysis_path>` to set `design_doc_extracted: true`. Set `design_doc_id` and `design_doc_title` if they changed (e.g. on first iteration where the server will assign the id at merge time, leave `design_doc_id: null`).
+Persistence is handled by SKILL.md Step 6. Do not duplicate Save instructions here.
 
-`merge_document` orchestrates the actual graph persistence in Step 7. Do NOT call `save_design_doc` directly.
+The model is persisted by `save_design_doc` (Step 6); topics, fragments, decisions, and decision attachments are persisted by `merge_document` (Step 7). Two distinct commits — keep them separate.
 
 ## Don'ts
 

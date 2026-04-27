@@ -45,7 +45,8 @@ function registerSaveDesignDoc(
         "Persist a DesignDoc into the knowledge graph from a JSON file matching DesignDocSchema. " +
         "The path points at the version-controlled DesignDoc JSON in the repository — the agent writes/updates this file " +
         "directly, then this tool reads it, validates, and applies ChangeSets recursively (added → upsert, " +
-        "modified → partial update, removed → delete by name). Returns the design doc id and aggregate counts.",
+        "modified → partial update, removed → delete by name). Returns { status: \"Ok\", design_doc_id } on success; " +
+        "validation or storage failures surface as a tool error with the failure message.",
       inputSchema: {
         path: z
           .string()

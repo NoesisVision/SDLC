@@ -1,6 +1,6 @@
 # Design Doc Schema Reference
 
-This file is loaded only when Step 6 of `noesis:analyze-design-draft` is reached. It captures (a) the JSON schema the produced `design_doc.json` must conform to, (b) the heuristics for recognising model-describing content in a design draft, and (c) ChangeSet semantics.
+This file is loaded only when Step 6 of `noesis:analyze-design-draft` is reached. It captures (a) the JSON schema the produced design doc must conform to, (b) the heuristics for recognising model-describing content in a design draft, and (c) ChangeSet semantics.
 
 ## 1. Recognising model content in a draft
 
@@ -102,12 +102,11 @@ ChangeSet<T> { added: T[]; modified: T[]; removed: string[] }    // removed by n
 2. Walk model-bearing fragments grouped by Bounded Context.
 3. For each entity built, set its name from the source heading or the first declarative sentence; do NOT invent names that are absent from the draft.
 4. Validate locally: every `usedBuildingBlocks` / `input` / `output` reference must resolve to a BuildingBlock name present in the same DesignDoc (existing or `added`). Unknown references are bugs in extraction — flag and either drop the reference or promote the missing block to `added`.
-5. Write the result to `{working_dir}/design_doc.json`.
-6. Do NOT call `save_design_doc` directly — `merge_document` (Step 8 of the parent skill) does it.
+5. SKILL.md Step 6 owns the Save flow (write the JSON, call `save_design_doc`). Do not duplicate Save instructions here.
 
 ## 6. Things this agent must NOT do
 
 - Do not invent business rules, scenarios, or properties not stated in the source. The draft is the source of truth; gap-filling is the architect's job, not the extractor's.
 - Do not classify discussion / comparison content as model content. Comparison tables ("Vector RAG vs PageIndex") are NOT Building Blocks.
 - Do not promote a heading to a Module unless a separate Building Block sub-heading is nested under it. Modules group blocks; lone-heading sections become Building Blocks directly under the BoundedContext.
-- Do not produce an empty DesignDoc (no actors, no contexts, no quality attributes). If extraction yields nothing, skip writing `design_doc.json` so `merge_document` skips the design-doc apply.
+- Do not produce an empty DesignDoc (no actors, no contexts, no quality attributes). If extraction yields nothing, skip writing the design doc JSON and skip the `save_design_doc` call.

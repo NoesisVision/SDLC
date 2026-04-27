@@ -169,10 +169,8 @@ describe("DesignDocsService", () => {
       const path = await writeDoc(doc, "full.json");
       const result = await service.saveDesignDocFromFile(path);
 
+      expect(result.status).toBe("Ok");
       expect(result.design_doc_id).toBe("dd-2");
-      expect(result.totals.added).toBe(3);
-      expect(result.totals.modified).toBe(0);
-      expect(result.totals.removed).toBe(0);
       expect(await countNodes("DesignedActor")).toBe(1);
       expect(await countNodes("DesignedBoundedContext")).toBe(1);
       expect(await countNodes("DesignedDomainModule")).toBe(1);
@@ -207,12 +205,68 @@ describe("DesignDocsService", () => {
       const result = await service.saveDesignDocFromFile(
         await writeDoc(delta, "v2.json"),
       );
-      expect(result.totals.modified).toBe(1);
+      expect(result.status).toBe("Ok");
       const read = await service.readDesignDoc("dd-4");
       expect(read?.description).toBe("v2");
       expect(read?.boundedContexts?.added[0].description).toBe(
         "second version",
       );
+    });
+
+    test("round-trips a behaviour with omitted input/output/usedBuildingBlocks", async () => {
+      const doc = {
+        id: "dd-roundtrip",
+        name: "rt",
+        description: "Behaviour with no IO ChangeSets",
+        boundedContexts: {
+          added: [
+            {
+              name: "BC",
+              buildingBlocks: {
+                added: [
+                  {
+                    name: "BB",
+                    type: "aggregate",
+                    behaviours: {
+                      added: [
+                        {
+                          name: "Plain",
+                          type: "Command",
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      };
+      await service.saveDesignDocFromFile(
+        await writeDoc(doc, "roundtrip.json"),
+      );
+      const read = await service.readDesignDoc("dd-roundtrip");
+      expect(read).not.toBeNull();
+      const bh =
+        read?.boundedContexts?.added[0].buildingBlocks?.added[0].behaviours
+          ?.added[0];
+      expect(bh?.name).toBe("Plain");
+      expect(bh?.input?.added).toEqual([]);
+      expect(bh?.output?.added).toEqual([]);
+      expect(bh?.usedBuildingBlocks?.added).toEqual([]);
+    });
+
+    test("rejects null in place of a ChangeSet", async () => {
+      const path = await writeDoc(
+        {
+          id: "dd-nullcs",
+          name: "nullcs",
+          description: "should reject null",
+          actors: null,
+        },
+        "nullcs.json",
+      );
+      await expect(service.saveDesignDocFromFile(path)).rejects.toThrow();
     });
 
     test("removed ChangeSet deletes by name", async () => {

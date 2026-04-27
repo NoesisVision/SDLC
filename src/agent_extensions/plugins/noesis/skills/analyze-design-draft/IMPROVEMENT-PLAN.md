@@ -4,14 +4,14 @@ Source: post-mortem after the first production run of `noesis:analyze-design-dra
 
 The pipeline produced sensible top-level outputs (252 fragments classified, 23 topics, 9 decisions, 3 attachments, 49 building blocks across 7 actors / 1 BC / 7 quality attributes), but the **design doc cannot be read back** — `read_design_doc` rejects every `DesignedBehaviour` row with `Invalid input: expected array, received null`. Because the skill is meant to iterate against a previously persisted design (Step 6 with `<design_doc_id>`), this regression bricks subsequent runs.
 
-This document groups every reported issue with: **what the agent saw**, **root cause in code** (file:line where useful), **proposed fix**, and **open questions** that need the maintainer's decision before implementation.
+This document groups every reported issue with: **what the agent saw**, **root cause in code** (file:line where useful), and **agreed fix**. Backward compatibility is not a concern — the graph DB will be cleared.
 
 ---
 
 ## 1. 🔴 `read_design_doc` fails with `expected: array, received: null` for behaviour string-array fields
 
 ### Observed
-After the first `save_design_doc` succeeded (the design was persisted, totals counter reported `15` top-level adds), calling `read_design_doc <id>` returned a Zod failure:
+After the first `save_design_doc` succeeded, calling `read_design_doc <id>` returned a Zod failure:
 
 ```json
 [
@@ -28,26 +28,52 @@ The path `[0, "input"]` points at index 0 of the `BehaviourRow` array returned b
 Three independent gaps stack so that any one of them would have masked the others.
 
 1. **Storage layer drops empty `STRING[]` to `null`.**
-   `design-docs.repository.ts:34` declares `DesignedBehaviour(... input STRING[], output STRING[], used_building_blocks STRING[], ...)`. The save path always passes `[]` via `applyStringChangeSet` (`design-docs.repository.ts:1308`), but lbug/Kuzu reads the empty array back as `null`. This is the proximate cause of the validation failure.
+   `design-docs.repository.ts:34` declares `DesignedBehaviour(... input STRING[], output STRING[], used_building_blocks STRING[], ...)`. The save path always passes `[]` via `applyStringChangeSet` (`design-docs.repository.ts:1308`), but lbug/Kuzu reads the empty array back as `null`.
 
 2. **Read-side schema is too strict.**
-   `BehaviourRowSchema` (`design-docs.repository.ts:101–112`) declares `input: z.array(z.string())` with no `nullable()` and no transform. A single `null` from the DB blows up the whole row parse — and because `z.array(BehaviourRowSchema).parse(rawRows)` is wrapped around it, the entire `fetchBehaviours` call fails. There is no row-level fallback.
+   `BehaviourRowSchema` (`design-docs.repository.ts:101–112`) declares `input: z.array(z.string())` with no `nullable()` and no transform. A single `null` from the DB blows up the whole row parse — and because `z.array(BehaviourRowSchema).parse(rawRows)` is wrapped around it, the entire `fetchBehaviours` call fails.
 
-3. **Agent-side: schema permits omitting ChangeSet fields entirely.**
-   `shared-contracts/design-doc.ts:110–118`:
+3. **Agent-side schema permits `null` ChangeSets.**
+   `shared-contracts/design-doc.ts:110–120`:
    ```ts
    input: StringChangeSetSchema.nullable().default(null),
    output: StringChangeSetSchema.nullable().default(null),
    usedBuildingBlocks: StringChangeSetSchema.nullable().default(null),
+   rules: DesignedRuleChangeSetSchema.nullable().default(null),
+   scenarios: DesignedScenarioChangeSetSchema.nullable().default(null),
    ```
-   The agent emits behaviours without `input` / `output` / `usedBuildingBlocks` when the source draft does not state them. Zod parses them as `null`. `applyStringChangeSet(null)` returns `[]`, which then collides with §1's storage quirk on the next read.
+   `null` is overloaded as "no changes", but `applyStringChangeSet(null)` returns `[]`, which silently *clears* the persisted list. The semantics are inconsistent.
 
-### Proposed fix
+### Agreed fix
 
-**Server-side, primary (must-have):** make the read tolerant.
+**Principle:** `null` / `undefined` mean "value is absent". If absence is allowed, the logic must explicitly handle it; if absence is not allowed, raise an error immediately. `null` must never be used as a sentinel to clear an array.
+
+**Agent-side (input) schema — strict validation.** Drop `.nullable()` from every ChangeSet field. ChangeSets become **optional** instead:
 
 ```ts
-// design-docs.repository.ts — BehaviourRowSchema
+input: StringChangeSetSchema.optional()
+  .describe("Input BuildingBlock names; omit when no changes"),
+output: StringChangeSetSchema.optional()
+  .describe("Output BuildingBlock names; omit when no changes"),
+usedBuildingBlocks: StringChangeSetSchema.optional()
+  .describe("Referenced BuildingBlock names; omit when no changes"),
+rules: DesignedRuleChangeSetSchema.optional(),
+scenarios: DesignedScenarioChangeSetSchema.optional(),
+```
+
+Rules:
+- Missing / `undefined` ChangeSet → "no changes were made", do not touch the persisted list.
+- Present ChangeSet → must have `added: string[]`, `modified: ChangeSpec[]`, `removed: string[]`. Never `null`. Empty arrays are fine.
+- To clear a list, the agent emits `{ added: [], modified: [], removed: [<every current item>] }` — never `null`.
+- Apply the same rule to `description`, `type`, `actor`, and any other currently-`nullable()` scalar where "absent" is the intended meaning: prefer `.optional()`. Use `.nullable()` only when `null` is a real, distinct domain value.
+
+**Apply layer.** `applyStringChangeSet` (and its peers for rules/scenarios/properties/etc.) now receives `ChangeSet | undefined`. On `undefined` it returns the existing list unchanged. It never receives `null`.
+
+**Storage write layer.** Always pass `[]` for "no items"; never write `null` to the DB.
+
+**Storage read layer.** Coalesce `null` → `[]` at parse time so consumers always see arrays:
+
+```ts
 const StringArrayRow = z
   .array(z.string())
   .nullable()
@@ -60,21 +86,13 @@ const BehaviourRowSchema = z.object({
 });
 ```
 
-This unblocks every existing persisted design doc without a migration.
+Apply the same `nullable().transform(() => [])` pattern to every STRING[] / list column in the repository. Document the lbug quirk in a one-paragraph block in `design-docs.repository.ts` so the next person doesn't re-discover it.
 
-**Server-side, secondary (defence-in-depth):** stop relying on the storage layer to round-trip `[]`. On `CREATE`, persist as `null` when there are no items, and on `UPDATE` send `null` when the agent explicitly cleared the list. Combined with the read-side coalesce, the table is permitted to hold `null` and reads always produce `[]` to consumers.
+**Skill-prompt-side.** In `references/design-doc-schema.md` Section 3, replace any current "null = no changes" wording with:
 
-**Server-side, additional:** apply the same `nullable().transform(() => [])` pattern to any future STRING[] / list column. Document the lbug quirk in a one-paragraph block in `design-docs.repository.ts` so the next person doesn't re-discover it.
-
-**Skill-prompt-side:** reduce the chance of producing `null` ChangeSets at write time. In `references/design-doc-schema.md` Section 3, add an explicit invariant:
-
-> Every ChangeSet field MUST be present in the JSON, even when empty. Emit `{ "added": [], "modified": [], "removed": [] }` rather than omitting the field. This applies to nested ChangeSets too (`behaviour.input`, `building_block.properties`, `bounded_context.modules`, …).
-
-This is a belt-and-braces measure; the server fix is what actually makes correctness independent of agent diligence.
-
-### Open questions
-- **OQ-1.1**: Should the storage layer treat `null` and `[]` as equivalent, or should we forbid `null` and make the column NOT NULL (lbug/Kuzu-permitting)? The simpler answer is "always coalesce on read"; the cleaner one is "never let `null` enter the column". They aren't mutually exclusive.
-- **OQ-1.2**: Are there other STRING[] columns (now or planned) that exhibit the same quirk? A quick grep for `STRING[]` in the schema string array would surface them.
+> A ChangeSet field is **optional**. Omit it when there are no changes. When you do emit it, it MUST have all three keys: `{ "added": [...], "modified": [...], "removed": [...] }`. Never emit `null` for a ChangeSet — `null` is rejected.
+>
+> To remove every item, list every current item under `removed` and leave `added` / `modified` empty. Do not use `null` as a clear-signal.
 
 ---
 
@@ -88,49 +106,27 @@ This is a belt-and-braces measure; the server fix is what actually makes correct
 - ~150 properties
 - N rules, M scenarios
 
-A user reading "15 added" has no signal that 250+ child entities were also written. Worse: when the agent re-saved the same doc with `id` set (an attempted repair), the totals stayed at `15` even though the recursive upsert had run and updated 44 behaviour rows.
+A user reading "15 added" has no signal that 250+ child entities were also written. Worse: when the agent re-saved the same doc with `id` set, the totals stayed at `15` even though the recursive upsert had updated 44 behaviour rows.
 
 ### Root cause
-`design-docs.service.ts:53–74` builds `totals` from only three top-level counters:
-```ts
-const totals = {
-  added:
-    applyResult.actors_added +
-    applyResult.bounded_contexts_added +
-    applyResult.quality_attributes_added,
-  …
-};
-```
+`design-docs.service.ts:53–74` builds `totals` from only three top-level counters; the recursive upserts for modules, building blocks, behaviours, rules, scenarios, and properties never bump anything. The count is structurally wrong, but more fundamentally it is **the wrong contract**: the agent should not have to inspect counts to confirm a save.
 
-The repository's `ApplyResult` (`design-docs.repository.ts:155–166`) never tallies modules / building blocks / behaviours / rules / scenarios / properties. The agent has no way to verify a recursive save succeeded short of calling `read_design_doc`.
-
-### Proposed fix
-Extend `ApplyResult` and `CounterRef` to cover every entity layer; expose them as `totals.byKind` in `SaveDesignDocResult`:
+### Agreed fix
+**Drop the counters entirely.** The MCP tool guarantees the save, end-to-end. If the save succeeds, return a minimal success payload. If it fails, return an error — the agent fixes the input and retries.
 
 ```ts
-{
-  design_doc_id,
-  totals: {
-    added: <sum>, modified: <sum>, removed: <sum>,
-    byKind: {
-      actors: { added, modified, removed },
-      bounded_contexts: { added, modified, removed },
-      modules: { added, modified, removed },
-      building_blocks: { added, modified, removed },
-      behaviours: { added, modified, removed },
-      rules: { added, modified, removed },
-      scenarios: { added, modified, removed },
-      properties: { added, modified, removed },
-      quality_attributes: { added, modified, removed }
-    }
-  }
-}
+// success
+{ status: "Ok", design_doc_id: "..." }
+
+// failure (validation, storage, etc.)
+{ status: "Error", message: "<concise human-readable reason>" }
 ```
 
-`upsertBoundedContext` / `upsertModule` / `upsertBuildingBlock` / `upsertBehaviour` need to receive a counter ref (or return a delta) so each recursion bumps the right bucket. Today they recurse but discard the count.
+If a future use case genuinely needs a per-layer breakdown for the UI (not for the agent), it should be a separate read endpoint, not a side-channel on the save response.
 
-### Open questions
-- **OQ-2.1**: Inline JSON or pointer to a tmp file? At ~9 layers × 3 buckets the payload is ≤500 bytes — inline JSON is fine and matches the existing `runInlineJsonTool` decision.
+**Large outputs (e.g. detailed validation error trees).** When the error payload itself can grow large — multi-page Zod issue lists, per-row breakdowns — write the detail to a tmp file and return `{ status: "Error", message: "...", details_path: "/tmp/..." }`. This matches the plugin's "scripts and MCP tools that may exceed ~10 KB write to a tmp file" rule.
+
+**Input is already file-based.** `save_design_doc` already takes `path: <design_doc_path>`, so the inbound DesignDoc payload doesn't traverse stdio. No change there.
 
 ---
 
@@ -144,47 +140,35 @@ The agent had to choose between two contradictory instructions for persisting th
 
 The reference also says to write the JSON to `<working_dir>/design_doc.json` (line 44), while SKILL.md tells the agent to write to `<design_doc_path>` (the user-provided repository location).
 
-`merge_document` (`documents.service.ts:148–235`) does **not** persist design docs at all — it only handles topics, document fragments, decisions, and decision attachments. So the reference is wrong and the SKILL is right. But the agent has to read both files and reconcile.
+`merge_document` (`documents.service.ts:148–235`) does **not** persist design docs at all — it only handles topics, document fragments, decisions, and decision attachments.
 
 ### Root cause
-`extract-design-model.md` was likely written before Step 6 was extracted from `merge_document` into a standalone `save_design_doc` tool. The reference was not updated.
+`extract-design-model.md` was written before Step 6 was extracted from `merge_document` into a standalone `save_design_doc` tool, and the reference was not updated. The duplicated Save instructions in two files made the drift possible in the first place.
 
-### Proposed fix
-Rewrite `extract-design-model.md` Save section to match SKILL.md:
+### Agreed fix
+**SKILL.md is canonical.** The Save flow (write file → call `save_design_doc`) lives only in SKILL.md. `extract-design-model.md` describes _what_ the model is and _how to derive it from fragments_, not how to persist it.
 
-```md
-## Save
-
-1. Write the validated DesignDoc JSON to <design_doc_path> (the user-provided
-   repository location — this file is version-controlled).
-2. Call `noesis-graph:save_design_doc` with `path: <design_doc_path>` to persist
-   into the graph.
-3. Edit <output_path> to set `design_doc_extracted: true`. If the server returned
-   a generated id (first iteration), update `design_doc_id` in <output_path>.
-
-`merge_document` (parent skill Step 7) does NOT persist the design doc — it only
-handles topics, fragments, decisions, and attachments. `save_design_doc` is what
-persists the model.
-```
-
-### Open questions
-- **OQ-3.1**: Should we go further and have `merge_document` *call* `save_design_doc` when a `design_doc.json` exists in `working_dir`, so the skill stays "one terminal merge"? Probably no — having two distinct commits (model first, knowledge graph second) is cleaner; the user can inspect / edit the persisted design before fragments get attached. Confirm before changing.
+Concretely:
+- Delete the entire "Save" section from `references/extract-design-model.md` (the file path, the `merge_document` claim, the post-save `output.json` edits — all of it).
+- Replace it with one line: _"Persistence is handled by SKILL.md Step 6. Do not duplicate Save instructions here."_
+- Audit every other reference doc for similar duplicated/outdated persistence wording and prune.
+- Two distinct commits: **(a)** the model is persisted by `save_design_doc`; **(b)** topics, fragments, decisions, and attachments are persisted by `merge_document`. The user can inspect or edit the persisted design before knowledge-graph artefacts attach to it.
 
 ---
 
-## 4. 🟡 Decision attachments are noisy (≤5 fragments per attachment is the right ceiling)
+## 4. 🟡 Decision attachments are noisy
 
 ### Observed
 - Decision `5fd216f8` (RB-1 invariant): 19 fragments attached. Most are tangential mentions in coverage tables; the load-bearing evidence is ~3 (the RB-1 statement itself, the `SourceDocumentLineId` field declaration, the `CreatePriceState` handler).
 - FIFO decision: 8 fragments. About half are tangential.
 
-When the next analysis surfaces this decision via `list_decisions` or `get_topic_for_document_review`, the user sees a wall of weakly-supportive snippets instead of the 3–5 strongest. Quality of `read_decision` UX degrades linearly with attachment count.
+When the next analysis surfaces this decision via `list_decisions` or `get_topic_for_document_review`, the user sees a wall of weakly-supportive snippets instead of the 3–5 strongest.
 
 ### Root cause
-`references/analyze-document-topic.md` (which governs Step 5 attachments) does not cap evidence count. The agent — given no constraint — over-attached.
+`references/analyze-document-topic.md` (which governs Step 5 attachments) does not cap evidence count.
 
-### Proposed fix
-Edit `references/analyze-document-topic.md` to add an explicit cap:
+### Agreed fix
+Add a **prompt-level rule** (no server enforcement). Edit `references/analyze-document-topic.md`:
 
 > When attaching to an existing decision, attach **at most 5 fragments per slot per decision** — pick the most directly supportive evidence. If more than 5 fragments touch the decision, prefer ones that:
 >
@@ -195,10 +179,7 @@ Edit `references/analyze-document-topic.md` to add an explicit cap:
 > Tangential mentions in coverage tables, recap sections, or table-of-contents
 > entries should not be attached.
 
-Optional server-side guard: emit a warning in `merge_document`'s response when an attachment exceeds N fragments, so the agent can self-correct on the next iteration.
-
-### Open questions
-- **OQ-4.1**: Hard cap (server rejects >5) vs. soft cap (rule in the prompt)? Soft is friendlier to edge cases (an exceptionally rich decision); hard is safer. Recommend soft + warning.
+No server-side hard cap — the rule is in the prompt, the agent is responsible for following it.
 
 ---
 
@@ -212,23 +193,40 @@ Optional server-side guard: emit a warning in `merge_document`'s response when a
 The Goldilocks loop in Step 2 picked "just-right" granularity from the existing graph, but Step 3's _new_ topics (driven by the cleaned doc's headings) didn't get the same scrutiny — headings became topics 1:1.
 
 ### Root cause
-`references/extract-document-topics.md` instructs the agent to **reuse before promote** but does not ask the agent to **balance** the resulting topic set. There's no "after assigning categories, look at the topic-size distribution and resplit / merge outliers" step.
+`references/extract-document-topics.md` instructs "reuse before promote" but says nothing about the **shape of the resulting hierarchy**. There is no instruction to balance the topic tree, no preference for a single root per document, and no upper bound on first-level breadth.
 
-### Proposed fix
-Add a balancing micro-step after Step 3, before Step 5 starts:
+### Agreed fix
+Rewrite the topic-shape guidance in `references/extract-document-topics.md` with explicit hierarchy rules:
 
-> ### Step 3.5: Topic-size pass
+> ### Topic hierarchy
 >
-> Look at the `topics[*].items.length` distribution.
+> Topics form a hierarchy that humans must be able to navigate. The agent's job is
+> to keep that hierarchy legible.
 >
-> - **Singletons** (≤1 item): consider folding into the closest semantically-adjacent topic. Only keep a singleton when the item is genuinely orthogonal.
-> - **Outliers** (≥3× the median): consider splitting along axes you already see in the underlying fragments (command vs algorithm; happy-path vs edge-case; data-model vs behaviour).
-> - Update `output.json:potential_topics` and re-tag fragment `topic_id`s in `output.json:fragments` accordingly.
+> 1. **Single root per document.** In most cases a document or conversation has
+>    one root topic that frames the whole subject. Multiple unrelated roots are a
+>    smell — usually they should hang under a shared parent that names what binds
+>    them.
+> 2. **First-level breadth ≤ 10.** No more than ~10 sibling topics directly under
+>    a root. If you find yourself producing more, the categorisation axis is
+>    probably too narrow — group along a coarser axis and demote the current ones
+>    one level down.
+> 3. **Reuse the existing structure.** Before adding a new topic — and especially
+>    before adding a new first-level topic — read the existing topic tree end to
+>    end. New topics at the first level are added only when there is concrete
+>    evidence that no existing branch fits.
+> 4. **Re-shape when needed.** Merging, splitting, and re-parenting existing
+>    topics is part of the job, not an exception. If a previously created topic
+>    no longer fits the cleaned document's actual structure, change it. Record
+>    the rationale in the iteration's commit message.
+> 5. **Reason from semantic axes, not counts.** Item count is a smell, not a
+>    verdict. A 1-item topic is fine if it is genuinely orthogonal; a 30-item
+>    topic is fine if all 30 belong to one tightly-coupled algorithm. Always
+>    decide based on the underlying semantic axes (command vs algorithm,
+>    happy-path vs edge-case, data-model vs behaviour, …) — never on a numeric
+>    threshold alone.
 
-This is a soft heuristic, not a strict rule — outlier topics are sometimes correct (a central algorithm legitimately has many fragments). The wording should be "consider", not "must".
-
-### Open questions
-- **OQ-5.1**: Is there a sensible automated split (e.g. "topic with >20 items"), or should the agent always reason from semantic axes? Probably the latter — counts are a smell, not a verdict.
+This replaces the heading-as-topic 1:1 default and makes hierarchy hygiene an explicit step instead of an afterthought.
 
 ---
 
@@ -242,7 +240,7 @@ This is a soft heuristic, not a strict rule — outlier topics are sometimes cor
 ### Root cause
 The category definitions in `references/extract-document-topics.md` lean toward "what is asserted" rather than "what was chosen". Soft-spoken design choices in narrative form ("…ponieważ…", "…zamiast…", "…zdecydowaliśmy się na…") are easy to miss when the agent scans for explicit `Decision`-shaped paragraphs.
 
-### Proposed fix
+### Agreed fix
 Tighten the category cheat-sheet with concrete narrative-style examples:
 
 ```md
@@ -262,84 +260,52 @@ with `Argument` if it states a load-bearing reason.
 Same treatment for `Position+Argument` (rule statements that don't look like
 "INVARIANT:" but still are).
 
-### Open questions
-- None.
-
 ---
 
 ## 7. ⏱️ Time-efficiency optimisations
 
 These are not correctness issues; they are wasted work the agent observed.
 
-### 7.1 Three full-doc Reads where a tree + targeted snippet would do
-The cleaned doc is ~50 KB. The agent did three Reads to span it (lines 1–350, 350–700, 700–1050, 1050–1402). `<section_tree_path>` (~1 KB) plus selective fragment reads from `output.json` would have answered the same questions. ~30 s.
+### 7.1 Three full-doc Reads where a tree + targeted snippet would do — **fix**
+The cleaned doc is ~50 KB. The agent did three Reads to span it. `<section_tree_path>` (~1 KB) plus selective fragment reads from `output.json` would have answered the same questions. ~30 s.
 
-**Proposed fix:** add to `SKILL.md` Step 3:
+Add to `SKILL.md` Step 3:
 
 > Prefer `<section_tree_path>` for structural questions and selective fragment
 > reads from `output.json` for content questions. Only read `<cleaned_path>`
 > end-to-end when you need flowing narrative across sections.
 
-### 7.2 Three sequential Python scripts where one would do
-`assign_topics`, `review_topics`, `build_design_doc` ran sequentially. They share read inputs (`output.json`, `cleaned_path`) and could be one script with three subcommands or one orchestrator. ~15 s.
+### 7.2 Three sequential Python scripts where one would do — **leave for now**
+`assign_topics`, `review_topics`, `build_design_doc` ran sequentially. They could be one orchestrator, but this was an agent-side improvisation, not a documented step. Revisit only if the multi-script pattern recurs.
 
-**Proposed fix:** none in the skill — this was an agent-side improvisation, not a documented step. If we want to enshrine the pattern, ship a single "post-process" script under `${CLAUDE_PLUGIN_ROOT}/scripts/design-draft/`. Otherwise leave it.
+### 7.3 Bypassed `get_topic_for_document_review` for 21 of 23 topics — **leave for now**
+The agent batched the summary writes, calling the tool only twice instead of per-topic. This was an intentional, working optimisation but skipped the formal contract. Don't sanction it yet — observe more runs first.
 
-### 7.3 Bypassed `get_topic_for_document_review` for 21 of 23 topics
-The skill's Step 5 mandates a per-topic loop via `get_topic_for_document_review`. The agent batched the summary writes for 21 topics directly, calling the tool only twice. This was an _intentional_ optimisation that worked, but it skipped the formal contract.
-
-**Proposed fix:** offer a sanctioned batch path:
-
-> If `get_topic_for_document_review` would return only fragments from the
-> current document (no prior-document context to merge), the agent MAY compute
-> summaries directly from `output.json` and skip the round-trip. The tool's
-> job — surfacing prior-document context — is moot in that case.
-
-This makes the optimisation explicit instead of implicit. Today the rule "Do not parallelise. Each iteration depends on the previous edit." is true, but blunt — it doesn't acknowledge the case where the iteration is a no-op.
-
-### 7.4 Normalisation happened post-save
-The agent wrote the design doc, called `save_design_doc`, hit the Zod failure, then patched the file. Build-time invariants would have caught this earlier.
-
-**Proposed fix:** addressed by §1 — the server should not require the agent to be defensively diligent. With the read-side coalesce, the agent's omitted-ChangeSet output round-trips correctly.
-
-### Open questions
-- **OQ-7.1**: Are the ~30 s + 15 s wins worth the doc churn? Probably yes — they nudge the agent toward the cheaper path without forcing it.
+### 7.4 Normalisation happened post-save — **fixed by §1**
+The agent wrote the design doc, called `save_design_doc`, hit the Zod failure, then patched the file. Once §1 lands (strict input validation rejects `null`, missing ChangeSets are valid, DB reads coalesce `null` → `[]`), this round-trip becomes correct on the first attempt.
 
 ---
 
 ## Implementation plan (recommended sequencing)
 
-### P0 — Unblock iteration on existing design docs (server, one PR, ~50 LOC)
-- §1 server fix: `BehaviourRowSchema` strings array fields → `nullable().transform(v => v ?? [])`. Add a regression test that round-trips a behaviour with all-empty `input/output/usedBuildingBlocks` through `save_design_doc` → `read_design_doc`.
-- §3 doc fix: rewrite `extract-design-model.md` Save section. (Pure docs.)
+### P0 — Unblock iteration (server + contracts, one PR)
+- §1: drop `.nullable()` on ChangeSet fields in `shared-contracts/design-doc.ts`; switch to `.optional()` with "missing = no changes" semantics. Update `applyStringChangeSet` and peers to treat `undefined` as "leave list unchanged" and reject `null`.
+- §1: read-side `nullable().transform(v => v ?? [])` for every STRING[] column in `design-docs.repository.ts`. Storage writes always send `[]`, never `null`.
+- §1: regression test that round-trips a behaviour with omitted `input/output/usedBuildingBlocks` through `save_design_doc` → `read_design_doc`.
+- §3: rewrite `extract-design-model.md` Save section to defer to SKILL.md Step 6 (pure docs).
 
-### P1 — Better feedback (server, one PR)
-- §2: extend `ApplyResult` to count every layer, return `byKind` totals.
-- §1 secondary: optional `null` round-trip if we want defence-in-depth.
+### P1 — Simpler save contract (server, one PR)
+- §2: drop `totals` from `SaveDesignDocResult`. Return `{ status: "Ok", design_doc_id }` on success, `{ status: "Error", message, details_path? }` on failure. Update SKILL.md Step 6 to match.
 
 ### P2 — Quality of analysis (skill prompts, one PR, no code)
-- §4: cap fragment attachments at 5 in `analyze-document-topic.md`.
-- §5: add Step 3.5 topic-balancing pass to `extract-document-topics.md`.
+- §4: add 5-fragment-per-decision cap to `analyze-document-topic.md`.
+- §5: add the topic-hierarchy rules (single root, ≤10 first-level, reuse, re-shape, semantic-axis reasoning) to `extract-document-topics.md`.
 - §6: tighten Decision / Position cheat-sheet with narrative-style examples.
 
 ### P3 — Efficiency nudges (skill prompts, one PR, no code)
-- §7.1: prefer section tree + selective reads.
-- §7.3: sanction the batch path when `get_topic_for_document_review` adds no prior-document context.
+- §7.1: prefer section tree + selective reads in SKILL.md Step 3.
 
 ### Out of scope (for now)
-- §7.2: a single "post-process" script. Premature; revisit after P2 lands and we know whether the multi-script pattern recurs.
-- §1 OQ-1.1: storage NOT NULL constraint — only worthwhile if we touch the schema for another reason.
-
----
-
-## Open questions summary
-
-| ID | Question | Blocking |
-|----|----------|----------|
-| OQ-1.1 | Storage NOT NULL vs read-side coalesce? Both? | P0 design |
-| OQ-1.2 | Other STRING[] columns with the same quirk? | P0 audit |
-| OQ-2.1 | `byKind` inline vs file? | P1 design |
-| OQ-3.1 | Should `merge_document` invoke `save_design_doc` automatically? | P0 design |
-| OQ-4.1 | Hard cap (server rejects) vs soft cap (prompt)? | P2 design |
-| OQ-5.1 | Automated topic resplit thresholds, or pure heuristic? | P2 design |
-| OQ-7.1 | Worth the doc churn for ~45 s saved per run? | P3 confirmation |
+- §7.2 (single post-process script) — premature.
+- §7.3 (sanctioned batch path) — observe more runs first.
+- Backward compatibility with previously persisted design docs — DB will be cleared.

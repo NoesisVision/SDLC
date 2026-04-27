@@ -13,8 +13,8 @@ import {
 } from "./design-docs.repository.js";
 
 export interface SaveDesignDocResult {
+  status: "Ok";
   design_doc_id: string;
-  totals: { added: number; modified: number; removed: number };
 }
 
 @Injectable()
@@ -52,25 +52,9 @@ export class DesignDocsService implements OnModuleInit {
 
   async saveDesignDocFromFile(path: string): Promise<SaveDesignDocResult> {
     const doc = await this.readDesignDocFile(path);
-    const applyResult = await this.repository.applyDesignDoc(doc);
-    const totals = {
-      added:
-        applyResult.actors_added +
-        applyResult.bounded_contexts_added +
-        applyResult.quality_attributes_added,
-      modified:
-        applyResult.actors_modified +
-        applyResult.bounded_contexts_modified +
-        applyResult.quality_attributes_modified,
-      removed:
-        applyResult.actors_removed +
-        applyResult.bounded_contexts_removed +
-        applyResult.quality_attributes_removed,
-    };
-    this.logger.log(
-      `Saved DesignDoc ${doc.id} (${doc.name}) — +${totals.added} added, ~${totals.modified} modified, -${totals.removed} removed`,
-    );
-    return { design_doc_id: doc.id, totals };
+    await this.repository.applyDesignDoc(doc);
+    this.logger.log(`Saved DesignDoc ${doc.id} (${doc.name})`);
+    return { status: "Ok", design_doc_id: doc.id };
   }
 
   private async readDesignDocFile(path: string): Promise<DesignDoc> {

@@ -54,6 +54,14 @@ const SCHEMA_STATEMENTS = [
 // They are intentionally separate from the domain contracts, which use nested
 // ChangeSets; mapping between the two happens in rowTo* / applyStringChangeSet
 // / (de)serializeProperties below.
+//
+// Kuzu/lbug quirk: an empty STRING[] is read back as `null` even when written as
+// `[]`. Every STRING[] column therefore goes through `StringArrayRow`, which
+// coalesces `null` to `[]` on read. Writes always send `[]` (never `null`).
+const StringArrayRow = z
+  .array(z.string())
+  .nullable()
+  .transform((v) => v ?? []);
 
 const DesignDocRowSchema = z.object({
   id: z.string(),
@@ -104,9 +112,9 @@ const BehaviourRowSchema = z.object({
   type: z.string(),
   description: z.string(),
   is_public: z.boolean(),
-  input: z.array(z.string()),
-  output: z.array(z.string()),
-  used: z.array(z.string()),
+  input: StringArrayRow,
+  output: StringArrayRow,
+  used: StringArrayRow,
   actor_name: z.string(),
 });
 type BehaviourRow = z.infer<typeof BehaviourRowSchema>;
@@ -152,25 +160,6 @@ export interface ModelTarget {
   module_name: string | null;
 }
 
-export interface ApplyResult {
-  design_doc_id: string;
-  actors_added: number;
-  actors_modified: number;
-  actors_removed: number;
-  bounded_contexts_added: number;
-  bounded_contexts_modified: number;
-  bounded_contexts_removed: number;
-  quality_attributes_added: number;
-  quality_attributes_modified: number;
-  quality_attributes_removed: number;
-}
-
-interface CounterRef {
-  added: number;
-  modified: number;
-  removed: number;
-}
-
 @Injectable()
 export class DesignDocsRepository {
   private readonly logger = new Logger(DesignDocsRepository.name);
@@ -184,38 +173,18 @@ export class DesignDocsRepository {
     this.logger.log("DesignDoc schema initialized");
   }
 
-  async applyDesignDoc(doc: DesignDoc): Promise<ApplyResult> {
+  async applyDesignDoc(doc: DesignDoc): Promise<void> {
     await this.upsertDesignDocNode(doc);
-    const actors: CounterRef = { added: 0, modified: 0, removed: 0 };
-    const bcs: CounterRef = { added: 0, modified: 0, removed: 0 };
-    const qas: CounterRef = { added: 0, modified: 0, removed: 0 };
 
-    if (doc.actors !== null) {
-      await this.applyActorChangeSet(doc.id, doc.actors, actors);
+    if (doc.actors !== undefined) {
+      await this.applyActorChangeSet(doc.id, doc.actors);
     }
-    if (doc.qualityAttributes !== null) {
-      await this.applyQualityAttributeChangeSet(
-        doc.id,
-        doc.qualityAttributes,
-        qas,
-      );
+    if (doc.qualityAttributes !== undefined) {
+      await this.applyQualityAttributeChangeSet(doc.id, doc.qualityAttributes);
     }
-    if (doc.boundedContexts !== null) {
-      await this.applyBoundedContextChangeSet(doc.id, doc.boundedContexts, bcs);
+    if (doc.boundedContexts !== undefined) {
+      await this.applyBoundedContextChangeSet(doc.id, doc.boundedContexts);
     }
-
-    return {
-      design_doc_id: doc.id,
-      actors_added: actors.added,
-      actors_modified: actors.modified,
-      actors_removed: actors.removed,
-      bounded_contexts_added: bcs.added,
-      bounded_contexts_modified: bcs.modified,
-      bounded_contexts_removed: bcs.removed,
-      quality_attributes_added: qas.added,
-      quality_attributes_modified: qas.modified,
-      quality_attributes_removed: qas.removed,
-    };
   }
 
   async listDesignDocs(): Promise<DesignDocOverview[]> {
@@ -372,19 +341,15 @@ export class DesignDocsRepository {
   private async applyActorChangeSet(
     designDocId: string,
     changeSet: { added: DesignedActor[]; modified: DesignedActor[]; removed: string[] },
-    counter: CounterRef,
   ): Promise<void> {
     for (const name of changeSet.removed) {
       await this.deleteActor(designDocId, name);
-      counter.removed++;
     }
     for (const actor of changeSet.added) {
       await this.upsertActor(designDocId, actor, false);
-      counter.added++;
     }
     for (const actor of changeSet.modified) {
       await this.upsertActor(designDocId, actor, true);
-      counter.modified++;
     }
   }
 
@@ -395,19 +360,15 @@ export class DesignDocsRepository {
       modified: DesignedQualityAttribute[];
       removed: string[];
     },
-    counter: CounterRef,
   ): Promise<void> {
     for (const name of changeSet.removed) {
       await this.deleteQualityAttribute(designDocId, name);
-      counter.removed++;
     }
     for (const qa of changeSet.added) {
       await this.upsertQualityAttribute(designDocId, qa, false);
-      counter.added++;
     }
     for (const qa of changeSet.modified) {
       await this.upsertQualityAttribute(designDocId, qa, true);
-      counter.modified++;
     }
   }
 
@@ -418,19 +379,15 @@ export class DesignDocsRepository {
       modified: DesignedBoundedContext[];
       removed: string[];
     },
-    counter: CounterRef,
   ): Promise<void> {
     for (const name of changeSet.removed) {
       await this.deleteBoundedContext(designDocId, name);
-      counter.removed++;
     }
     for (const bc of changeSet.added) {
       await this.upsertBoundedContext(designDocId, bc, false);
-      counter.added++;
     }
     for (const bc of changeSet.modified) {
       await this.upsertBoundedContext(designDocId, bc, true);
-      counter.modified++;
     }
   }
 
@@ -539,7 +496,7 @@ export class DesignDocsRepository {
       await this.updateNodeFields("DesignedBoundedContext", id, fields);
     }
 
-    if (bc.modules !== null) {
+    if (bc.modules !== undefined) {
       for (const moduleName of bc.modules.removed) {
         await this.deleteModule(id, moduleName);
       }
@@ -551,7 +508,7 @@ export class DesignDocsRepository {
       }
     }
 
-    if (bc.buildingBlocks !== null) {
+    if (bc.buildingBlocks !== undefined) {
       for (const bbName of bc.buildingBlocks.removed) {
         await this.deleteBuildingBlock(id, bbName);
       }
@@ -600,7 +557,7 @@ export class DesignDocsRepository {
       await this.updateNodeFields("DesignedDomainModule", id, fields);
     }
 
-    if (mod.buildingBlocks !== null) {
+    if (mod.buildingBlocks !== undefined) {
       for (const bbName of mod.buildingBlocks.removed) {
         await this.deleteBuildingBlock(id, bbName);
       }
@@ -648,7 +605,7 @@ export class DesignDocsRepository {
         ? buildPartialFields({
             type: bb.type,
             description: bb.description,
-            properties: bb.properties === null ? null : propertiesJson,
+            properties: bb.properties === undefined ? undefined : propertiesJson,
           })
         : {
             name: bb.name,
@@ -659,7 +616,7 @@ export class DesignDocsRepository {
       await this.updateNodeFields("DesignedBuildingBlock", id, fields);
     }
 
-    if (bb.behaviours !== null) {
+    if (bb.behaviours !== undefined) {
       for (const bhName of bb.behaviours.removed) {
         await this.deleteBehaviour(id, bhName);
       }
@@ -671,7 +628,7 @@ export class DesignDocsRepository {
       }
     }
 
-    if (bb.rules !== null) {
+    if (bb.rules !== undefined) {
       for (const rName of bb.rules.removed) {
         await this.deleteRule(id, rName);
       }
@@ -683,7 +640,7 @@ export class DesignDocsRepository {
       }
     }
 
-    if (bb.scenarios !== null) {
+    if (bb.scenarios !== undefined) {
       for (const sName of bb.scenarios.removed) {
         await this.deleteScenario(id, sName);
       }
@@ -733,10 +690,10 @@ export class DesignDocsRepository {
             type: bh.type,
             description: bh.description,
             is_public: bh.isPublic,
-            input: bh.input === null ? null : input,
-            output: bh.output === null ? null : output,
+            input: bh.input === undefined ? undefined : input,
+            output: bh.output === undefined ? undefined : output,
             used_building_blocks:
-              bh.usedBuildingBlocks === null ? null : used,
+              bh.usedBuildingBlocks === undefined ? undefined : used,
             actor_name: bh.actor,
           })
         : {
@@ -756,7 +713,7 @@ export class DesignDocsRepository {
       await this.linkBehaviourToActor(id, bh.actor);
     }
 
-    if (bh.rules !== null) {
+    if (bh.rules !== undefined) {
       for (const rName of bh.rules.removed) {
         await this.deleteRule(id, rName);
       }
@@ -768,7 +725,7 @@ export class DesignDocsRepository {
       }
     }
 
-    if (bh.scenarios !== null) {
+    if (bh.scenarios !== undefined) {
       for (const sName of bh.scenarios.removed) {
         await this.deleteScenario(id, sName);
       }
@@ -1306,9 +1263,9 @@ function rowToScenario(r: ScenarioRow): DesignedScenario {
 }
 
 function applyStringChangeSet(
-  cs: { added: string[]; removed: string[]; modified: string[] } | null,
+  cs: { added: string[]; removed: string[]; modified: string[] } | undefined,
 ): string[] {
-  if (cs === null) return [];
+  if (cs === undefined) return [];
   const set = new Set<string>(cs.added);
   for (const m of cs.modified) set.add(m);
   for (const r of cs.removed) set.delete(r);
@@ -1330,9 +1287,9 @@ function buildPartialFields(
 function serializeProperties(
   properties:
     | { added: DesignedProperty[]; removed: string[]; modified: DesignedProperty[] }
-    | null,
+    | undefined,
 ): string {
-  if (properties === null) return "[]";
+  if (properties === undefined) return "[]";
   const map = new Map<string, DesignedProperty>();
   for (const p of properties.added) map.set(p.name, p);
   for (const p of properties.modified) {

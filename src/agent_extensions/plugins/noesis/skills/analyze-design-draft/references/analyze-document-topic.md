@@ -73,6 +73,14 @@ Append an entry to `analysis.json`'s top-level `decision_attachments` array:
 
 For `slot: "alternative"` you need the `alternative_index`. If you don't know it from `potential_decisions.json`, call `noesis-graph:read_decision` for that decision.
 
+**Attach at most 5 fragments per slot per decision.** Pick the most directly supportive evidence. If more than 5 fragments touch the slot, prefer ones that:
+
+1. State the rule / option / consequence explicitly (verbatim wording wins).
+2. Show a concrete code-side artefact (field, handler, type) that anchors the rule.
+3. Cover a distinct perspective — don't attach the same paragraph twice.
+
+Tangential mentions in coverage tables, recap sections, or table-of-contents entries should not be attached.
+
 ### CREATE
 
 The fragment introduces a decision arc not yet in the graph. Trace context (`Information`/`Position` fragments) and alternatives (`Position`/`Argument` fragments) within this topic. Build a `Decision`:

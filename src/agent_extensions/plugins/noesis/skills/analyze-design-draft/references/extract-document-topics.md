@@ -34,6 +34,27 @@ Per fragment, assign one or more from `IdeaUnitCategory`:
 
 Most fragments are `Information` only. Combine categories only when both genuinely apply.
 
+### Decision: examples that the eye easily misses
+
+A fragment is `Decision` content when it picks an option from alternatives, even when phrased as narrative — not only when it is labelled "Decision:" or "DP-N":
+
+- "We use append-only deltas because…" → `Decision` (option chosen + rationale).
+- "Instead of recomputing, we store…" → `Decision` (alternative ruled out).
+- "FIFO over LIFO because…" → `Decision`.
+- Polish/other-language equivalents of "ponieważ", "zamiast", "zdecydowaliśmy się na" / "we decided to" / "we chose" / "rather than" all signal a decision in narrative form.
+
+Combine with `Information` if the fragment also explains the chosen option. Combine with `Argument` if it states a load-bearing reason.
+
+### Position+Argument: rule statements that don't look like rules
+
+A `Position` fragment asserts a stance or invariant, even when not labelled `INVARIANT:` / `RULE:` / `RB-N`:
+
+- "Every order must have at least one line item." → `Position` (rule expressed as assertion).
+- "Source-document line ids are never reused." → `Position`.
+- "If a delta arrives out of order, drop it." → `Position` + `Argument` when the "if/then" embeds a reason.
+
+Combine with `Argument` when the same fragment carries the reasoning ("…because reusing them would break audit trails.").
+
 ## Topic assignment
 
 Reuse before promote. For every non-Irrelevant fragment:
@@ -48,9 +69,15 @@ Append every newly-created topic to `potential_topics.json` so `merge_document` 
 
 ### Topic hierarchy rules
 
-Build a 2–3 level tree. Aim for 3–7 children per parent. Group related new subtopics under a shared intermediate parent rather than dropping them flat. Don't create a subtopic for a single fragment unless it is a self-contained, recurring concept.
+Topics form a hierarchy that humans must be able to navigate. The agent's job is to keep that hierarchy legible.
 
-A document typically maps to 1–5 root topics. Depth over breadth: a deep, well-organized 3–5 root tree beats a flat 10+ root list.
+1. **Single root per document.** In most cases a document or conversation has one root topic that frames the whole subject. Multiple unrelated roots are a smell — usually they should hang under a shared parent that names what binds them.
+2. **First-level breadth ≤ 10.** No more than ~10 sibling topics directly under a root. If you find yourself producing more, the categorisation axis is probably too narrow — group along a coarser axis and demote the current ones one level down.
+3. **Reuse the existing structure.** Before adding a new topic — and especially before adding a new first-level topic — read the existing topic tree end to end. New topics at the first level are added only when there is concrete evidence that no existing branch fits.
+4. **Re-shape when needed.** Merging, splitting, and re-parenting existing topics is part of the job, not an exception. If a previously created topic no longer fits the cleaned document's actual structure, change it.
+5. **Reason from semantic axes, not counts.** Item count is a smell, not a verdict. A 1-item topic is fine if it is genuinely orthogonal; a 30-item topic is fine if all 30 belong to one tightly-coupled algorithm. Always decide based on the underlying semantic axes (command vs algorithm, happy-path vs edge-case, data-model vs behaviour, …) — never on a numeric threshold alone.
+
+Within a parent, aim for 3–7 children when the material naturally supports that shape. Group related new subtopics under a shared intermediate parent rather than dropping them flat. Don't create a subtopic for a single fragment unless it is a self-contained, recurring concept.
 
 ## Updating analysis.json
 

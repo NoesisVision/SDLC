@@ -107,17 +107,17 @@ export const DesignedBehaviourSchema = z.object({
   name: z.string().describe("Concise name, a few words"),
   description: z.string().nullable().default(null),
   type: DesignedBehaviourTypeSchema.nullable().default(null),
-  input: StringChangeSetSchema.nullable()
-    .default(null)
-    .describe("Input BuildingBlock names"),
-  output: StringChangeSetSchema.nullable()
-    .default(null)
-    .describe("Output BuildingBlock names"),
-  usedBuildingBlocks: StringChangeSetSchema.nullable()
-    .default(null)
-    .describe("Referenced BuildingBlock names"),
-  rules: DesignedRuleChangeSetSchema.nullable().default(null),
-  scenarios: DesignedScenarioChangeSetSchema.nullable().default(null),
+  input: StringChangeSetSchema.optional().describe(
+    "Input BuildingBlock names; omit when no changes",
+  ),
+  output: StringChangeSetSchema.optional().describe(
+    "Output BuildingBlock names; omit when no changes",
+  ),
+  usedBuildingBlocks: StringChangeSetSchema.optional().describe(
+    "Referenced BuildingBlock names; omit when no changes",
+  ),
+  rules: DesignedRuleChangeSetSchema.optional(),
+  scenarios: DesignedScenarioChangeSetSchema.optional(),
   isPublic: z.boolean().default(false),
   actor: z
     .string()
@@ -157,10 +157,10 @@ export const DesignedBuildingBlockSchema = z.object({
   name: z.string(),
   type: DesignedBuildingBlockTypeSchema.nullable().default(null),
   description: z.string().nullable().default(null),
-  properties: DesignedPropertyChangeSetSchema.nullable().default(null),
-  behaviours: DesignedBehaviourChangeSetSchema.nullable().default(null),
-  rules: DesignedRuleChangeSetSchema.nullable().default(null),
-  scenarios: DesignedScenarioChangeSetSchema.nullable().default(null),
+  properties: DesignedPropertyChangeSetSchema.optional(),
+  behaviours: DesignedBehaviourChangeSetSchema.optional(),
+  rules: DesignedRuleChangeSetSchema.optional(),
+  scenarios: DesignedScenarioChangeSetSchema.optional(),
 });
 export type DesignedBuildingBlock = z.infer<typeof DesignedBuildingBlockSchema>;
 
@@ -174,7 +174,7 @@ export type DesignedBuildingBlockChangeSet = z.infer<
 export const DesignedDomainModuleSchema = z.object({
   name: z.string(),
   description: z.string().nullable().default(null),
-  buildingBlocks: DesignedBuildingBlockChangeSetSchema.nullable().default(null),
+  buildingBlocks: DesignedBuildingBlockChangeSetSchema.optional(),
 });
 export type DesignedDomainModule = z.infer<typeof DesignedDomainModuleSchema>;
 
@@ -192,10 +192,10 @@ export const DesignedBoundedContextSchema = z.object({
     .nullable()
     .default(null)
     .describe("Scope and responsibility of this context"),
-  modules: DesignedDomainModuleChangeSetSchema.nullable().default(null),
-  buildingBlocks: DesignedBuildingBlockChangeSetSchema.nullable()
-    .default(null)
-    .describe("Building blocks not belonging to any module"),
+  modules: DesignedDomainModuleChangeSetSchema.optional(),
+  buildingBlocks: DesignedBuildingBlockChangeSetSchema.optional().describe(
+    "Building blocks not belonging to any module",
+  ),
 });
 export type DesignedBoundedContext = z.infer<
   typeof DesignedBoundedContextSchema
@@ -233,11 +233,9 @@ export const DesignDocSchema = z.object({
   description: z
     .string()
     .describe("Summary of what this design change covers"),
-  actors: DesignedActorChangeSetSchema.nullable().default(null),
-  boundedContexts: DesignedBoundedContextChangeSetSchema.nullable().default(null),
-  qualityAttributes: DesignedQualityAttributeChangeSetSchema.nullable().default(
-    null,
-  ),
+  actors: DesignedActorChangeSetSchema.optional(),
+  boundedContexts: DesignedBoundedContextChangeSetSchema.optional(),
+  qualityAttributes: DesignedQualityAttributeChangeSetSchema.optional(),
 });
 export type DesignDoc = z.infer<typeof DesignDocSchema>;
 
