@@ -27,6 +27,15 @@
 4. Strict TypeScript — no `any` types without justification.
 5. Narrow discriminated unions (and any closed string-literal union) with `switch` on the discriminator plus an `assertNever(x)` default — never `if`/`else if` chains or ternaries. This gives compile-time exhaustiveness when a new variant is added. The `assertNever` helper lives in `shared-contracts/assert-never.ts`.
 
+## UI verification
+
+1. Every UI change MUST be verified in a real browser via the **Playwright MCP** server (`.mcp.json`) before reporting the task as complete. Type checks alone are not sufficient.
+2. Start everything automatically — do not ask the user to launch processes:
+   - **Backend**: `bun run dev:backend` (root) — boots NestJS, seeds the dev DB, writes a discovery file the UI proxy reads.
+   - **UI**: `cd src/agent_extensions/plugins/noesis/mcp/noesis-graph/ui && bun run dev` — Vite proxies `/api/*` to the backend via the discovery file.
+   - **Browser**: open the Vite URL with `mcp__playwright__browser_navigate`, then drive interactions and assert state with `browser_snapshot` / `browser_evaluate` / `browser_console_messages`.
+   Run backend and UI dev servers with `run_in_background: true`.
+
 ## Python
 
 1. Use PEP 8 guidelines.

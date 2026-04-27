@@ -1,32 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "mcp__plugin_noesis_noesis-graph__register_conversation",
-      "mcp__plugin_noesis_noesis-graph__set_conversation_metadata",
-      "mcp__plugin_noesis_noesis-graph__get_raw_speaker_turns",
-      "mcp__plugin_noesis_noesis-graph__get_next_turn_batch",
-      "mcp__plugin_noesis_noesis-graph__create_topics",
-      "mcp__plugin_noesis_noesis-graph__store_idea_units",
-      "mcp__plugin_noesis_noesis-graph__store_decisions",
-      "mcp__plugin_noesis_noesis-graph__create_cross_references",
-      "mcp__plugin_noesis_noesis-graph__set_summaries",
-      "mcp__plugin_noesis_noesis-graph__get_topic_nodes",
-      "mcp__plugin_noesis_noesis-graph__get_topic_idea_units",
-      "mcp__plugin_noesis_noesis-graph__get_decisions",
-      "mcp__plugin_noesis_noesis-graph__merge_topics",
-      "mcp__plugin_noesis_noesis-graph__reparent_topic",
-      "mcp__plugin_noesis_noesis-graph__reorder_topic",
-      "mcp__plugin_noesis_noesis-graph__finalize_conversation",
-      "mcp__plugin_noesis_noesis-graph__export_conversation_document",
-      "mcp__plugin_noesis_noesis-graph__get_topic_tree",
-      "mcp__plugin_noesis_noesis-graph__get_topic_detail",
-      "mcp__plugin_noesis_noesis-graph__get_topic_history",
-      "mcp__plugin_noesis_noesis-graph__get_decision_chain",
-      "mcp__plugin_noesis_noesis-graph__search",
-      "mcp__plugin_noesis_noesis-graph__get_conversation_summary",
-      "mcp__plugin_noesis_noesis-graph__store_batch_results",
-      "mcp__plugin_noesis_noesis-graph__get_batch_results",
-      "mcp__plugin_noesis_noesis-graph__resolve_and_store_idea_units"
+      "mcp__plugin_noesis_noesis-graph__*",
+      "mcp__playwright__*",
+      "mcp__chrome_devtools__*"
     ],
     "deny": []
   }
