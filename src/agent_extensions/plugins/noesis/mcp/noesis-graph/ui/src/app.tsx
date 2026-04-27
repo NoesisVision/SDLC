@@ -15,6 +15,7 @@ import {
   IconMessageCircle,
   IconGavel,
   IconCube,
+  IconFileDescription,
   IconSchema,
   IconChevronsRight,
   IconChevronsLeft,
@@ -24,6 +25,7 @@ import { AppHeader } from "./app-header.js";
 import { HomePage } from "./home/home.js";
 import { TopicsPage } from "./topics/topics.js";
 import { DecisionsPage } from "./decisions/decisions.js";
+import { DesignDocsPage } from "./design-docs/design-docs.js";
 import { ModelExplorerPage } from "./model-explorer/model-explorer.js";
 import { SchemaExplorerPage } from "./schema-explorer/schema-explorer.js";
 
@@ -31,6 +33,7 @@ const NAV_ITEMS = [
   { label: "Home", icon: IconHome, path: "/" },
   { label: "Topics", icon: IconMessageCircle, path: "/topics" },
   { label: "Decisions", icon: IconGavel, path: "/decisions" },
+  { label: "Design Docs", icon: IconFileDescription, path: "/design-docs" },
   { label: "Model Explorer", icon: IconCube, path: "/model-explorer" },
   { label: "Schema Explorer", icon: IconSchema, path: "/schema-explorer" },
 ];
@@ -173,6 +176,8 @@ function PageRouter({
       return <TopicsPage />;
     case "/decisions":
       return <DecisionsPage />;
+    case "/design-docs":
+      return <DesignDocsPage />;
     case "/model-explorer":
       return <ModelExplorerPage />;
     case "/schema-explorer":

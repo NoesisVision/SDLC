@@ -243,6 +243,7 @@ export const DesignDocOverviewSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
+  date: z.string(),
   actor_count: z.int(),
   bounded_context_count: z.int(),
   quality_attribute_count: z.int(),

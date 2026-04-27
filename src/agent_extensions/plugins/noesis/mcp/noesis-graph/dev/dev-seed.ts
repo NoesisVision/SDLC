@@ -334,6 +334,159 @@ const DESIGN_DOC: DesignDoc = {
   },
 };
 
+const DESIGN_DOC_DELTA: DesignDoc = {
+  id: "dd-sample-v2",
+  name: "Sample design — Pricing iteration",
+  description:
+    "Adds bulk-discount logic, modifies the Order aggregate, and removes the unused Customer actor.",
+  actors: {
+    added: [
+      {
+        name: "PricingAdmin",
+        description: "Adjusts pricing rules for promotions.",
+      },
+    ],
+    removed: ["Customer"],
+    modified: [],
+  },
+  qualityAttributes: {
+    added: [],
+    removed: [],
+    modified: [
+      {
+        name: "Latency",
+        type: "performance",
+        description: "Tightened to p99 under 150ms after caching rollout.",
+      },
+    ],
+  },
+  boundedContexts: {
+    added: [],
+    removed: [],
+    modified: [
+      {
+        name: "Sales",
+        description: "Now also owns bulk discounts.",
+        modules: {
+          added: [
+            {
+              name: "Discounts",
+              description: "Promotional and bulk pricing.",
+              buildingBlocks: {
+                added: [
+                  {
+                    name: "BulkDiscount",
+                    type: "value_object",
+                    description: "Tiered discount applied to order totals.",
+                    properties: {
+                      added: [
+                        { name: "minQty", type: "Quantity" },
+                        { name: "percentage", type: "Percent" },
+                      ],
+                      removed: [],
+                      modified: [],
+                    },
+                    behaviours: {
+                      added: [
+                        {
+                          name: "Apply",
+                          type: "Command",
+                          description: "Apply the discount to a subtotal.",
+                          isPublic: false,
+                          actor: "PricingAdmin",
+                          input: {
+                            added: ["Subtotal"],
+                            removed: [],
+                            modified: [],
+                          },
+                          output: {
+                            added: ["DiscountedTotal"],
+                            removed: [],
+                            modified: [],
+                          },
+                          rules: {
+                            added: [
+                              {
+                                name: "TierMonotonicity",
+                                ruleType: "Computation",
+                                description:
+                                  "Higher quantities never get a smaller discount.",
+                              },
+                            ],
+                            removed: [],
+                            modified: [],
+                          },
+                          scenarios: { added: [], removed: [], modified: [] },
+                        },
+                      ],
+                      removed: [],
+                      modified: [],
+                    },
+                    rules: { added: [], removed: [], modified: [] },
+                    scenarios: { added: [], removed: [], modified: [] },
+                  },
+                ],
+                removed: [],
+                modified: [],
+              },
+            },
+          ],
+          removed: [],
+          modified: [
+            {
+              name: "Orders",
+              description: "Order lifecycle, now applies bulk discounts.",
+              buildingBlocks: {
+                added: [],
+                removed: [],
+                modified: [
+                  {
+                    name: "Order",
+                    type: null,
+                    description: "Order aggregate root with discounts.",
+                    behaviours: {
+                      added: [],
+                      removed: [],
+                      modified: [
+                        {
+                          name: "PlaceOrder",
+                          type: null,
+                          actor: null,
+                          description:
+                            "Place a new order — applies bulk discounts.",
+                          isPublic: true,
+                          usedBuildingBlocks: {
+                            added: ["BulkDiscount"],
+                            removed: [],
+                            modified: [],
+                          },
+                          rules: {
+                            added: [
+                              {
+                                name: "MinOrderValue",
+                                ruleType: "Consistency",
+                                description: "Order total must exceed $5.",
+                              },
+                            ],
+                            removed: ["ValidateTotal"],
+                            modified: [],
+                          },
+                          scenarios: { added: [], removed: [], modified: [] },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        buildingBlocks: { added: [], removed: ["PricingPolicy"], modified: [] },
+      },
+    ],
+  },
+};
+
 export async function seedDevDatabase(repos: SeedRepositories): Promise<void> {
   const logger = new Logger("DevSeed");
   await seedScannerData(repos.scanner, repos.invocations);
@@ -498,7 +651,8 @@ async function seedDesignDocData(
   designDocsRepo: DesignDocsRepository,
   db: DatabaseService,
 ): Promise<void> {
-  await designDocsRepo.applyDesignDoc(DESIGN_DOC);
+  await designDocsRepo.applyDesignDoc(DESIGN_DOC, "2026-04-20");
+  await designDocsRepo.applyDesignDoc(DESIGN_DOC_DELTA, "2026-04-26");
   await seedNestedDesignedModule(db);
 }
 

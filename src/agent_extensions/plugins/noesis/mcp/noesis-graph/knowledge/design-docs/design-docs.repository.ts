@@ -26,7 +26,7 @@ import {
 } from "./node-ids.js";
 
 const SCHEMA_STATEMENTS = [
-  "CREATE NODE TABLE IF NOT EXISTS DesignDoc(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS DesignDoc(id STRING, name STRING, description STRING, source_json STRING, date STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedActor(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedBoundedContext(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedDomainModule(id STRING, name STRING, full_path STRING, description STRING, PRIMARY KEY(id))",
@@ -67,6 +67,8 @@ const DesignDocRowSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
+  source_json: z.string(),
+  date: z.string(),
 });
 type DesignDocRow = z.infer<typeof DesignDocRowSchema>;
 
@@ -173,8 +175,8 @@ export class DesignDocsRepository {
     this.logger.log("DesignDoc schema initialized");
   }
 
-  async applyDesignDoc(doc: DesignDoc): Promise<void> {
-    await this.upsertDesignDocNode(doc);
+  async applyDesignDoc(doc: DesignDoc, date: string): Promise<void> {
+    await this.upsertDesignDocNode(doc, date);
 
     if (doc.actors !== undefined) {
       await this.applyActorChangeSet(doc.id, doc.actors);
@@ -187,9 +189,17 @@ export class DesignDocsRepository {
     }
   }
 
+  async readDesignDocSource(designDocId: string): Promise<DesignDoc | null> {
+    const row = await this.fetchDesignDocRow(designDocId);
+    if (row === null) return null;
+    if (row.source_json === "") return null;
+    const parsed = JSON.parse(row.source_json);
+    return parsed as DesignDoc;
+  }
+
   async listDesignDocs(): Promise<DesignDocOverview[]> {
     const rawRows = await this.db.query<DesignDocRow>(
-      "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description ORDER BY d.name",
+      "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date ORDER BY d.name",
     );
     const rows = z.array(DesignDocRowSchema).parse(rawRows);
     const out: DesignDocOverview[] = [];
@@ -198,6 +208,7 @@ export class DesignDocsRepository {
         id: row.id,
         name: row.name,
         description: row.description,
+        date: row.date,
         actor_count: await this.countChildren(row.id, "DD_HAS_ACTOR", "DesignedActor"),
         bounded_context_count: await this.countChildren(
           row.id,
@@ -391,17 +402,29 @@ export class DesignDocsRepository {
     }
   }
 
-  private async upsertDesignDocNode(doc: DesignDoc): Promise<void> {
+  private async upsertDesignDocNode(
+    doc: DesignDoc,
+    date: string,
+  ): Promise<void> {
+    const sourceJson = JSON.stringify(doc);
     if (await this.nodeExists("DesignDoc", doc.id)) {
       await this.updateNodeFields("DesignDoc", doc.id, {
         name: doc.name,
         description: doc.description,
+        source_json: sourceJson,
+        date,
       });
       return;
     }
     await this.db.query(
-      "CREATE (d:DesignDoc {id: $id, name: $name, description: $description})",
-      { id: doc.id, name: doc.name, description: doc.description },
+      "CREATE (d:DesignDoc {id: $id, name: $name, description: $description, source_json: $source_json, date: $date})",
+      {
+        id: doc.id,
+        name: doc.name,
+        description: doc.description,
+        source_json: sourceJson,
+        date,
+      },
     );
   }
 
@@ -944,7 +967,7 @@ export class DesignDocsRepository {
     designDocId: string,
   ): Promise<DesignDocRow | null> {
     const rawRows = await this.db.query<DesignDocRow>(
-      "MATCH (d:DesignDoc) WHERE d.id = $id RETURN d.id AS id, d.name AS name, d.description AS description LIMIT 1",
+      "MATCH (d:DesignDoc) WHERE d.id = $id RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date LIMIT 1",
       { id: designDocId },
     );
     if (rawRows.length === 0) return null;

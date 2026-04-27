@@ -1,0 +1,261 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 50px);
+  overflow: hidden;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--mantine-color-dark-4);
+  flex-shrink: 0;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 280px 380px 1fr;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+
+.listColumn,
+.treeColumn,
+.detailsColumn {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.listColumn,
+.treeColumn {
+  border-right: 1px solid var(--mantine-color-dark-4);
+}
+
+.detailsColumn {
+  padding: 12px;
+}
+
+.columnHeader {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--mantine-color-dark-4);
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.015);
+}
+
+.scrollArea {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 8px 14px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--mantine-color-dark-3) transparent;
+}
+
+.scrollArea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollArea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollArea::-webkit-scrollbar-thumb {
+  background-color: var(--mantine-color-dark-3);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollArea::-webkit-scrollbar-thumb:hover {
+  background-color: var(--mantine-color-dark-2);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+.listItem {
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+  padding: 10px 12px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.listItem:hover {
+  background-color: rgba(79, 141, 226, 0.08);
+  border-color: rgba(79, 141, 226, 0.22);
+}
+
+.listItemActive {
+  background-color: rgba(79, 141, 226, 0.14);
+  border-color: rgba(79, 141, 226, 0.38);
+}
+
+.listItemActive:hover {
+  background-color: rgba(79, 141, 226, 0.18);
+}
+
+.detailsEmpty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: 10px;
+  background-color: var(--mantine-color-dark-6);
+}
+
+.detailsShell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: 10px;
+  background-color: var(--mantine-color-dark-6);
+  overflow: hidden;
+}
+
+.detailsBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--mantine-color-dark-3) transparent;
+}
+
+.detailsBody::-webkit-scrollbar {
+  width: 8px;
+}
+
+.detailsBody::-webkit-scrollbar-thumb {
+  background-color: var(--mantine-color-dark-3);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.section {
+  padding: 14px 18px;
+  border-top: 1px solid var(--mantine-color-dark-5);
+}
+
+.section:first-of-type {
+  border-top: none;
+}
+
+.sectionBody {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--mantine-color-gray-2);
+}
+
+.treeNode {
+  width: 100%;
+  border-radius: 4px;
+  cursor: pointer;
+  background-color: transparent;
+  border: 1px solid transparent;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+  text-align: left;
+  padding: 4px 6px;
+}
+
+.treeNode:hover {
+  background-color: rgba(79, 141, 226, 0.08);
+}
+
+.treeNodeActive {
+  background-color: rgba(79, 141, 226, 0.16);
+  border-color: rgba(79, 141, 226, 0.38);
+}
+
+.treeNodeActive:hover {
+  background-color: rgba(79, 141, 226, 0.2);
+}
+
+.statusAdded {
+  color: var(--mantine-color-noesisGreen-4);
+}
+
+.statusModified {
+  color: var(--mantine-color-yellow-4);
+}
+
+.statusRemoved {
+  color: var(--mantine-color-red-4);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 99, 99, 0.5);
+  text-decoration-thickness: 1px;
+}
+
+.sectionHeader {
+  padding: 6px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kvRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kvKey {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dark-2);
+  font-weight: 700;
+}
+
+.kvValue {
+  font-size: 14px;
+  color: var(--mantine-color-gray-2);
+  white-space: pre-wrap;
+}
+
+.scenarioRow {
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background-color: rgba(255, 255, 255, 0.015);
+}
+
+.legendChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mantine-color-gray-3);
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--mantine-color-dark-4);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
