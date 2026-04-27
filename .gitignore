@@ -53,6 +53,7 @@ promptfoo-results.html
 
 # Claude Code
 .claude/worktrees/
+.playwright-mcp/
 
 # Harbor
 jobs
