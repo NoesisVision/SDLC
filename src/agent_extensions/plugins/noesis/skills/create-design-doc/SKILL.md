@@ -24,6 +24,8 @@ Get from `$ARGUMENTS`, ask the user for anything missing:
 
 At least one of `conversation_ids`, `document_ids`, `file_paths` must be non-empty.
 
+The skill-invocation message itself (the user's prompt body, beyond `$ARGUMENTS`) is the **highest-priority source of intent**. Capture any inline requirements, decisions, constraints, or terminology stated there and treat them as authoritative when sources disagree — they outrank file contents, prior decisions, topic summaries, and the existing model.
+
 Pick a `<working_dir>` for analysis scratch files: a sibling directory of `design_doc_path` named `<basename>.analysis/`. Create it with the Bash tool.
 
 ## Workflow
@@ -31,6 +33,12 @@ Pick a `<working_dir>` for analysis scratch files: a sibling directory of `desig
 ### Step 1: Load graph context
 
 Each sub-step is a single MCP call. Read the returned tmp file with the Read tool, extract what is needed, then drop the file from active reasoning — it can always be re-read.
+
+#### 1.0 Existing Design Doc baseline
+
+Run only when iterating (i.e. `design_doc_id` was provided in Setup). Call `noesis-graph:read_design_doc` with that id. The tool writes a Markdown rendering of the full current state (actors, bounded contexts → modules → building blocks → behaviours, rules, scenarios, quality attributes) to a tmp file and returns the path. Read it once to orient, then drop it from active context — it will be re-read in Step 4 as the authoritative baseline for the diff.
+
+If creating a new Design Doc (`design_doc_title` was provided), skip this sub-step. Step 4 will emit everything as `added`.
 
 #### 1.1 Topic long summaries
 
@@ -128,7 +136,7 @@ Detailed schema and ChangeSet semantics: read `${CLAUDE_PLUGIN_ROOT}/skills/anal
 
 Build a `DesignDoc` payload:
 
-- If iterating, base the diff on the model rendered in §1.5 (already loaded as evidence). Items present there but not in the new model become `removed` (by name). Items present in both with changed fields become `modified`. New items become `added`. Apply this rule recursively to nested ChangeSets.
+- If iterating, re-read the existing Design Doc loaded in §1.0 — that is the authoritative baseline for the diff. Items present there but absent from the new model become `removed` (by name). Items present in both with changed fields become `modified`. New items become `added`. Apply this rule recursively to nested ChangeSets. (§1.5 may be consulted for related BCs that live in other Design Docs, but it is not the baseline.)
 - If creating, every item goes into `added`; `modified` and `removed` stay empty.
 
 Validate locally: every reference in `usedBuildingBlocks`, `input`, `output` must resolve to a Building Block name that exists in the produced doc OR in the prior model loaded in §1.5.
@@ -137,7 +145,7 @@ Write the validated JSON to `<design_doc_path>` (this is the version-controlled 
 
 ## Rules
 
-- **Source of truth ranking.** When sources disagree, trust in this order: `file_paths` (Step 2) → decisions (§1.2) → topic summaries (§1.1) → existing model (§1.5). The newest, most explicit evidence wins.
+- **Source of truth ranking.** When sources disagree, trust in this order: skill-invocation message (the user's prompt body — inline requirements, decisions, constraints, terminology) → `file_paths` (Step 2) → decisions (§1.2) → topic summaries (§1.1) → existing model (§1.0 / §1.5). The newest, most explicit evidence wins.
 - **Deep-dive on demand.** When a topic summary leaves a question open, call `noesis-graph:list_topic_items_since` with `{ topic_id, since? }`. With `since`, the tool returns only items (IdeaUnits, DocumentFragments) created after that timestamp; without it, all items. Output is a tmp file — read it, extract what you need, drop it.
 - **Approval gates.** Never persist a relation change between Bounded Contexts or a new Bounded Context without explicit user confirmation via `AskUserQuestion`.
 - **Minimum reload principle.** Each analysis sub-step lives in its own file. After writing it, do not keep its content in active context unless a later step needs it; reload from disk on demand.
