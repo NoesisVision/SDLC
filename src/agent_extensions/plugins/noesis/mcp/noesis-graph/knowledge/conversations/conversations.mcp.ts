@@ -6,7 +6,7 @@ import {
 } from "../../mcp-tool-output.js";
 import {
   ConversationsService,
-  type TopicForReview,
+  type ReviewBundle,
 } from "./conversations.service.js";
 
 export function registerConversationsTools(
@@ -16,7 +16,8 @@ export function registerConversationsTools(
   registerAddConversation(mcp, conversations);
   registerHasConversation(mcp, conversations);
   registerMergeConversation(mcp, conversations);
-  registerGetTopicForReview(mcp, conversations);
+  registerPrepareReviewBundle(mcp, conversations);
+  registerValidateOutput(mcp, conversations);
 }
 
 function registerAddConversation(
@@ -39,42 +40,6 @@ function registerAddConversation(
     },
     async ({ path }) =>
       runInlineJsonTool(() => conversations.addConversationFromFile(path)),
-  );
-}
-
-function registerGetTopicForReview(
-  mcp: McpServer,
-  conversations: ConversationsService,
-): void {
-  mcp.registerTool(
-    "get_topic_for_review",
-    {
-      description:
-        "Load the next unreviewed Topic from a working output.json for analysis. " +
-        "Combines the current conversation's idea units with prior-conversation idea units " +
-        "already attached to the same Topic in the knowledge graph (marked `[prior conversation]`). " +
-        "Writes the enriched topic Markdown (with HTML-comment metadata for `topic_id`, `num_items`, " +
-        "`has_decision_units`) to a tmp file and returns the file path. The agent must read it with the Read tool. " +
-        "If no unreviewed topic remains, returns inline JSON `{ status: \"Done\" }`.",
-      inputSchema: {
-        output_path: z
-          .string()
-          .describe(
-            "Absolute path to the working output.json produced during analysis.",
-          ),
-      },
-    },
-    async ({ output_path }) => {
-      const review = await conversations.getTopicForReview(output_path);
-      if (review === null) {
-        return runInlineJsonTool(async () => ({ status: "Done" }));
-      }
-      return runFileOutputTool(
-        "get_topic_for_review",
-        async () => review,
-        formatTopicForReview,
-      );
-    },
   );
 }
 
@@ -111,6 +76,7 @@ function registerMergeConversation(
         "`<working_dir>/output.json` (matching AnalyzeConversationOutput: `{ conversation, potential_topics }`). " +
         "Persists the Conversation + Turn + IdeaUnit nodes, upserts referenced Topics with parent linking, " +
         "attaches idea-unit / document-fragment items, and creates Decisions under their owning Topics. " +
+        "Runs `validate_output` as a pre-flight gate and rejects with the same error shape on failure. " +
         "Fails if the conversation id already exists in the graph.",
       inputSchema: {
         working_dir: z
@@ -125,12 +91,73 @@ function registerMergeConversation(
   );
 }
 
-function formatTopicForReview(review: TopicForReview): string {
-  const header = [
-    `<!-- topic_id: ${review.topic_id} -->`,
-    `<!-- num_items: ${review.num_items} -->`,
-    `<!-- has_decision_units: ${review.has_decision_units} -->`,
-    "",
-  ].join("\n");
-  return header + review.markdown;
+function registerPrepareReviewBundle(
+  mcp: McpServer,
+  conversations: ConversationsService,
+): void {
+  mcp.registerTool(
+    "prepare_review_bundle",
+    {
+      description:
+        "Build the Step 4 review bundle from `<working_dir>/output.json`. Returns a single " +
+        "Markdown file containing every topic in post-order (leaves first, parents last), each section " +
+        "preceded by HTML-comment metadata `<!-- topic_id: ... -->`, `<!-- num_items: ... -->`, " +
+        "`<!-- has_decision_units: ... -->`. Sections include `## Subtopics` with finalized child summaries " +
+        "(or `_(pending review)_`) and `[prior conversation]` markers on idea units that originate from other " +
+        "conversations already attached to the same topic. The agent reads the bundle once and writes all " +
+        "summaries+decisions in topic order. Inline JSON includes `topic_count` and `topics_with_prior_units`.",
+      inputSchema: {
+        output_path: z
+          .string()
+          .describe(
+            "Absolute path to the working output.json produced during analysis.",
+          ),
+      },
+    },
+    async ({ output_path }) => {
+      const bundle = await conversations.prepareReviewBundle(output_path);
+      return runFileOutputTool(
+        "prepare_review_bundle",
+        async () => bundle,
+        formatBundle,
+        "md",
+        (b) => ({
+          topic_count: b.topic_count,
+          topics_with_prior_units: b.topics_with_prior_units,
+        }),
+      );
+    },
+  );
+}
+
+function registerValidateOutput(
+  mcp: McpServer,
+  conversations: ConversationsService,
+): void {
+  mcp.registerTool(
+    "validate_output",
+    {
+      description:
+        "Validate `<working_dir>/output.json` against every cross-cutting invariant required " +
+        "by `merge_conversation`: schema parse, idea-unit assignment coverage, topic-id consistency " +
+        "between conversation.topics and potential_topics, reference integrity to existing idea units, " +
+        "decision shape (slot indices in range, no orphan referenced_items), and topic forest integrity " +
+        "(parent_id resolves, no cycles). Returns `{ status: \"Ok\", warnings }` or " +
+        "`{ status: \"Errors\", errors, warnings }` with JSON-pointer-style paths. Warnings are advisory " +
+        "(first-level breadth, large own-item counts) and never block.",
+      inputSchema: {
+        working_dir: z
+          .string()
+          .describe(
+            "Absolute path to the analysis working directory containing output.json.",
+          ),
+      },
+    },
+    async ({ working_dir }) =>
+      runInlineJsonTool(() => conversations.validateOutput(working_dir)),
+  );
+}
+
+function formatBundle(bundle: ReviewBundle): string {
+  return bundle.markdown;
 }

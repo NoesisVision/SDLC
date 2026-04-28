@@ -23,6 +23,11 @@ import { DocumentsRepository } from "../documents/documents.repository.js";
 import { TopicsRepository } from "../topics/topics.repository.js";
 import { ConversationsRepository } from "./conversations.repository.js";
 import { ideaUnitNodeId } from "./node-ids.js";
+import {
+  validateAnalyzeConversationOutput,
+  type GraphLookup,
+  type ValidationResult,
+} from "./validate-output.js";
 
 export interface MergeConversationResult {
   conversation_id: string;
@@ -31,11 +36,9 @@ export interface MergeConversationResult {
   decisions_added: number;
 }
 
-export interface TopicForReview {
-  topic_id: string;
-  topic_title: string;
-  num_items: number;
-  has_decision_units: boolean;
+export interface ReviewBundle {
+  topic_count: number;
+  topics_with_prior_units: number;
   markdown: string;
 }
 
@@ -68,83 +71,24 @@ export class ConversationsService {
     };
   }
 
-  async getTopicForReview(
-    outputPath: string,
-  ): Promise<TopicForReview | null> {
-    const output = await this.readOutputFile(outputPath);
-    const { conversation } = output;
-    const order = postOrderTopicIds(
-      conversation.topics,
-      output.potential_topics.topics,
-    );
-    const topic = pickNextUnreviewed(conversation.topics, order);
-    if (topic === null) return null;
-
-    const currentTurnMap = buildTurnMap(conversation.turns);
-    const priorDetails = await this.repository.getPriorIdeaUnits(
-      topic.id,
-      conversation.conversation_id,
-    );
-
-    const details: IdeaUnitDetail[] = [];
-    const seen = new Set<string>();
-
-    for (const item of topic.items) {
-      switch (item.type) {
-        case "idea_unit_ref": {
-          const key = itemKey(item);
-          if (seen.has(key)) break;
-          seen.add(key);
-          const detail = resolveIdeaUnitDetail(item, currentTurnMap);
-          if (detail === null || isIrrelevant(detail.categories)) break;
-          details.push(detail);
-          break;
-        }
-        case "document_fragment_ref":
-          break;
-        default:
-          assertNever(item);
-      }
-    }
-
-    for (const prior of priorDetails) {
-      const key = `${prior.conversation_id}:${prior.turn_index}:${prior.idea_unit_index}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      details.push(prior);
-    }
-
-    const subtopics = collectSubtopics(
-      topic.id,
-      conversation.topics,
-      output.potential_topics.topics,
-    );
-
-    const enriched: EnrichedTopic = {
-      id: topic.id,
-      title: topic.title,
-      short_summary: topic.short_summary,
-      long_summary: topic.long_summary,
-      conversation_id: conversation.conversation_id,
-      idea_units: details,
-      subtopics,
-    };
-
-    return {
-      topic_id: topic.id,
-      topic_title: topic.title,
-      num_items: details.length,
-      has_decision_units: details.some((d) => d.categories.includes("Decision")),
-      markdown: formatEnrichedTopicMarkdown(enriched),
-    };
-  }
-
   async hasConversation(conversationId: string): Promise<boolean> {
     return this.repository.exists(conversationId);
   }
 
   async mergeConversation(workingDir: string): Promise<MergeConversationResult> {
-    const output = await this.readOutputFile(join(workingDir, "output.json"));
+    const outputPath = join(workingDir, "output.json");
+    const raw = await readJsonFile(outputPath);
+    const validation = await validateAnalyzeConversationOutput(
+      raw,
+      this.graphLookup(),
+    );
+    if (validation.status === "Errors") {
+      throw new Error(
+        `Output validation failed before merge: ` +
+          JSON.stringify(validation.errors),
+      );
+    }
+    const output = AnalyzeConversationOutputSchema.parse(raw);
     const { conversation, potential_topics } = output;
     const parentMap = buildParentMap(potential_topics.topics);
 
@@ -223,6 +167,107 @@ export class ConversationsService {
     };
   }
 
+  async prepareReviewBundle(outputPath: string): Promise<ReviewBundle> {
+    const output = await this.readOutputFile(outputPath);
+    const { conversation } = output;
+    const order = postOrderTopicIds(
+      conversation.topics,
+      output.potential_topics.topics,
+    );
+    const byId = new Map(conversation.topics.map((t) => [t.id, t] as const));
+    const currentTurnMap = buildTurnMap(conversation.turns);
+
+    const sections: string[] = [];
+    let topicsWithPrior = 0;
+
+    for (const id of order) {
+      const topic = byId.get(id);
+      if (topic === undefined) continue;
+
+      const priorDetails = await this.repository.getPriorIdeaUnits(
+        topic.id,
+        conversation.conversation_id,
+      );
+      if (priorDetails.length > 0) topicsWithPrior++;
+
+      const details: IdeaUnitDetail[] = [];
+      const seen = new Set<string>();
+      for (const item of topic.items) {
+        switch (item.type) {
+          case "idea_unit_ref": {
+            const key = itemKey(item);
+            if (seen.has(key)) break;
+            seen.add(key);
+            const detail = resolveIdeaUnitDetail(item, currentTurnMap);
+            if (detail === null || isIrrelevant(detail.categories)) break;
+            details.push(detail);
+            break;
+          }
+          case "document_fragment_ref":
+            break;
+          default:
+            assertNever(item);
+        }
+      }
+      for (const prior of priorDetails) {
+        const key = `${prior.conversation_id}:${prior.turn_index}:${prior.idea_unit_index}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        details.push(prior);
+      }
+
+      const subtopics = collectSubtopics(
+        topic.id,
+        conversation.topics,
+        output.potential_topics.topics,
+      );
+
+      const enriched: EnrichedTopic = {
+        id: topic.id,
+        title: topic.title,
+        short_summary: topic.short_summary,
+        long_summary: topic.long_summary,
+        conversation_id: conversation.conversation_id,
+        idea_units: details,
+        subtopics,
+      };
+
+      const hasDecisionUnits = details.some((d) =>
+        d.categories.includes("Decision"),
+      );
+
+      const header = [
+        `<!-- topic_id: ${topic.id} -->`,
+        `<!-- num_items: ${details.length} -->`,
+        `<!-- has_decision_units: ${hasDecisionUnits} -->`,
+        "",
+      ].join("\n");
+
+      sections.push(header + formatEnrichedTopicMarkdown(enriched));
+    }
+
+    const markdown = ["# Topics for review", "", ...joinSections(sections)].join(
+      "\n",
+    );
+
+    return {
+      topic_count: order.length,
+      topics_with_prior_units: topicsWithPrior,
+      markdown,
+    };
+  }
+
+  async validateOutput(workingDir: string): Promise<ValidationResult> {
+    const raw = await readJsonFile(join(workingDir, "output.json"));
+    return validateAnalyzeConversationOutput(raw, this.graphLookup());
+  }
+
+  private graphLookup(): GraphLookup {
+    return {
+      topicExists: (id: string) => this.topics.exists(id),
+    };
+  }
+
   private async readConversationFile(path: string): Promise<Conversation> {
     const raw = await readFile(path, "utf-8");
     const parsed = JSON.parse(raw);
@@ -232,10 +277,14 @@ export class ConversationsService {
   private async readOutputFile(
     path: string,
   ): Promise<AnalyzeConversationOutput> {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw);
-    return AnalyzeConversationOutputSchema.parse(parsed);
+    const raw = await readJsonFile(path);
+    return AnalyzeConversationOutputSchema.parse(raw);
   }
+}
+
+async function readJsonFile(path: string): Promise<unknown> {
+  const raw = await readFile(path, "utf-8");
+  return JSON.parse(raw);
 }
 
 function buildParentLookup(
@@ -285,16 +334,14 @@ function itemKey(item: IdeaUnitRef): string {
   return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
 }
 
-function pickNextUnreviewed(
-  topics: Conversation["topics"],
-  order: string[],
-): Conversation["topics"][number] | null {
-  const byId = new Map(topics.map((t) => [t.id, t] as const));
-  for (const id of order) {
-    const topic = byId.get(id);
-    if (topic !== undefined && !topic.reviewed) return topic;
+function joinSections(sections: string[]): string[] {
+  if (sections.length === 0) return [];
+  const out: string[] = [];
+  for (let i = 0; i < sections.length; i++) {
+    if (i > 0) out.push("---", "");
+    out.push(sections[i]);
   }
-  return null;
+  return out;
 }
 
 function postOrderTopicIds(

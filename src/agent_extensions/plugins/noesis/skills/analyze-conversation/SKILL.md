@@ -70,28 +70,27 @@ Read `<cleaned_path>` (Read tool — windowing is up to you). Edit `<working_dir
 
 `IdeaUnitRef`: `{ "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": N, "idea_unit_index": N }`.
 
-Use the Write tool to overwrite `<working_dir>/output.json` with the full populated object. Validate the JSON you produce mentally against the schema described in REFERENCE.
+Use the Write tool to overwrite `<working_dir>/output.json` with the full populated object. Then call MCP tool `noesis-graph:validate_output` with `working_dir: <working_dir>`. On `{ "status": "Errors", errors }`, fix the listed paths (each error carries a JSON-pointer-style `path`) and re-validate. Do not advance to Step 4 until the response is `{ "status": "Ok" }`. Treat `warnings` as advisory — they do not block.
 
 ### Step 4: Review topics, generate summaries, extract decisions
 
 Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-conversation/references/analyze-topic.md`.
 
-Loop:
+1. Call MCP tool `noesis-graph:prepare_review_bundle` with `output_path: <working_dir>/output.json`. The response includes `topic_count`, `topics_with_prior_units`, and a `file` path to the bundle Markdown. Read the bundle with the Read tool.
+2. The bundle is a single Markdown document with one section per topic, in **post-order** (leaves first, parents last). Each section is preceded by HTML-comment metadata `<!-- topic_id: ... -->`, `<!-- num_items: ... -->`, `<!-- has_decision_units: ... -->`, and sections are separated by `---`.
+3. Process the bundle's sections in the order they appear. For each topic, decide on summaries and (if `has_decision_units`) decisions per the REFERENCE. Container summaries reference what has already been written for children — exactly because the bundle is post-ordered.
+4. Once you have processed every section, write all updates in a single Edit/Write of `<working_dir>/output.json`. For each topic under `conversation.topics[]` set:
+   - `short_summary` and `long_summary`.
+   - `decisions` (array of `Decision` — see schema in REFERENCE). Empty array if none.
+   - `reviewed: true` and `decisions_extracted: true`.
 
-1. Call MCP tool `noesis-graph:get_topic_for_review` with `output_path: <working_dir>/output.json`. If the response is `{ "status": "Done" }`, exit the loop.
-2. Otherwise it returns `{ "status": "Ok", "file": "<path>.md", topic_id, num_items, has_decision_units, ... }`. Read the file — it lists this topic's idea units (current conversation + prior conversations from the graph, with `[prior conversation]` markers).
-3. Decide on summaries and (if `has_decision_units`) decisions per the REFERENCE.
-4. Edit `<working_dir>/output.json` (Edit tool) to update this topic in place under `conversation.topics[]`:
-   - Set `short_summary` and `long_summary`.
-   - Set `decisions` (array of `Decision` — see schema in REFERENCE). Empty array if none.
-   - Set `reviewed: true` and `decisions_extracted: true`. These flags drive loop termination.
-5. Repeat from sub-step 1.
+If processing reveals that an idea unit belongs to a different topic, edit `output.json:conversation.topics[]` accordingly during the same write, and recompute the affected summaries. Reassignment is rare; the entire tree is in front of you, no fresh fetch is needed.
 
-Do not parallelize. Each iteration depends on the previous edit.
+5. Call MCP tool `noesis-graph:validate_output` with `working_dir: <working_dir>` again. Fix and re-validate until `Ok` before proceeding to Step 5.
 
 ### Step 5: Merge into the knowledge graph
 
-Call MCP tool `noesis-graph:merge_conversation` with `working_dir: <working_dir>`. The server reads `output.json` and persists Conversation, Turns, IdeaUnits, Topics (with parent linking from `potential_topics`), Items, and Decisions.
+Call MCP tool `noesis-graph:merge_conversation` with `working_dir: <working_dir>`. The server runs `validate_output` as a pre-flight gate, then reads `output.json` and persists Conversation, Turns, IdeaUnits, Topics (with parent linking from `potential_topics`), Items, and Decisions.
 
 Report `topics_added`, `topics_updated`, and `decisions_added` to the user.
 

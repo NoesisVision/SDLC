@@ -79,4 +79,38 @@ describe("DecisionSchema", () => {
       ]);
     }
   });
+
+  test("rejects orphan referenced_items not cited by any slot", () => {
+    const out = DecisionSchema.safeParse({
+      title: "t",
+      status: "accepted",
+      referenced_items: [ideaUnitRef, ideaUnitRef],
+      context: { text: "", supporting_item_indices: [0] },
+      decision: { text: "", rationale: "", supporting_item_indices: [] },
+      alternative_options: [],
+    });
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      const orphan = out.error.issues.find(
+        (i) => i.path[0] === "referenced_items",
+      );
+      expect(orphan).toBeDefined();
+      expect(orphan!.path).toEqual(["referenced_items", 1]);
+      expect(orphan!.message).toContain("not cited by any slot");
+    }
+  });
+
+  test("accepts referenced_items when every entry is cited from any slot", () => {
+    const out = DecisionSchema.safeParse({
+      title: "t",
+      status: "accepted",
+      referenced_items: [ideaUnitRef, ideaUnitRef, ideaUnitRef],
+      context: { text: "", supporting_item_indices: [0] },
+      decision: { text: "", rationale: "", supporting_item_indices: [1] },
+      alternative_options: [
+        { text: "x", rationale: "", supporting_item_indices: [2] },
+      ],
+    });
+    expect(out.success).toBe(true);
+  });
 });

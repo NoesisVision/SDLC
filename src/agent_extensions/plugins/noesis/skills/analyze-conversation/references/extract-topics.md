@@ -2,6 +2,15 @@
 
 Used by `noesis:analyze-conversation` Step 3.
 
+## Reading long transcripts
+
+The cleaned transcript may exceed the Read tool's window. Use `offset` / `limit` to scan it in line ranges. A two-pass approach works well:
+
+1. **Structure pass.** Read the start, a middle window, and the end. This is enough to identify the topic tree and the breadth of subjects covered.
+2. **Commit pass.** Walk the transcript end-to-end (overlapping windows are fine) committing idea units and topic assignments as you go.
+
+Reuse Grep when you only need to locate specific phrases or speaker turns inside the transcript; Read remains the right tool for any window of contiguous content the reasoning depends on.
+
 ## Cleaned-transcript format
 
 `<transcript>-cleaned.md` looks like:
@@ -72,7 +81,17 @@ Topics form a hierarchy that humans must be able to navigate. The agent's job is
 4. **Re-shape when needed.** Merging, splitting, and re-parenting existing topics is part of the job, not an exception. If a previously created topic no longer fits the cleaned conversation's structure, change it.
 5. **Reason from semantic axes, not counts.** Item count is a smell, not a verdict. A 1-item topic is fine if it is genuinely orthogonal; a 30-item topic is fine if all 30 belong to one tightly-coupled algorithm.
 
-Container topics — parents whose own `items` list is empty because all idea units sit on subtopics — are legitimate. They give the tree shape and act like chapters in a system-design document. Their summaries are written from their children's summaries (see "Summaries when a topic has subtopics" in `analyze-topic.md`); never leave them blank.
+   If a topic accumulates more than ~25 own idea units, pause and ask whether the items are about the same concept or about a cluster of related concepts. The validator emits a warning at this threshold; the warning is informational, not blocking.
+
+### Topic shapes
+
+Three topic shapes are valid:
+
+- **Leaf** — has idea units, no subtopics. Most topics are leaves.
+- **Container** — has subtopics, no own idea units. Acts as a chapter in the design narrative; its summary is synthesised from its children.
+- **Hybrid** — has both subtopics and own idea units. Use only when a parent topic genuinely owns content that none of its children own — e.g. an introduction or a cross-cutting rule that does not belong to any single child. If you find yourself placing a single IU on a container "because it does not fit any child", create or extend a child topic for it instead.
+
+The default for a parent is **container, not hybrid**. Hybrid is the rare case. Container summaries are written from their children's summaries (see "Summaries" in `analyze-topic.md`); never leave them blank.
 
 ## Output JSON shape
 

@@ -66,6 +66,23 @@ export const DecisionSchema = z
         "supporting_item_indices",
       ]);
     }
+    const used = new Set<number>();
+    for (const idx of decision.context.supporting_item_indices) used.add(idx);
+    for (const idx of decision.decision.supporting_item_indices) used.add(idx);
+    for (const alt of decision.alternative_options) {
+      for (const idx of alt.supporting_item_indices) used.add(idx);
+    }
+    for (let i = 0; i < decision.referenced_items.length; i++) {
+      if (!used.has(i)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["referenced_items", i],
+          message:
+            `referenced_items[${i}] is not cited by any slot; ` +
+            `remove it or reference it from context / decision / an alternative_option.`,
+        });
+      }
+    }
   });
 export type Decision = z.infer<typeof DecisionSchema>;
 

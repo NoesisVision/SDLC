@@ -186,64 +186,8 @@ describe("ConversationsService", () => {
     });
   });
 
-  describe("getTopicForReview", () => {
-    test("returns the first unreviewed topic with combined idea units", async () => {
-      const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
-      try {
-        const conv = {
-          conversation_id: "rev-1",
-          time: "2026-04-17T10:00:00Z",
-          main_topic: "Review",
-          turns: [
-            {
-              index: 0,
-              speaker: "alice",
-              time: "2026-04-17T10:00:00Z",
-              idea_units: [
-                { index: 0, sentences: ["hello"], categories: ["Information"] },
-              ],
-            },
-          ],
-          topics: [
-            {
-              id: "r-topic",
-              title: "Topic",
-              short_summary: "s",
-              long_summary: "",
-              items: [
-                {
-                  type: "idea_unit_ref",
-                  conversation_id: "rev-1",
-                  turn_index: 0,
-                  idea_unit_index: 0,
-                },
-              ],
-              decisions: [],
-              reviewed: false,
-              decisions_extracted: false,
-            },
-          ],
-        };
-        await writeFile(
-          join(workingDir, "output.json"),
-          JSON.stringify({ conversation: conv, potential_topics: { topics: [] } }),
-        );
-
-        const review = await conversations.getTopicForReview(
-          join(workingDir, "output.json"),
-        );
-        expect(review).not.toBeNull();
-        expect(review!.topic_id).toBe("r-topic");
-        expect(review!.num_items).toBe(1);
-        expect(review!.has_decision_units).toBe(false);
-        expect(review!.markdown).toContain("# Topic");
-        expect(review!.markdown).toContain("hello");
-      } finally {
-        rmSync(workingDir, { recursive: true, force: true });
-      }
-    });
-
-    test("returns topics in post-order (leaves before parents)", async () => {
+  describe("prepareReviewBundle", () => {
+    test("emits all topics in post-order (leaves before parents)", async () => {
       const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
       try {
         const conv = {
@@ -318,11 +262,18 @@ describe("ConversationsService", () => {
           JSON.stringify(output),
         );
 
-        const first = await conversations.getTopicForReview(
+        const bundle = await conversations.prepareReviewBundle(
           join(workingDir, "output.json"),
         );
-        expect(first).not.toBeNull();
-        expect(first!.topic_id).toBe("leaf");
+        expect(bundle.topic_count).toBe(2);
+        expect(bundle.topics_with_prior_units).toBe(0);
+        const leafIdx = bundle.markdown.indexOf("topic_id: leaf");
+        const rootIdx = bundle.markdown.indexOf("topic_id: root");
+        expect(leafIdx).toBeGreaterThanOrEqual(0);
+        expect(rootIdx).toBeGreaterThanOrEqual(0);
+        expect(leafIdx).toBeLessThan(rootIdx);
+        expect(bundle.markdown).toContain("# Topics for review");
+        expect(bundle.markdown).toContain("\n---\n");
       } finally {
         rmSync(workingDir, { recursive: true, force: true });
       }
@@ -405,26 +356,51 @@ describe("ConversationsService", () => {
           JSON.stringify(output),
         );
 
-        const review = await conversations.getTopicForReview(
+        const bundle = await conversations.prepareReviewBundle(
           join(workingDir, "output.json"),
         );
-        expect(review).not.toBeNull();
-        expect(review!.topic_id).toBe("parent");
-        expect(review!.markdown).toContain("## Subtopics");
-        expect(review!.markdown).toContain("**Child A** — summary A");
-        expect(review!.markdown).toContain("**Child B** — _(pending review)_");
+        expect(bundle.markdown).toContain("## Subtopics");
+        expect(bundle.markdown).toContain("**Child A** — summary A");
+        expect(bundle.markdown).toContain("**Child B** — _(pending review)_");
       } finally {
         rmSync(workingDir, { recursive: true, force: true });
       }
     });
 
-    test("omits ## Subtopics block when topic has no children", async () => {
+    test("returns an empty bundle when there are no topics", async () => {
       const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
       try {
         const conv = {
-          conversation_id: "leaf-only",
+          conversation_id: "empty-1",
           time: "2026-04-17T10:00:00Z",
-          main_topic: "Leaf",
+          main_topic: "Empty",
+          turns: [],
+          topics: [],
+        };
+        await writeFile(
+          join(workingDir, "output.json"),
+          JSON.stringify({ conversation: conv, potential_topics: { topics: [] } }),
+        );
+        const bundle = await conversations.prepareReviewBundle(
+          join(workingDir, "output.json"),
+        );
+        expect(bundle.topic_count).toBe(0);
+        expect(bundle.topics_with_prior_units).toBe(0);
+        expect(bundle.markdown).toContain("# Topics for review");
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("validateOutput", () => {
+    test("returns Ok for a valid output", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-validate-"));
+      try {
+        const conv = {
+          conversation_id: "v1",
+          time: "2026-04-17T10:00:00Z",
+          main_topic: "V",
           turns: [
             {
               index: 0,
@@ -437,14 +413,14 @@ describe("ConversationsService", () => {
           ],
           topics: [
             {
-              id: "only",
-              title: "Only",
+              id: "vt1",
+              title: "T",
               short_summary: "",
               long_summary: "",
               items: [
                 {
                   type: "idea_unit_ref",
-                  conversation_id: "leaf-only",
+                  conversation_id: "v1",
                   turn_index: 0,
                   idea_unit_index: 0,
                 },
@@ -455,51 +431,97 @@ describe("ConversationsService", () => {
             },
           ],
         };
+        const output = {
+          conversation: conv,
+          potential_topics: {
+            topics: [
+              {
+                id: "vt1",
+                title: "T",
+                short_summary: "",
+                path: ["T"],
+                is_new: true,
+                parent_id: null,
+              },
+            ],
+          },
+        };
         await writeFile(
           join(workingDir, "output.json"),
-          JSON.stringify({ conversation: conv, potential_topics: { topics: [] } }),
+          JSON.stringify(output),
         );
-
-        const review = await conversations.getTopicForReview(
-          join(workingDir, "output.json"),
-        );
-        expect(review).not.toBeNull();
-        expect(review!.markdown).not.toContain("## Subtopics");
+        const result = await conversations.validateOutput(workingDir);
+        expect(result.status).toBe("Ok");
       } finally {
         rmSync(workingDir, { recursive: true, force: true });
       }
     });
 
-    test("returns null when all topics are reviewed", async () => {
-      const workingDir = mkdtempSync(join(tmpdir(), "noesis-review-"));
+    test("returns Errors with paths for unassigned non-Irrelevant idea units", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-validate-"));
       try {
         const conv = {
-          conversation_id: "rev-2",
+          conversation_id: "v2",
           time: "2026-04-17T10:00:00Z",
-          main_topic: "Review",
-          turns: [],
-          topics: [
+          main_topic: "V",
+          turns: [
             {
-              id: "t",
-              title: "T",
-              short_summary: "",
-              long_summary: "",
-              items: [],
-              decisions: [],
-              reviewed: true,
-              decisions_extracted: true,
+              index: 0,
+              speaker: "alice",
+              time: "2026-04-17T10:00:00Z",
+              idea_units: [
+                { index: 0, sentences: ["x"], categories: ["Information"] },
+              ],
             },
           ],
+          topics: [],
         };
         await writeFile(
           join(workingDir, "output.json"),
           JSON.stringify({ conversation: conv, potential_topics: { topics: [] } }),
         );
+        const result = await conversations.validateOutput(workingDir);
+        expect(result.status).toBe("Errors");
+        if (result.status !== "Errors") return;
+        expect(
+          result.errors.some((e) =>
+            e.message.includes("not assigned to any topic"),
+          ),
+        ).toBe(true);
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    });
+  });
 
-        const review = await conversations.getTopicForReview(
+  describe("mergeConversation pre-flight gate", () => {
+    test("rejects an invalid output before persisting anything", async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-merge-bad-"));
+      try {
+        const conv = {
+          conversation_id: "bad-1",
+          time: "2026-04-17T10:00:00Z",
+          main_topic: "Bad",
+          turns: [
+            {
+              index: 0,
+              speaker: "alice",
+              time: "2026-04-17T10:00:00Z",
+              idea_units: [
+                { index: 0, sentences: ["x"], categories: ["Information"] },
+              ],
+            },
+          ],
+          topics: [],
+        };
+        await writeFile(
           join(workingDir, "output.json"),
+          JSON.stringify({ conversation: conv, potential_topics: { topics: [] } }),
         );
-        expect(review).toBeNull();
+        await expect(conversations.mergeConversation(workingDir)).rejects.toThrow(
+          /Output validation failed/,
+        );
+        expect(await countNodes(ctx.db, "Conversation")).toBe(0);
       } finally {
         rmSync(workingDir, { recursive: true, force: true });
       }

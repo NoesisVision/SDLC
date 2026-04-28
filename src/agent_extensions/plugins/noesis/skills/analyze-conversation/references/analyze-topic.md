@@ -1,12 +1,14 @@
-# Review topic, generate summaries, extract decisions
+# Review topics, generate summaries, extract decisions
 
 Used by `noesis:analyze-conversation` Step 4.
 
-## Input
+## Reviewing the bundle
 
-`get_topic_for_review` returns a Markdown file like:
+`prepare_review_bundle` returns a single Markdown file containing every topic in **post-order** (leaves first, parents last). Each topic's section is preceded by HTML-comment metadata and separated from the next by `---`:
 
 ```
+# Topics for review
+
 <!-- topic_id: <id> -->
 <!-- num_items: <n> -->
 <!-- has_decision_units: true|false -->
@@ -26,7 +28,14 @@ Used by `noesis:analyze-conversation` Step 4.
 
 ### [T<turn_index>:IU<idea_unit_index>] <HH:MM:SS> — <speaker> [<categories>]
 <sentences joined as text>
+
+---
+
+<!-- topic_id: <next id> -->
+...
 ```
+
+Process the sections in the order they appear. Because the bundle is post-ordered, every child topic is already analysed by the time you reach its parent — write the children's `short_summary` first, then weave them into the parent.
 
 Idea units come from BOTH the current conversation AND prior conversations already attached to this topic in the graph. Prior-conversation units carry a `[prior conversation]` marker.
 
@@ -34,23 +43,25 @@ Use `[prior conversation]` units as context, but never reassign or modify them �
 
 `Irrelevant`-only idea units are already filtered out.
 
-The `## Subtopics` block lists the topic's direct children with their finalized `short_summary`. Topics are returned by the server in **post-order** (leaves first, parents last), so by the time you review a parent every child summary is final. A child rendered as `_(pending review)_` only appears in degenerate cases (e.g. an orphan that the post-order skipped); treat it as missing context.
+The `## Subtopics` block lists the topic's direct children with the finalized `short_summary` you just wrote (or the value already in `output.json` from a prior run). A child rendered as `_(pending review)_` is one whose summary you have not yet written — make sure to fill that child's section earlier in the same pass before treating its summary as final.
 
 The `## Subtopics` block is omitted when the topic has no children.
 
 ## Coherence check
 
-Validate that each current-conversation idea unit truly belongs to this topic. A reassignment is justified ONLY when the mismatch is clear AND another existing topic in `output.json:potential_topics.topics` is a better match. When in doubt, keep the unit where it is.
+For each section, validate that each current-conversation idea unit truly belongs to this topic. A reassignment is justified ONLY when the mismatch is clear AND another topic (already in `output.json` or freshly created) is a better match. When in doubt, keep the unit where it is.
 
-If a current-conversation unit fits no existing topic, create a new topic — call `noesis-graph:generate_topic_ids` with `{ "count": 1 }` for its id, set `is_new: true`, sensible `parent_id`, and `path` — and append it to `output.json:potential_topics.topics`. Then remove the unit from this topic's `items` and add it to the new topic's `items` (in `conversation.topics[]`).
+If a current-conversation unit fits no existing topic, create a new topic — call `noesis-graph:generate_topic_ids` with `{ "count": 1 }` for its id, set `is_new: true`, sensible `parent_id`, and `path` — and append it to `output.json:potential_topics.topics`. Then remove the unit from the original topic's `items` and add it to the new topic's `items` (in `conversation.topics[]`).
+
+If a reassignment changes a topic whose section you have already finalised in the same pass, recompute that topic's summary against its updated item set. The validator (`validate_output`) runs against the final state; an out-of-sync summary is your responsibility, not the server's.
 
 ## Summaries
 
 Both summaries are always regenerated. The exact rule depends on the topic's shape:
 
-- **Topic with idea units, no subtopics.** Summaries come from those idea units (current + prior).
-- **Topic with subtopics, no own idea units (a "container" topic).** Both `short_summary` and `long_summary` are written from the children's summaries listed in the `## Subtopics` block — synthesise an umbrella view that names the area covered and what the child topics contribute. Never leave a container's summaries empty.
-- **Topic with both.** Start from the topic's own idea units, then weave in the children's contributions where they extend or qualify the picture. The children's summaries are context to take into account, not a separate section to glue on.
+- **Leaf** — has idea units, no subtopics. Summaries come from those idea units (current + prior).
+- **Container** — has subtopics, no own idea units. Both `short_summary` and `long_summary` are synthesised from the children's finalized summaries (from the `## Subtopics` block when populated, or from the summaries you just wrote earlier in this pass when the bundle still shows `_(pending review)_`). Never leave a container's summaries empty.
+- **Hybrid** — has both subtopics and own idea units. Summarise the topic's own idea units first, then weave in what each child contributes. If the result feels like two unrelated paragraphs glued together, the topic is probably mis-shaped — promote the IU into a child topic and re-summarise as a container.
 
 If you reassigned units away, recompute on the remaining set. If after reassignment only `[prior conversation]` units remain and the topic has no subtopics, set both summaries to empty strings.
 
@@ -122,14 +133,14 @@ Keep `context.text`, `decision.text`, `rationale` to 1–2 sentences each.
 
 ## Updating output.json
 
-After processing one topic, edit `<working_dir>/output.json` (Edit tool). For the topic with this `topic_id` under `conversation.topics[]` set:
+Once you have processed every section in the bundle, write all updates with a single Edit/Write of `<working_dir>/output.json`. For each topic under `conversation.topics[]` set:
 
 - `short_summary`, `long_summary` — generated above.
 - `decisions` — array of `Decision` (may be `[]`).
-- `reviewed: true` — required to advance the loop.
-- `decisions_extracted: true` — required to advance the loop.
+- `reviewed: true` — required to satisfy the workflow.
+- `decisions_extracted: true` — required to satisfy the workflow.
 
-Leave all other topics untouched.
+Then call `noesis-graph:validate_output`. Fix and re-validate until `Ok` before calling `merge_conversation`.
 
 ## Language
 

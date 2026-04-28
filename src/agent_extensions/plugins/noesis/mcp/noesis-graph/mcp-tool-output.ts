@@ -56,10 +56,12 @@ export async function runFileOutputTool<T>(
   fn: () => Promise<T>,
   format: (result: T) => string,
   extension: string = "md",
+  extraSummary?: (result: T) => Record<string, unknown>,
 ): Promise<ToolResponse> {
   try {
     const result = await fn();
-    return writeOutputFile(toolName, format(result), extension);
+    const extras = extraSummary?.(result) ?? {};
+    return writeOutputFile(toolName, format(result), extension, extras);
   } catch (err: unknown) {
     return toolError(err);
   }
@@ -80,6 +82,7 @@ function writeOutputFile(
   toolName: string,
   content: string,
   extension: string,
+  extras: Record<string, unknown> = {},
 ): ToolResponse {
   mkdirSync(outputDir, { recursive: true, mode: DIR_MODE });
   const file = join(outputDir, `${toolName}-${randomUUID()}.${extension}`);
@@ -89,6 +92,7 @@ function writeOutputFile(
     message: `Result written to ${file}. Read it with the Read tool.`,
     file,
     bytes: Buffer.byteLength(content, "utf-8"),
+    ...extras,
   };
   return inlineJson(summary);
 }
