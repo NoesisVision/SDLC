@@ -133,8 +133,10 @@ function registerListTopics(mcp: McpServer, topics: TopicsService): void {
     {
       description:
         "List Topics in the knowledge graph. Without `parent_topic_id`, returns root topics. " +
-        "With `parent_topic_id`, returns direct subtopics. Writes Markdown (id, title, short/long summary, " +
-        "path, has_subtopics) to a tmp file and returns the file path — read it with the Read tool.",
+        "With `parent_topic_id`, returns direct subtopics. Writes a slim Markdown listing " +
+        "(id, title, short_summary, path, has_subtopics) to a tmp file and returns the file path — " +
+        "read it with the Read tool. `long_summary` is intentionally omitted from the listing; call " +
+        "`read_topic` for any candidate where the short summary is insufficient.",
       inputSchema: {
         parent_topic_id: z
           .string()
@@ -291,7 +293,7 @@ function formatTopicDetail(
   return lines.join("\n");
 }
 
-function formatTopicList(
+export function formatTopicList(
   topics: TopicOverview[],
   parentId: string | null,
 ): string {
@@ -309,9 +311,6 @@ function formatTopicList(
     parts.push(`- **Path:** ${pathLine}`);
     parts.push(`- **Has subtopics:** ${t.has_subtopics ? "yes" : "no"}`);
     parts.push(`- **Short summary:** ${t.short_summary || "(empty)"}`);
-    if (t.long_summary) {
-      parts.push(`- **Long summary:** ${t.long_summary}`);
-    }
     parts.push("");
   }
   return parts.join("\n").trimEnd();

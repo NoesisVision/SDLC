@@ -133,7 +133,7 @@ Keep `context.text`, `decision.text`, `rationale` to 1–2 sentences each.
 
 ## Updating output.json
 
-Once you have processed every section in the bundle, write all updates with a single Edit/Write of `<working_dir>/output.json`. For each topic under `conversation.topics[]` set:
+Once you have processed every section in the bundle, write all updates with a **single `Write` of the entire `<working_dir>/output.json`**. Do not use `Edit` for `long_summary` fields — long, multi-line content tends to land on lines whose trailing comma is easy to lose, and the resulting JSON-syntax errors trigger fix loops you then have to debug. Read the current `output.json`, hold it in memory, apply every topic's updates, and write the full file in one operation. For each topic under `conversation.topics[]` set:
 
 - `short_summary`, `long_summary` — generated above.
 - `decisions` — array of `Decision` (may be `[]`).

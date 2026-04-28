@@ -43,13 +43,15 @@ Then call MCP tool `noesis-graph:has_conversation` with `conversation_id`. If `e
 
 Goal: identify the existing topics in the graph that already cover the conversation's subject area, so Step 3 can reuse them instead of duplicating.
 
-1. Call MCP tool `noesis-graph:list_topics` (no `parent_topic_id`). Read the file path it returns.
+1. Call MCP tool `noesis-graph:list_topics` (no `parent_topic_id`). Read the file path it returns. The listing is slim — `title`, `short_summary`, `path`, `has_subtopics` only. Use `read_topic` if a row's short summary is not enough to judge relevance.
 2. For each root topic, judge relevance to `<main_topic>` from its title and short summary.
-3. For relevant topics with `has_subtopics: yes`, call `noesis-graph:list_topics` with `parent_topic_id: <id>` and apply the Goldilocks rule:
+3. **Drill every relevant candidate that can be drilled.** For *every* relevant topic with `has_subtopics: yes`, call `noesis-graph:list_topics` with `parent_topic_id: <id>` before promoting that candidate to `potential_topics`. Apply the Goldilocks rule:
    - **Too broad** — children match more accurately → drop the parent, recurse into matching children.
    - **Too narrow** — children only cover a fraction → keep the parent, ignore the children.
    - **Worse fit** — children are fragmented tangents → keep the parent, abort drill-down.
-   - **Just right** — a child comprehensively covers the subject → keep it; still consider its subtopics.
+   - **Just right** — a child comprehensively covers the subject → keep it; still recurse into its subtopics if any.
+
+   A candidate may only be added to `potential_topics` once you have either listed its subtopics or confirmed `has_subtopics: no`. Stopping early because "the parent looks fine" is the failure mode this rule prevents — Step 3 will then mis-assign idea units into the parent that actually belonged in a child.
 4. Collect candidates as a flat `PotentialTopics` list. Each candidate: `{ id, title, short_summary, path, is_new: false, parent_id }`. May be empty.
 5. Edit `<working_dir>/output.json` (Edit tool) to set `potential_topics` to:
 ```json
@@ -79,12 +81,12 @@ Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-conversation/referenc
 1. Call MCP tool `noesis-graph:prepare_review_bundle` with `output_path: <working_dir>/output.json`. The response includes `topic_count`, `topics_with_prior_units`, and a `file` path to the bundle Markdown. Read the bundle with the Read tool.
 2. The bundle is a single Markdown document with one section per topic, in **post-order** (leaves first, parents last). Each section is preceded by HTML-comment metadata `<!-- topic_id: ... -->`, `<!-- num_items: ... -->`, `<!-- has_decision_units: ... -->`, and sections are separated by `---`.
 3. Process the bundle's sections in the order they appear. For each topic, decide on summaries and (if `has_decision_units`) decisions per the REFERENCE. Container summaries reference what has already been written for children — exactly because the bundle is post-ordered.
-4. Once you have processed every section, write all updates in a single Edit/Write of `<working_dir>/output.json`. For each topic under `conversation.topics[]` set:
+4. Once you have processed every section, write all updates in a single `Write` of the entire `<working_dir>/output.json` (avoid `Edit` for `long_summary` fields — see REFERENCE). For each topic under `conversation.topics[]` set:
    - `short_summary` and `long_summary`.
    - `decisions` (array of `Decision` — see schema in REFERENCE). Empty array if none.
    - `reviewed: true` and `decisions_extracted: true`.
 
-If processing reveals that an idea unit belongs to a different topic, edit `output.json:conversation.topics[]` accordingly during the same write, and recompute the affected summaries. Reassignment is rare; the entire tree is in front of you, no fresh fetch is needed.
+If processing reveals that an idea unit belongs to a different topic, update `output.json:conversation.topics[]` accordingly during the same write, and recompute the affected summaries. Reassignment is rare; the entire tree is in front of you, no fresh fetch is needed.
 
 5. Call MCP tool `noesis-graph:validate_output` with `working_dir: <working_dir>` again. Fix and re-validate until `Ok` before proceeding to Step 5.
 
