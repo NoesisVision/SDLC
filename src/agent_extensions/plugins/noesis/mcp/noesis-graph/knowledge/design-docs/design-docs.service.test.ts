@@ -18,6 +18,20 @@ import { DATA_DIR } from "../../config/config.module.js";
 import { DesignDocsRepository } from "./design-docs.repository.js";
 import { DesignDocsService } from "./design-docs.service.js";
 
+function placeholderDescription(minLength: number, hint: string): string {
+  let body = `${hint}. `;
+  while (body.length < minLength) {
+    body += `Pre: precondition ${body.length}. Algorithm: step. Post: state. Edge: handle. `;
+  }
+  return body;
+}
+
+const RULE_DESCRIPTION = placeholderDescription(80, "Rule placeholder");
+const BEHAVIOUR_DESCRIPTION = placeholderDescription(
+  400,
+  "Behaviour placeholder",
+);
+
 const NODE_LABELS = [
   "DesignedScenario",
   "DesignedRule",
@@ -124,6 +138,7 @@ describe("DesignDocsService", () => {
                               {
                                 name: "Place",
                                 type: "Command",
+                                description: BEHAVIOUR_DESCRIPTION,
                                 isPublic: true,
                                 actor: "Customer",
                                 input: { added: ["PlaceOrderRequest"] },
@@ -133,7 +148,7 @@ describe("DesignDocsService", () => {
                                     {
                                       name: "PositiveTotal",
                                       ruleType: "Computation",
-                                      description: "Total > 0",
+                                      description: RULE_DESCRIPTION,
                                     },
                                   ],
                                 },
@@ -232,6 +247,7 @@ describe("DesignDocsService", () => {
                         {
                           name: "Plain",
                           type: "Command",
+                          description: BEHAVIOUR_DESCRIPTION,
                         },
                       ],
                     },
@@ -506,6 +522,217 @@ describe("DesignDocsService", () => {
         },
       ]);
       expect(ctxList).toEqual([]);
+    });
+  });
+
+  describe("quality gate", () => {
+    test("rejects added rule without description", async () => {
+      const path = await writeDoc(
+        {
+          id: "dd-rule-empty",
+          name: "x",
+          description: "d",
+          boundedContexts: {
+            added: [
+              {
+                name: "BC",
+                buildingBlocks: {
+                  added: [
+                    {
+                      name: "BB",
+                      type: "aggregate",
+                      rules: {
+                        added: [{ name: "MissingDescRule" }],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        "rule-empty.json",
+      );
+      await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
+        /Rule .*MissingDescRule.* missing description/,
+      );
+    });
+
+    test("rejects added rule with description shorter than 80 chars", async () => {
+      const path = await writeDoc(
+        {
+          id: "dd-rule-short",
+          name: "x",
+          description: "d",
+          boundedContexts: {
+            added: [
+              {
+                name: "BC",
+                buildingBlocks: {
+                  added: [
+                    {
+                      name: "BB",
+                      rules: {
+                        added: [
+                          {
+                            name: "ShortRule",
+                            description: "Too short.",
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        "rule-short.json",
+      );
+      await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
+        /Rule .*ShortRule.* description is \d+ chars/,
+      );
+    });
+
+    test("rejects added behaviour with description shorter than 400 chars", async () => {
+      const path = await writeDoc(
+        {
+          id: "dd-bh-short",
+          name: "x",
+          description: "d",
+          boundedContexts: {
+            added: [
+              {
+                name: "BC",
+                buildingBlocks: {
+                  added: [
+                    {
+                      name: "BB",
+                      behaviours: {
+                        added: [
+                          {
+                            name: "ShortBehaviour",
+                            type: "Command",
+                            description:
+                              "Short description that is not 400 characters long.",
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        "bh-short.json",
+      );
+      await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
+        /Behaviour .*ShortBehaviour.* description is \d+ chars/,
+      );
+    });
+
+    test("rejects tautological rule description that paraphrases name", async () => {
+      const name = "Order must be paid";
+      const tautDescription =
+        `${name} ${name}.`.padEnd(85, ".");
+      const path = await writeDoc(
+        {
+          id: "dd-rule-taut",
+          name: "x",
+          description: "d",
+          boundedContexts: {
+            added: [
+              {
+                name: "BC",
+                buildingBlocks: {
+                  added: [
+                    {
+                      name: "BB",
+                      rules: {
+                        added: [
+                          {
+                            name,
+                            description: tautDescription,
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        "rule-taut.json",
+      );
+      await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
+        /tautology/,
+      );
+    });
+
+    test("warns when bounded context has >20 building blocks and 0 modules", async () => {
+      const blocks = Array.from({ length: 25 }, (_, i) => ({
+        name: `Block${i}`,
+        type: "value_object" as const,
+      }));
+      const path = await writeDoc(
+        {
+          id: "dd-flat-bc",
+          name: "x",
+          description: "d",
+          boundedContexts: {
+            added: [{ name: "Big", buildingBlocks: { added: blocks } }],
+          },
+        },
+        "flat-bc.json",
+      );
+      const result = await service.saveDesignDocFromFile(path);
+      expect(result.warnings.some((w) => w.includes("'Big'"))).toBe(true);
+    });
+
+    test("warns when application_service-coupled behaviour lacks mermaid diagram", async () => {
+      const path = await writeDoc(
+        {
+          id: "dd-mermaid",
+          name: "x",
+          description: "d",
+          boundedContexts: {
+            added: [
+              {
+                name: "BC",
+                buildingBlocks: {
+                  added: [
+                    {
+                      name: "ApplicationService",
+                      type: "application_service",
+                      behaviours: {
+                        added: [
+                          {
+                            name: "OrchestratesAcrossManyBlocks",
+                            type: "Command",
+                            description: BEHAVIOUR_DESCRIPTION,
+                            usedBuildingBlocks: {
+                              added: ["BlockA", "BlockB", "BlockC"],
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        "mermaid.json",
+      );
+      const result = await service.saveDesignDocFromFile(path);
+      expect(
+        result.warnings.some((w) =>
+          w.includes("OrchestratesAcrossManyBlocks"),
+        ),
+      ).toBe(true);
     });
   });
 

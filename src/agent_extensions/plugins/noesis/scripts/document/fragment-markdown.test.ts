@@ -142,6 +142,153 @@ describe("fragmentMarkdown — basic blocks", () => {
   });
 });
 
+describe("fragmentMarkdown — header collapsing", () => {
+  test("`**Header:** + bullet list` collapses into one list fragment", () => {
+    const md = [
+      "# Section",
+      "",
+      "**Warunki wstępne:**",
+      "",
+      "- order is paid",
+      "- inventory reserved",
+      "",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    expect(result.fragments).toHaveLength(1);
+    const f = result.fragments[0];
+    expect(f.kind).toBe("list");
+    expect(f.text).toContain("**Warunki wstępne:**");
+    expect(f.text).toContain("- order is paid");
+    expect(f.text).toContain("- inventory reserved");
+  });
+
+  test("`*Wariant A:* + bullet list` collapses into one fragment", () => {
+    const md = [
+      "# UC",
+      "",
+      "*Wariant A: cancellation*",
+      "",
+      "- step 1",
+      "- step 2",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    expect(result.fragments).toHaveLength(1);
+    expect(result.fragments[0].kind).toBe("list");
+    expect(result.fragments[0].text).toContain("*Wariant A: cancellation*");
+  });
+
+  test("`Header:` followed by table collapses into one table fragment", () => {
+    const md = [
+      "# Section",
+      "",
+      "**Tabela kosztów:**",
+      "",
+      "| a | b |",
+      "|---|---|",
+      "| 1 | 2 |",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    expect(result.fragments).toHaveLength(1);
+    expect(result.fragments[0].kind).toBe("table");
+    expect(result.fragments[0].text).toContain("**Tabela kosztów:**");
+  });
+
+  test("orphan `**Powiązane scenariusze:**` paragraph emits structural kind", () => {
+    const md = [
+      "# Section",
+      "",
+      "Body paragraph here.",
+      "",
+      "**Powiązane scenariusze:**",
+      "",
+      "## Next section",
+      "",
+      "More content.",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    const structurals = result.fragments.filter((f) => f.kind === "structural");
+    expect(structurals).toHaveLength(1);
+    expect(structurals[0].text).toBe("**Powiązane scenariusze:**");
+  });
+
+  test("regular paragraph followed by non-block content stays paragraph", () => {
+    const md = [
+      "# Section",
+      "",
+      "Pierwszy akapit kończy się normalnym tekstem.",
+      "",
+      "Drugi akapit, niezależny.",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    const paragraphs = result.fragments.filter((f) => f.kind === "paragraph");
+    expect(paragraphs).toHaveLength(2);
+  });
+
+  test("paragraph not ending with colon is not collapsed into following list", () => {
+    const md = [
+      "# Section",
+      "",
+      "This is a normal paragraph that introduces a topic.",
+      "",
+      "- bullet 1",
+      "- bullet 2",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    const kinds = result.fragments.map((f) => f.kind);
+    expect(kinds).toEqual(["paragraph", "list"]);
+  });
+});
+
+describe("fragmentMarkdown — glossary list splitting", () => {
+  test("list inside a `Słownik` section splits into per-bullet list_item fragments", () => {
+    const md = [
+      "# Słownik pojęć",
+      "",
+      "## Dokumenty i obiekty",
+      "",
+      "- **PriceState**: bieżący stan cenowy.",
+      "- **Delta**: rejestrowana zmiana wartości.",
+      "- **Lock**: blokada ilości.",
+      "- **Pending**: oczekująca blokada.",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    const items = result.fragments.filter((f) => f.kind === "list_item");
+    expect(items).toHaveLength(4);
+    expect(items[0].text).toContain("PriceState");
+    expect(items[1].text).toContain("Delta");
+    expect(items[2].text).toContain("Lock");
+    expect(items[3].text).toContain("Pending");
+  });
+
+  test("non-glossary list under regular section is NOT split", () => {
+    const md = [
+      "# Wymagania",
+      "",
+      "- pierwszy wymóg",
+      "- drugi wymóg",
+      "- trzeci wymóg",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    const lists = result.fragments.filter((f) => f.kind === "list");
+    expect(lists).toHaveLength(1);
+    expect(result.fragments.filter((f) => f.kind === "list_item")).toHaveLength(0);
+  });
+
+  test("list with majority of glossary-shaped bullets is split even outside glossary section", () => {
+    const md = [
+      "# Definicje robocze",
+      "",
+      "- **Alpha**: pierwszy",
+      "- **Beta**: drugi",
+      "- **Gamma**: trzeci",
+      "- regular bullet without bold",
+    ].join("\n");
+    const result = fragmentMarkdown(md);
+    const items = result.fragments.filter((f) => f.kind === "list_item");
+    expect(items.length).toBe(4);
+  });
+});
+
 describe("fragmentMarkdown — PageIndex sample", () => {
   test("processes the PageIndex draft into a non-trivial tree", () => {
     const samplePath = join(import.meta.dirname, "..", "..", "skills", "analyze-design-draft", "analysis-pageindex-tree-algorithms.md");

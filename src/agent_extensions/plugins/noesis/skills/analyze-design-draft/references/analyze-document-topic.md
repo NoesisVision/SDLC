@@ -2,6 +2,15 @@
 
 Used by `noesis:analyze-design-draft` Step 5.
 
+## Iterative vs batch mode
+
+SKILL.md Step 5 describes two execution modes:
+
+- **Iterative**: one `get_topic_for_document_review` call per topic, edit `output.json` between calls. Default and safest. Use when ≤10 unreviewed topics remain — the per-topic round-trips are cheap and the linear flow makes coherence checks easy.
+- **Batch**: one `list_unreviewed_topics_for_document` call returns every unreviewed topic in one Markdown bundle (one section per topic, separated by `<!-- topic_id: ... -->` markers). Apply all updates to `output.json` in one Edit/Write pass. Use when >10 topics remain — sequential round-trips on a 250-KB output.json are expensive.
+
+Batch mode trades round-trips for a per-topic verification pass that you must perform manually after writing the bundle of updates. The verification pass walks every topic and confirms two things: (a) any `[from <doc title>]` prior-document fragments were folded into the new summary; (b) the coherence check from "Coherence check" below was applied. If you skip the pass, batch mode is unsafe.
+
 ## Input
 
 `get_topic_for_document_review` returns a Markdown file like:
@@ -36,6 +45,12 @@ Use `[from <doc title>]` fragments as context, but never reassign or modify them
 Validate that each current-document fragment truly belongs to this topic. Reassign ONLY when the mismatch is clear AND another existing topic in `potential_topics.json` is a better match.
 
 If a current-document fragment fits no existing topic, create a new topic, append it to `potential_topics.json`, and move the fragment ref in `analysis.json` from this topic's `items` to the new topic's `items`.
+
+### Oversaturated topics (>40 items)
+
+When a topic has more than 40 items, run an extra coherence pass before generating the summary: read every item and verify the topic is the fragment's *primary* subject (see "Primary subject vs side mention" in `extract-document-topics.md`). Items that turn out to be side mentions belong elsewhere — reassign them via the existing reassignment mechanism, even if it means moving 20+ refs out of this topic.
+
+Tally the count before and after the pass; mention both numbers in your internal notes (e.g. "Uprawnieniа w module wyceny: 67 → 14 after coherence pass"). Oversaturated topics are usually the result of a `SECTION_MAP` rule that fires on every section mentioning the concept rather than the concept being the section's primary subject; this pass is the last chance to recover from that.
 
 ## Summaries
 

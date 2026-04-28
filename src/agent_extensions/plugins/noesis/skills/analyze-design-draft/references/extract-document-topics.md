@@ -30,7 +30,13 @@ Per fragment, assign one or more from `IdeaUnitCategory`:
 - `Position` — author asserts a stance or recommendation.
 - `Argument` — reasoning that supports a position.
 - `Decision` — chosen approach with rationale (e.g. "Use X because Y", "Decision: …", explicit trade-offs landing on a choice).
-- `Irrelevant` — genuinely off-topic. Rare in author-curated documents — boilerplate, pure rhetoric, uncited tangents.
+- `Irrelevant` — off-topic OR structurally empty. Author-curated documents have few of these in absolute terms, but several patterns reliably belong here:
+  - Fragments of `kind: "structural"` — the prep tool emits these for orphan section markers like `**Powiązane scenariusze:**` with no content beneath them.
+  - Any fragment whose trimmed text is shorter than 80 chars AND matches a header pattern (e.g. `^\*\*[^*]+:?\*\*$`, `^\*[^*]+\*$`, `**Aktorzy:**`, `**Cel:**`, `**Moduły:**`).
+  - Pure cross-reference lists ("see also", "Powiązane scenariusze:", section-of-contents bullets, `- Scenariusz [A-Z]+-\d+` cross-link bullets).
+  - Genuine boilerplate, pure rhetoric, uncited tangents.
+
+  These contribute zero domain content; carrying them in topic items poisons search and inflates topic size.
 
 Most fragments are `Information` only. Combine categories only when both genuinely apply.
 
@@ -66,6 +72,19 @@ Reuse before promote. For every non-Irrelevant fragment:
 `section_path` is a HINT, not authoritative. A single section may map to one topic, split across multiple subtopics, or merge with sibling sections.
 
 Append every newly-created topic to `potential_topics.json` so `merge_document` can wire `parent_id` correctly.
+
+### Primary subject vs side mention
+
+A topic is the **primary subject** of a fragment, not a *side mention*. If the fragment's main concern is X and it incidentally references Y, assign it to the topic for X — not for Y. Side-mention assignments dilute search quality and inflate topic size:
+
+- A UC variant whose main subject is "ręczna przecena" but mentions "permissions" in a precondition belongs in the price-correction topic, not in the permissions topic.
+- A glossary bullet whose main subject is `Lock` belongs in the locking topic, not in every topic that ever uses a lock.
+
+A new topic that ends up with >40 items is a smell — half of those assignments are likely incidental. Step 5's coherence pass exists to clean this up.
+
+### Decision-coverage checkpoint
+
+After assigning categories to every fragment, run the decision-coverage check (described in SKILL.md Step 3). For sections whose heading matches `decision|adr|reguły|polityka`, **at least 30% of fragments must be `Decision`-categorised** (alone or combined with `Information` / `Argument`). If the tally is short, re-read those sections looking for narrative decisions in the form covered above ("Decision: examples that the eye easily misses"). 0% Decision in a 50-fragment "Reguły biznesowe" section is a near-certain sign of mechanical "rules → Position" classification.
 
 ### Topic hierarchy rules
 

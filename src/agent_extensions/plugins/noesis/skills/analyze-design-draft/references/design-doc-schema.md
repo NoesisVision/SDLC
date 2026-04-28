@@ -61,7 +61,9 @@ DesignedBuildingBlock {
 
 DesignedBehaviour {
   name
-  description?
+  description           // Required ≥400 chars on `added`; omit on `modified` when not changing.
+                        // For application_service behaviours or those using ≥3 building blocks,
+                        // embed a ```mermaid sequence diagram (warning, not error, when missing).
   type?: "Command"|"Event"|"Query"
   input?: ChangeSet<string>            // BuildingBlock names
   output?: ChangeSet<string>           // BuildingBlock names
@@ -72,7 +74,12 @@ DesignedBehaviour {
   actor?: string                       // Actor name initiating this behaviour
 }
 
-DesignedRule { name; ruleType?: "Consistency"|"Structure"|"Computation"|"State change"; description? }
+DesignedRule {
+  name
+  ruleType?: "Consistency"|"Structure"|"Computation"|"State change"
+  description           // Required ≥80 chars on `added`; omit on `modified` when not changing.
+                        // Server rejects tautologies that paraphrase `name`.
+}
 DesignedScenario { name; description; given; when; then }
 
 ChangeSet<T> { added: T[]; modified: T[]; removed: string[] }    // removed by name
@@ -108,5 +115,5 @@ ChangeSet<T> { added: T[]; modified: T[]; removed: string[] }    // removed by n
 
 - Do not invent business rules, scenarios, or properties not stated in the source. The draft is the source of truth; gap-filling is the architect's job, not the extractor's.
 - Do not classify discussion / comparison content as model content. Comparison tables ("Vector RAG vs PageIndex") are NOT Building Blocks.
-- Do not promote a heading to a Module unless a separate Building Block sub-heading is nested under it. Modules group blocks; lone-heading sections become Building Blocks directly under the BoundedContext.
+- Do not invent module names from arbitrary headings. Modules must reflect actual cohesion in the model — not arbitrary heading structure in the source. **However**, once a Bounded Context contains more than ~15 Building Blocks, group them into 3–7 Modules along natural cohesion axes (typically the topic structure pulled in Step 2). Reuse those topic names rather than inventing fresh module names. A Module with fewer than 3 Building Blocks is a smell — fold it back into the BC or merge with a sibling. `save_design_doc` emits a warning when a Bounded Context has >20 building blocks and zero modules.
 - Do not produce an empty DesignDoc (no actors, no contexts, no quality attributes). If extraction yields nothing, skip writing the design doc JSON and skip the `save_design_doc` call.

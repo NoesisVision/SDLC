@@ -90,6 +90,20 @@ Edit `<output_path>` (Edit tool):
 
 `DocumentFragmentRef`: `{ "type": "document_fragment_ref", "document_id": "<id>", "start_offset": N, "end_offset": N }` — copy `start_offset` / `end_offset` directly from the fragment.
 
+#### Bulk-edit pattern
+
+For documents with >100 fragments, editing `output.json` line-by-line with the Edit tool is impractical (250-KB files do not respond well to hundreds of precise edits). Write a short Python helper next to `output.json` (load JSON → mutate in memory → dump JSON) and invoke it via Bash. Re-use the same helper across iterations. Do **not** write helpers speculatively — only when you have a concrete bulk operation in hand.
+
+#### Decision-coverage check
+
+After categorising, run:
+
+```
+bun run ${CLAUDE_PLUGIN_ROOT}/scripts/document/check-decision-coverage.ts <output_path>
+```
+
+The script flags sections whose heading matches `decision|adr|reguły|polityka` and have <30% Decision-categorised fragments. If it warns, revisit those sections — narrative decisions (`ponieważ`, `zamiast`, `zdecydowaliśmy się na`, `we chose`, `rather than`) are easy to miss when scanning for explicit `Decision:`-shaped paragraphs. The script exits 0 either way; the warning is informational.
+
 ### Step 4: Find existing decisions
 
 Collect every topic id that ended up in `output.json`'s `topics`. For each id, call `noesis-graph:list_decisions` with `topic_id: <id>` and read the returned file. Discard decisions whose context/title is clearly unrelated to `<main_topic>`. When in doubt, keep — Step 5 makes the final per-fragment attach/skip judgement.
@@ -102,7 +116,9 @@ Note candidate decisions for use in Step 5 — keep a working list in your conte
 
 Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/analyze-document-topic.md`.
 
-Loop:
+Two execution modes:
+
+**Iterative** (default — use when ≤10 unreviewed topics remain):
 
 1. Call `noesis-graph:get_topic_for_document_review` with `output_path: <output_path>`. If `{ "status": "Done" }`, exit.
 2. Otherwise read the returned file. It contains the topic's fragments (current document + prior documents from the graph, with `[from <doc title>]` markers).
@@ -112,7 +128,14 @@ Loop:
    - **ATTACH** to an existing decision → append an `AttachToDecision` entry to the top-level `decision_attachments` array.
 5. Repeat from sub-step 1.
 
-Do not parallelize. Each iteration depends on the previous edit.
+**Batch** (use when >10 unreviewed topics remain):
+
+1. Call `noesis-graph:list_unreviewed_topics_for_document` with `output_path: <output_path>`. The tool returns one tmp file containing every unreviewed topic's enriched view (current + prior-document fragments, with `[from <doc>]` markers) separated by `<!-- topic_id: ... -->` headers.
+2. Read the bundle. For each topic, decide summaries / reassignments / decisions per the REFERENCE.
+3. Apply all updates to `<output_path>` in one Edit/Write pass (typically via the bulk-edit helper from Step 3).
+4. **Per-topic verification is mandatory**: walk every topic you wrote a summary for and confirm any `[from <doc title>]` prior-document fragments were folded into the summary. The batch shortcut is only safe if this pass actually happens.
+
+In both modes: each topic's `reviewed: true` and `decisions_extracted: true` flags must be flipped, the `short_summary` / `long_summary` regenerated from current+prior fragments, and decisions either CREATE-d locally or ATTACH-ed via `decision_attachments`.
 
 ### Step 6: Extract design model (conditional)
 

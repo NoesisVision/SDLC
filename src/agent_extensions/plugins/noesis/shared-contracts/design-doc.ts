@@ -56,7 +56,15 @@ export type DesignedProperty = z.infer<typeof DesignedPropertySchema>;
 export const DesignedRuleSchema = z.object({
   name: z.string(),
   ruleType: DesignedRuleTypeSchema.nullable().default(null),
-  description: z.string().nullable().default(null),
+  description: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      "Required ≥80 chars for `added` rules. May be omitted when `modified` only changes other fields. " +
+        "Structure: Trigger / Pre-conditions / Algorithm / Post-conditions / Edge cases. " +
+        "Tautologies that paraphrase `name` and pure rationale without algorithm are rejected by the quality gate.",
+    ),
 });
 export type DesignedRule = z.infer<typeof DesignedRuleSchema>;
 
@@ -105,7 +113,15 @@ export type DesignedScenarioChangeSet = z.infer<
 
 export const DesignedBehaviourSchema = z.object({
   name: z.string().describe("Concise name, a few words"),
-  description: z.string().nullable().default(null),
+  description: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      "Required ≥400 chars for `added` behaviours. May be omitted when `modified` only changes other fields. " +
+        "Structure: Input / Validation+preconditions / numbered Steps with the transactional boundary / Output. " +
+        "For application_service behaviours or those using ≥3 building blocks, embed a ```mermaid sequence diagram (warning, not error).",
+    ),
   type: DesignedBehaviourTypeSchema.nullable().default(null),
   input: StringChangeSetSchema.optional().describe(
     "Input BuildingBlock names; omit when no changes",

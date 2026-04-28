@@ -15,7 +15,7 @@ Following the schema in `design-doc-schema.md` Section 2 and the rules in Sectio
 1. **Actors** — user roles, external services mentioned in the draft.
 2. **Bounded Contexts** — top-level domain partitions.
 3. For each Bounded Context:
-   - **Modules** when nested headings group blocks.
+   - **Modules** — required once a Bounded Context grows past ~15 Building Blocks (see "Modularising large Bounded Contexts" below). Skip when the BC is small and flat is fine.
    - **Building Blocks** — Aggregates, Entities, Value Objects, Domain Events, Commands, Queries, Services, Repositories, Factories, External Integrations.
 4. For each Building Block:
    - `properties` (name + optional type),
@@ -23,6 +23,71 @@ Following the schema in `design-doc-schema.md` Section 2 and the rules in Sectio
    - `rules` (with `ruleType` if stated),
    - `scenarios` (Given / When / Then triplets).
 5. **Quality Attributes** — performance, availability, security, etc., with measurable expectations.
+
+### Modularising large Bounded Contexts
+
+The "do not invent modules from arbitrary headings" rule prevents fabricating modules where the source has none — it does NOT block grouping when the model genuinely needs it.
+
+Once a Bounded Context contains more than ~15 Building Blocks, group them into 3–7 Modules along natural cohesion axes. Before introducing module names, look at the existing topic tree pulled in Step 2 (`potential_topics`) — topics directly under the document's main topic are usually the right module skeleton; **reuse those names rather than inventing fresh ones**. A Module with fewer than 3 Building Blocks is a smell — fold it back into the BC or merge with a sibling.
+
+`save_design_doc` emits a warning when a Bounded Context has >20 building blocks and zero modules. The save still succeeds; treat the warning as a signal to introduce modules in the next iteration.
+
+### Writing rules
+
+Every `Rule` MUST have a `description` of at least **80 characters** that an AI coding agent can implement from. The save tool rejects rules with shorter or missing descriptions, and rejects descriptions that merely paraphrase the rule's `name`.
+
+Structure the description as:
+
+- **Trigger** — when the rule fires.
+- **Pre-conditions** — observable state that must hold before.
+- **Algorithm** — the steps (or formula) the rule prescribes.
+- **Post-conditions** — observable state after.
+- **Edge cases** — boundary conditions, rounding, error paths.
+
+For algorithmic rules, give a short pseudocode block or a numbered step list. Tautologies that paraphrase `name` are rejected. Pure rationale without an algorithm is rejected.
+
+**Good** (rule name `"Realna delta stornuje wszystkie prognozy w tej samej kategorii kosztu"`):
+
+> Pre: a real delta is registered in cost category K on PriceState P. Algorithm: find every active (non-storno) delta on P with `flag = forecast` AND `costCategory = K`; for each, create a storno delta (`stornoOf = original_id, amount = -original_amount`) — never UPDATE the existing delta; then register the new real delta. Post: zero active forecasts in K on P; sum of delta amounts in K equals the new real amount. Edge: when real amount equals the forecast sum, effective change is zero, but storno deltas must still be recorded for audit. All operations atomic in one transaction.
+
+**Bad** (`name: "Storno + nowy zapis (nie update)"`, `description: "Gwarantuje audyt i prosty zrzut do hurtowni danych."`) — pure rationale, no algorithm, no shape of the storno record. Rejected.
+
+For `modified` rules, omit `description` when the change does not touch it. Only emit a description when you are deliberately replacing the existing one — and the new value must still meet the ≥80-char bar.
+
+### Writing behaviours
+
+Every `Behaviour` MUST have a `description` of at least **400 characters** that lets an AI coding agent implement it without follow-up questions. The save tool rejects behaviours with shorter or missing descriptions.
+
+The description SHOULD contain (in order):
+
+1. **Input** — the message/command/event with its fields and source.
+2. **Validation / preconditions** — what to check before any state change, with the rejection branch for each check.
+3. **Steps** — numbered list of state changes / service calls / writes, in order, with the transactional boundary called out explicitly.
+4. **Output** — emitted events/messages and what the caller observes.
+
+For behaviours of `type: application_service` OR with `usedBuildingBlocks.added.length ≥ 3`, embed a **mermaid sequence diagram** showing the interaction between the participating Building Blocks. The save tool emits a warning (not an error) when a coupled behaviour has no \`\`\`mermaid block.
+
+Worked example for a behaviour like `PriceState.RegisterDelta`:
+
+> 1. Input: `DeltaRegistrationRequested` with `priceStateId`, `amountPerUnit`, `effectiveDate`, `costCategory`, `sourceDocumentReference`, `flag`.
+> 2. Validation: (a) the accounting period containing `effectiveDate` must be open; (b) if `flag = forecast` AND a delta with `flag = real` already exists in this category — reject; (c) if `flag = forecast` AND an active forecast already exists in this category — reject (or replace, depending on policy).
+> 3. If `flag = real` and forecasts exist in this category: emit storno deltas for each.
+> 4. Create and persist the new delta.
+> 5. Call `DeltaPropagationService.PropagateDelta` with the new delta — BFS over the derived-state graph, recompute on each edge by its type (Direct/Disassembly/Assembly).
+> 6. Emit `DeltaRegistered` (and `DeltaForecastsStorned` if storno fired).
+> 7. All steps in one transaction.
+>
+> ```mermaid
+> sequenceDiagram
+>     Caller->>PriceState: DeltaRegistrationRequested
+>     PriceState->>AccountingPeriod: assertOpen(effectiveDate)
+>     PriceState->>PriceState: emitStornos(forecasts)
+>     PriceState->>PriceState: persistDelta(new)
+>     PriceState->>DeltaPropagationService: propagate(delta)
+>     PriceState-->>Caller: DeltaRegistered
+> ```
+
+For `modified` behaviours, omit `description` when the change does not touch it. When you do replace it, the new value must still meet the ≥400-char bar.
 
 ## ChangeSet rules
 

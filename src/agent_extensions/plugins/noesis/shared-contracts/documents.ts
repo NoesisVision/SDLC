@@ -20,9 +20,11 @@ export type DocumentFragmentRef = z.infer<typeof DocumentFragmentRefSchema>;
 export const DocumentFragmentKindSchema = z.enum([
   "paragraph",
   "list",
+  "list_item",
   "code_block",
   "table",
   "blockquote",
+  "structural",
 ]);
 export type DocumentFragmentKind = z.infer<typeof DocumentFragmentKindSchema>;
 

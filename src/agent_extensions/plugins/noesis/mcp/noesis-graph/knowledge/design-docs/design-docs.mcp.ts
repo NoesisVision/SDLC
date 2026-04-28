@@ -45,7 +45,11 @@ function registerSaveDesignDoc(
         "Persist a DesignDoc into the knowledge graph from a JSON file matching DesignDocSchema. " +
         "The path points at the version-controlled DesignDoc JSON in the repository — the agent writes/updates this file " +
         "directly, then this tool reads it, validates, and applies ChangeSets recursively (added → upsert, " +
-        "modified → partial update, removed → delete by name). Returns { status: \"Ok\", design_doc_id } on success; " +
+        "modified → partial update, removed → delete by name). " +
+        "Quality gate (rejects on save): every `added` Rule needs description ≥80 chars (Trigger / Pre / Algorithm / Post / Edge cases — no tautologies); " +
+        "every `added` Behaviour needs description ≥400 chars (Input / Validation / numbered Steps / Output). " +
+        "Warnings (non-blocking): a Bounded Context with >20 building blocks and 0 modules; an application_service or ≥3-block-using behaviour without an embedded ```mermaid sequence diagram. " +
+        "Returns { status: \"Ok\", design_doc_id, warnings: string[] } on success; " +
         "validation or storage failures surface as a tool error with the failure message.",
       inputSchema: {
         path: z

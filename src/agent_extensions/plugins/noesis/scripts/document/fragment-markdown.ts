@@ -7,9 +7,15 @@ import type {
 const HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_PATTERN = /^([ \t]*)(```+|~~~+)(.*)$/;
 const LIST_ITEM_PATTERN = /^[ \t]*(?:[-*+]|\d+[.)])\s+/;
+const TOP_LEVEL_LIST_ITEM_PATTERN = /^(?:[-*+]|\d+[.)])\s+/;
 const BLOCKQUOTE_PATTERN = /^[ \t]*>\s?/;
 const TABLE_ROW_PATTERN = /^[ \t]*\|.*\|[ \t]*$/;
 const HTML_COMMENT_LINE = /^\s*<!--.*-->\s*$/;
+const STRUCTURAL_PARAGRAPH_PATTERN =
+  /^(?:\*\*[^*]+\*\*:?|\*[^*]+\*|\*\*Aktorzy:?\*\*[^\n]*|\*\*Cel:?\*\*[^\n]*|\*\*Powiązane scenariusze:?\*\*[^\n]*|\*\*Moduły:?\*\*[^\n]*|\*\*Warunki wstępne:?\*\*[^\n]*)$/u;
+const SHORT_STRUCTURAL_LIMIT = 80;
+const GLOSSARY_SECTION_PATTERN = /(s[łl]ownik|glossary|definitions?)/iu;
+const GLOSSARY_BULLET_PATTERN = /^\s*[-*+]\s+\*\*[^*\n]+\*\*\s*[:.\-—]/u;
 
 interface LineSpan {
   text: string;
@@ -74,7 +80,7 @@ function processLine(
   }
 
   if (LIST_ITEM_PATTERN.test(line.text)) {
-    return consumeBlock(lines, index, state, "list", isListContinuation);
+    return consumeListBlock(lines, index, state);
   }
   if (BLOCKQUOTE_PATTERN.test(line.text)) {
     return consumeBlock(lines, index, state, "blockquote", (l) =>
@@ -86,7 +92,7 @@ function processLine(
       TABLE_ROW_PATTERN.test(l.text),
     );
   }
-  return consumeBlock(lines, index, state, "paragraph", isParagraphContinuation);
+  return consumeParagraph(lines, index, state);
 }
 
 function consumeCodeBlock(
@@ -138,6 +144,215 @@ function consumeBlock(
 
   pushFragment(state, kind, start, end, sliceText(lines, startIndex, i));
   return i - startIndex;
+}
+
+function consumeListBlock(
+  lines: LineSpan[],
+  startIndex: number,
+  state: ParseState,
+): number {
+  const start = lines[startIndex].start;
+  let end = lines[startIndex].end;
+  let i = startIndex + 1;
+
+  while (i < lines.length) {
+    const current = lines[i];
+    if (isBlank(current.text)) break;
+    if (HEADING_PATTERN.test(current.text)) break;
+    if (FENCE_PATTERN.test(current.text)) break;
+    if (!isListContinuation(current, lines[i - 1])) break;
+    end = current.end;
+    i++;
+  }
+
+  const sectionPath = state.currentPath;
+  const consumed = i - startIndex;
+  if (shouldSplitGlossary(sectionPath, lines, startIndex, i)) {
+    emitGlossaryItems(lines, startIndex, i, state);
+    return consumed;
+  }
+
+  pushFragment(state, "list", start, end, sliceText(lines, startIndex, i));
+  return consumed;
+}
+
+function consumeParagraph(
+  lines: LineSpan[],
+  startIndex: number,
+  state: ParseState,
+): number {
+  const start = lines[startIndex].start;
+  let end = lines[startIndex].end;
+  let i = startIndex + 1;
+
+  while (i < lines.length) {
+    const current = lines[i];
+    if (isBlank(current.text)) break;
+    if (HEADING_PATTERN.test(current.text)) break;
+    if (FENCE_PATTERN.test(current.text)) break;
+    if (!isParagraphContinuation(current, lines[i - 1])) break;
+    end = current.end;
+    i++;
+  }
+
+  const paragraphText = sliceText(lines, startIndex, i);
+  const trimmedParagraph = paragraphText.trim();
+
+  const followUp = locateFollowingBlock(lines, i);
+  if (followUp !== null && isLeadInParagraph(trimmedParagraph)) {
+    return consumeLeadInWithBlock(lines, startIndex, i, followUp, state);
+  }
+
+  if (isStructuralOrphan(trimmedParagraph)) {
+    pushFragment(state, "structural", start, end, paragraphText);
+    return i - startIndex;
+  }
+
+  pushFragment(state, "paragraph", start, end, paragraphText);
+  return i - startIndex;
+}
+
+function consumeLeadInWithBlock(
+  lines: LineSpan[],
+  paragraphStart: number,
+  paragraphEnd: number,
+  followUp: FollowUpBlock,
+  state: ParseState,
+): number {
+  const start = lines[paragraphStart].start;
+  const end = lines[followUp.endIndex - 1].end;
+  const text = sliceText(lines, paragraphStart, followUp.endIndex);
+  pushFragment(state, followUp.kind, start, end, text);
+  // Total lines consumed = paragraph block + skipped blanks + follow-up block
+  return followUp.endIndex - paragraphStart;
+  // followUp.startIndex >= paragraphEnd (blanks skipped) and endIndex > startIndex,
+  // so this swallows the blank gap as part of one combined fragment.
+  void paragraphEnd;
+}
+
+interface FollowUpBlock {
+  kind: DocumentFragmentKind;
+  startIndex: number;
+  endIndex: number;
+}
+
+function locateFollowingBlock(
+  lines: LineSpan[],
+  paragraphEnd: number,
+): FollowUpBlock | null {
+  let i = paragraphEnd;
+  while (i < lines.length && isBlank(lines[i].text)) i++;
+  if (i >= lines.length) return null;
+  const next = lines[i];
+  if (HEADING_PATTERN.test(next.text)) return null;
+  if (FENCE_PATTERN.test(next.text)) return null;
+
+  if (LIST_ITEM_PATTERN.test(next.text)) {
+    const endIndex = scanContinuation(lines, i, isListContinuation);
+    return { kind: "list", startIndex: i, endIndex };
+  }
+  if (BLOCKQUOTE_PATTERN.test(next.text)) {
+    const endIndex = scanContinuation(
+      lines,
+      i,
+      (l) => BLOCKQUOTE_PATTERN.test(l.text),
+    );
+    return { kind: "blockquote", startIndex: i, endIndex };
+  }
+  if (TABLE_ROW_PATTERN.test(next.text)) {
+    const endIndex = scanContinuation(
+      lines,
+      i,
+      (l) => TABLE_ROW_PATTERN.test(l.text),
+    );
+    return { kind: "table", startIndex: i, endIndex };
+  }
+  return null;
+}
+
+function scanContinuation(
+  lines: LineSpan[],
+  startIndex: number,
+  isContinuation: (line: LineSpan, prev: LineSpan) => boolean,
+): number {
+  let i = startIndex + 1;
+  while (i < lines.length) {
+    const current = lines[i];
+    if (isBlank(current.text)) break;
+    if (HEADING_PATTERN.test(current.text)) break;
+    if (FENCE_PATTERN.test(current.text)) break;
+    if (!isContinuation(current, lines[i - 1])) break;
+    i++;
+  }
+  return i;
+}
+
+function isLeadInParagraph(text: string): boolean {
+  if (text.length === 0 || text.length > 200) return false;
+  if (text.includes("\n")) return false;
+  if (/[:：]\s*$/u.test(text)) return true;
+  if (STRUCTURAL_PARAGRAPH_PATTERN.test(text)) return true;
+  return false;
+}
+
+function isStructuralOrphan(text: string): boolean {
+  if (text.length === 0 || text.length > SHORT_STRUCTURAL_LIMIT) return false;
+  if (text.includes("\n")) return false;
+  return STRUCTURAL_PARAGRAPH_PATTERN.test(text);
+}
+
+function shouldSplitGlossary(
+  sectionPath: string[],
+  lines: LineSpan[],
+  startIndex: number,
+  endIndex: number,
+): boolean {
+  const sectionMatch = sectionPath.some((s) =>
+    GLOSSARY_SECTION_PATTERN.test(s),
+  );
+  let topLevelBullets = 0;
+  let glossaryShaped = 0;
+  for (let i = startIndex; i < endIndex; i++) {
+    const text = lines[i].text;
+    if (TOP_LEVEL_LIST_ITEM_PATTERN.test(text)) {
+      topLevelBullets++;
+      if (GLOSSARY_BULLET_PATTERN.test(text)) glossaryShaped++;
+    }
+  }
+  if (topLevelBullets < 3) return false;
+  if (sectionMatch && topLevelBullets >= 3) return true;
+  return glossaryShaped >= Math.max(3, Math.ceil(topLevelBullets * 0.6));
+}
+
+function emitGlossaryItems(
+  lines: LineSpan[],
+  startIndex: number,
+  endIndex: number,
+  state: ParseState,
+): void {
+  let bulletStart = -1;
+  for (let i = startIndex; i < endIndex; i++) {
+    if (TOP_LEVEL_LIST_ITEM_PATTERN.test(lines[i].text)) {
+      if (bulletStart !== -1) {
+        emitOneGlossaryItem(lines, bulletStart, i, state);
+      }
+      bulletStart = i;
+    }
+  }
+  if (bulletStart !== -1) {
+    emitOneGlossaryItem(lines, bulletStart, endIndex, state);
+  }
+}
+
+function emitOneGlossaryItem(
+  lines: LineSpan[],
+  startIndex: number,
+  endIndex: number,
+  state: ParseState,
+): void {
+  const start = lines[startIndex].start;
+  const end = lines[endIndex - 1].end;
+  pushFragment(state, "list_item", start, end, sliceText(lines, startIndex, endIndex));
 }
 
 function consumeHeading(

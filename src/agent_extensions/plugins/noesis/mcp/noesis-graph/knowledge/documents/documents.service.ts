@@ -58,13 +58,32 @@ export class DocumentsService {
     return { id: document.id };
   }
 
+  async getAllUnreviewedTopicsForDocument(
+    outputPath: string,
+  ): Promise<TopicForDocumentReview[]> {
+    const output = await this.readOutputFile(outputPath);
+    const reviews: TopicForDocumentReview[] = [];
+    for (const topic of output.topics) {
+      if (topic.reviewed) continue;
+      const review = await this.buildTopicReview(output, topic);
+      if (review !== null) reviews.push(review);
+    }
+    return reviews;
+  }
+
   async getTopicForDocumentReview(
     outputPath: string,
   ): Promise<TopicForDocumentReview | null> {
     const output = await this.readOutputFile(outputPath);
     const topic = output.topics.find((t) => !t.reviewed) ?? null;
     if (topic === null) return null;
+    return this.buildTopicReview(output, topic);
+  }
 
+  private async buildTopicReview(
+    output: AnalyzeDesignDraftOutput,
+    topic: AnalyzeDesignDraftOutput["topics"][number],
+  ): Promise<TopicForDocumentReview> {
     const fragmentMap = buildFragmentMap(output.fragments);
     const priorFragments = await this.repository.getPriorDocumentFragments(
       topic.id,

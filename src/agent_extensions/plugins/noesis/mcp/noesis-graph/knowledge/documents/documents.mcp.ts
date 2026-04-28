@@ -16,6 +16,7 @@ export function registerDocumentsTools(
   registerAddDocument(mcp, documents);
   registerHasDocument(mcp, documents);
   registerGetTopicForDocumentReview(mcp, documents);
+  registerListUnreviewedTopicsForDocument(mcp, documents);
   registerMergeDocument(mcp, documents);
 }
 
@@ -77,6 +78,37 @@ function registerGetTopicForDocumentReview(
   );
 }
 
+function registerListUnreviewedTopicsForDocument(
+  mcp: McpServer,
+  documents: DocumentsService,
+): void {
+  mcp.registerTool(
+    "list_unreviewed_topics_for_document",
+    {
+      description:
+        "Batch variant of `get_topic_for_document_review` for documents with many topics. " +
+        "Returns every unreviewed topic's enriched view (current + prior-document fragments, with `[from <doc>]` markers) " +
+        "in one Markdown bundle separated by `<!-- topic_id: ... -->` headers. " +
+        "Writes the bundle to a tmp file and returns the file path — read it with the Read tool. " +
+        "Use this when iterating per-topic would require >10 round-trips. " +
+        "Per-topic verification is still mandatory: confirm prior-document fragments (if any) were folded into each summary.",
+      inputSchema: {
+        output_path: z
+          .string()
+          .describe(
+            "Absolute path to the working output.json produced during document analysis.",
+          ),
+      },
+    },
+    async ({ output_path }) =>
+      runFileOutputTool(
+        "list_unreviewed_topics_for_document",
+        () => documents.getAllUnreviewedTopicsForDocument(output_path),
+        formatTopicsForDocumentReviewBundle,
+      ),
+  );
+}
+
 function registerHasDocument(
   mcp: McpServer,
   documents: DocumentsService,
@@ -134,4 +166,27 @@ function formatTopicForDocumentReview(review: TopicForDocumentReview): string {
     "",
   ].join("\n");
   return header + review.markdown;
+}
+
+function formatTopicsForDocumentReviewBundle(
+  reviews: TopicForDocumentReview[],
+): string {
+  if (reviews.length === 0) {
+    return [
+      "<!-- num_topics: 0 -->",
+      "",
+      "(no unreviewed topics — Step 5 is complete)",
+    ].join("\n");
+  }
+  const parts: string[] = [
+    `<!-- num_topics: ${reviews.length} -->`,
+    "",
+  ];
+  for (const review of reviews) {
+    parts.push(formatTopicForDocumentReview(review));
+    parts.push("");
+    parts.push("---");
+    parts.push("");
+  }
+  return parts.join("\n").trimEnd();
 }
