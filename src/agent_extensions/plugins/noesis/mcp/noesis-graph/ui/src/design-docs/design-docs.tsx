@@ -42,6 +42,7 @@ import type {
   DesignedRuleData,
   DesignedScenarioData,
 } from "../../../ui-contracts/design-docs/design-docs-data.js";
+import { MarkdownContent } from "../shared/markdown-content.js";
 import classes from "./design-docs.module.css";
 
 type TreeNodeKind =
@@ -993,7 +994,11 @@ function KvRow({ label, value }: { label: string; value: string }) {
   return (
     <Box className={classes.kvRow}>
       <Text className={classes.kvKey}>{label}</Text>
-      <Text className={classes.kvValue}>{value}</Text>
+      {value === "" || value === "—" ? (
+        <Text className={classes.kvValue}>{value}</Text>
+      ) : (
+        <MarkdownContent text={value} />
+      )}
     </Box>
   );
 }

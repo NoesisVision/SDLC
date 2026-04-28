@@ -20,8 +20,7 @@ import {
   IconMessageCircle,
   IconTopologyStar,
 } from "@tabler/icons-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownContent } from "../shared/markdown-content.js";
 import {
   categoryColor,
   groupIdeaUnitsByTurn,
@@ -478,18 +477,14 @@ function TopicDetails({
         {topic.short_summary !== "" && (
           <Stack gap={4}>
             <SectionLabel>Summary</SectionLabel>
-            <Text size="sm" c="gray.2">
-              {topic.short_summary}
-            </Text>
+            <MarkdownContent text={topic.short_summary} />
           </Stack>
         )}
 
         {topic.long_summary !== "" && (
           <Stack gap={4}>
             <SectionLabel>Details</SectionLabel>
-            <Text size="sm" c="gray.3" style={{ whiteSpace: "pre-wrap" }}>
-              {topic.long_summary}
-            </Text>
+            <MarkdownContent text={topic.long_summary} />
           </Stack>
         )}
 
@@ -855,11 +850,7 @@ function DocumentDetails({
                     {f.start_offset}–{f.end_offset}
                   </Badge>
                 </Group>
-                <Box className={classes.fragmentMarkdown}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {f.text}
-                  </ReactMarkdown>
-                </Box>
+                <MarkdownContent text={f.text} variant="sm" />
               </Box>
             ))}
           </Stack>

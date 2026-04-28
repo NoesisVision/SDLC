@@ -18,8 +18,7 @@ import {
   IconGavel,
   IconMessageCircle,
 } from "@tabler/icons-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownContent } from "../shared/markdown-content.js";
 import {
   categoryColor,
   groupIdeaUnitsByTurn,
@@ -433,9 +432,11 @@ function DecisionDetails({
         <Title order={2} size="h4" c="gray.1" fw={700} mb="xs">
           Context
         </Title>
-        <Text className={classes.sectionBody}>
-          {data.context_text === "" ? "—" : data.context_text}
-        </Text>
+        {data.context_text === "" ? (
+          <Text className={classes.sectionBody}>—</Text>
+        ) : (
+          <MarkdownContent text={data.context_text} />
+        )}
         <SourceLists
           decisionId={data.id}
           slot="context"
@@ -451,13 +452,16 @@ function DecisionDetails({
         <Title order={2} size="h4" c="gray.1" fw={700} mb="xs">
           Decision
         </Title>
-        <Text className={classes.sectionBody}>
-          {data.decision_text === "" ? "—" : data.decision_text}
-        </Text>
+        {data.decision_text === "" ? (
+          <Text className={classes.sectionBody}>—</Text>
+        ) : (
+          <MarkdownContent text={data.decision_text} />
+        )}
         {data.decision_rationale !== "" && (
-          <Text className={classes.rationale}>
-            Rationale: {data.decision_rationale}
-          </Text>
+          <Box className={classes.rationaleBlock}>
+            <Text className={classes.rationaleLabel}>Rationale</Text>
+            <MarkdownContent text={data.decision_rationale} variant="sm" italic />
+          </Box>
         )}
         <SourceLists
           decisionId={data.id}
@@ -487,13 +491,16 @@ function DecisionDetails({
                   <Title order={3} size="h5" c="gray.2" fw={600} mb={4}>
                     {optionLabel}
                   </Title>
-                  <Text className={classes.sectionBody}>
-                    {a.text === "" ? "—" : a.text}
-                  </Text>
+                  {a.text === "" ? (
+                    <Text className={classes.sectionBody}>—</Text>
+                  ) : (
+                    <MarkdownContent text={a.text} />
+                  )}
                   {a.rationale !== "" && (
-                    <Text className={classes.rationale}>
-                      Rationale: {a.rationale}
-                    </Text>
+                    <Box className={classes.rationaleBlock}>
+                      <Text className={classes.rationaleLabel}>Rationale</Text>
+                      <MarkdownContent text={a.rationale} variant="sm" italic />
+                    </Box>
                   )}
                   <SourceLists
                     decisionId={data.id}
@@ -904,11 +911,7 @@ function DocumentDetails({
                     {f.start_offset}–{f.end_offset}
                   </Badge>
                 </Group>
-                <Box className={classes.fragmentMarkdown}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {f.text}
-                  </ReactMarkdown>
-                </Box>
+                <MarkdownContent text={f.text} variant="sm" />
               </Box>
             ))}
           </Stack>

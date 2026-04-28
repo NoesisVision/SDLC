@@ -11,6 +11,7 @@
     "@mantine/hooks": "^7.17.0",
     "@tabler/icons-react": "^3.41.1",
     "@xyflow/react": "^12.8.0",
+    "mermaid": "^11.4.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^9.0.1",
