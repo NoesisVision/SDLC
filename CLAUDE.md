@@ -35,6 +35,7 @@
    - **UI**: `cd src/agent_extensions/plugins/noesis/mcp/noesis-graph/ui && bun run dev` — Vite proxies `/api/*` to the backend via the discovery file.
    - **Browser**: open the Vite URL with `mcp__playwright__browser_navigate`, then drive interactions and assert state with `browser_snapshot` / `browser_evaluate` / `browser_console_messages`.
    Run backend and UI dev servers with `run_in_background: true`.
+3. After verification, ALWAYS delete any PNG screenshots saved to the repo via `browser_take_screenshot` (whether at the repo root or elsewhere). They are throwaway verification artifacts and must not be left behind before reporting the task as complete.
 
 ## End-to-end smoke test
 
