@@ -25,6 +25,10 @@ import type { CSharpNamespace, CSharpType } from "./csharp/csharp-code.js";
 
 const CONCURRENCY_LIMIT = 10;
 
+// Temporary flag: keep the invocations analysis code wired in, but skip it at
+// runtime so scans are fast and do not require Serena.
+const INVOCATIONS_ANALYSIS_ENABLED: boolean = false;
+
 const DEFAULT_CONFIG: NoesisConfig = {
   namespacePartsToSkip: [],
   namespacesToExclude: [],
@@ -224,11 +228,13 @@ export class ScannerService implements OnModuleInit {
     }
     this.logger.log(`Inserted ${blockCount} building blocks and ${behaviorCount} behaviors`);
 
-    this.logger.log("Starting invocations analysis");
-    const inheritance = extractInheritanceMap(
-      keptFiles.map((f) => ({ relativePath: f.relativePath, content: f.content })),
-    );
-    await this.invocations.rebuildInvocations(inheritance);
+    if (INVOCATIONS_ANALYSIS_ENABLED) {
+      this.logger.log("Starting invocations analysis");
+      const inheritance = extractInheritanceMap(
+        keptFiles.map((f) => ({ relativePath: f.relativePath, content: f.content })),
+      );
+      await this.invocations.rebuildInvocations(inheritance);
+    }
 
     const tree = await this.repository.getDomainModel();
     this.logger.log("Model scan completed");
