@@ -345,6 +345,302 @@ describe("validateDesignDocQuality — behaviours", () => {
   });
 });
 
+describe("validateDesignDocQuality — dual-level rule attachment", () => {
+  test("rejects a Rule attached at both BB and one of its Behaviours", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "Order",
+                  type: "aggregate",
+                  description: null,
+                  rules: {
+                    added: [
+                      {
+                        name: "DuplicateRule",
+                        ruleType: "Consistency",
+                        description: RULE_DESC,
+                      },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                  behaviours: {
+                    added: [
+                      {
+                        name: "Place",
+                        type: "Command",
+                        description: BEHAVIOUR_DESC,
+                        isPublic: true,
+                        actor: null,
+                        rules: {
+                          added: [
+                            {
+                              name: "DuplicateRule",
+                              ruleType: "Consistency",
+                              description: RULE_DESC,
+                            },
+                          ],
+                          modified: [],
+                          removed: [],
+                        },
+                      },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    const { errors } = validateDesignDocQuality(doc);
+    expect(
+      errors.some((e) =>
+        e.includes("attached at both Building Block 'Order' and Behaviour 'Place'"),
+      ),
+    ).toBe(true);
+  });
+
+  test("accepts a Rule attached only at the Behaviour level", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "Order",
+                  type: "aggregate",
+                  description: null,
+                  behaviours: {
+                    added: [
+                      {
+                        name: "Place",
+                        type: "Command",
+                        description: BEHAVIOUR_DESC,
+                        isPublic: true,
+                        actor: null,
+                        rules: {
+                          added: [
+                            {
+                              name: "OnlyHere",
+                              ruleType: "Consistency",
+                              description: RULE_DESC,
+                            },
+                          ],
+                          modified: [],
+                          removed: [],
+                        },
+                      },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    expect(validateDesignDocQuality(doc).errors).toEqual([]);
+  });
+});
+
+describe("validateDesignDocQuality — removed-but-referenced", () => {
+  test("rejects a removed Building Block still referenced as a property type", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        modified: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "Order",
+                  type: "aggregate",
+                  description: null,
+                  properties: {
+                    added: [{ name: "lock", type: "Lock" }],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: ["Lock"],
+            },
+          },
+        ],
+        added: [],
+        removed: [],
+      },
+    });
+    const { errors } = validateDesignDocQuality(doc);
+    expect(
+      errors.some(
+        (e) =>
+          e.includes("'Lock'") &&
+          e.includes("removed") &&
+          e.includes("property type"),
+      ),
+    ).toBe(true);
+  });
+
+  test("rejects a removed Building Block still referenced via implements", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        modified: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "ConcreteThing",
+                  type: "value_object",
+                  description: null,
+                  implements: ["LegacyBase"],
+                },
+              ],
+              modified: [],
+              removed: ["LegacyBase"],
+            },
+          },
+        ],
+        added: [],
+        removed: [],
+      },
+    });
+    const { errors } = validateDesignDocQuality(doc);
+    expect(
+      errors.some(
+        (e) => e.includes("'LegacyBase'") && e.includes("implements"),
+      ),
+    ).toBe(true);
+  });
+
+  test("does not flag references when nothing is in removed", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "Order",
+                  type: "aggregate",
+                  description: null,
+                  properties: {
+                    added: [{ name: "id", type: "OrderId" }],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    expect(validateDesignDocQuality(doc).errors).toEqual([]);
+  });
+});
+
+describe("validateDesignDocQuality — implements resolution", () => {
+  test("warns when implements references a BB not declared in this doc", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "ConcreteLeaf",
+                  type: "value_object",
+                  description: null,
+                  implements: ["NotDeclaredBase"],
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    const { warnings } = validateDesignDocQuality(doc);
+    expect(
+      warnings.some(
+        (w) => w.includes("'NotDeclaredBase'") && w.includes("implements"),
+      ),
+    ).toBe(true);
+  });
+
+  test("does not warn when the base BB is declared alongside", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "Component",
+                  type: "value_object",
+                  description: null,
+                },
+                {
+                  name: "CompositeComponent",
+                  type: "value_object",
+                  description: null,
+                  implements: ["Component"],
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    const { warnings } = validateDesignDocQuality(doc);
+    expect(warnings.some((w) => w.includes("'Component'"))).toBe(false);
+  });
+});
+
 describe("validateDesignDocQuality — bounded context saturation", () => {
   test("warns when BC has >20 building blocks and zero modules", () => {
     const blocks = Array.from({ length: 25 }, (_, i) => ({

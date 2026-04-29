@@ -30,7 +30,7 @@ const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS DesignedActor(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedBoundedContext(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedDomainModule(id STRING, name STRING, full_path STRING, description STRING, PRIMARY KEY(id))",
-  "CREATE NODE TABLE IF NOT EXISTS DesignedBuildingBlock(id STRING, name STRING, type STRING, description STRING, properties STRING, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS DesignedBuildingBlock(id STRING, name STRING, type STRING, description STRING, properties STRING, implements STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedBehaviour(id STRING, name STRING, type STRING, description STRING, is_public BOOLEAN, input STRING[], output STRING[], used_building_blocks STRING[], actor_name STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedRule(id STRING, name STRING, rule_type STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedScenario(id STRING, name STRING, description STRING, given STRING, when_clause STRING, then_clause STRING, PRIMARY KEY(id))",
@@ -105,6 +105,7 @@ const BuildingBlockRowSchema = z.object({
   type: z.string(),
   description: z.string(),
   properties: z.string(),
+  implements: z.string(),
 });
 type BuildingBlockRow = z.infer<typeof BuildingBlockRowSchema>;
 
@@ -601,15 +602,17 @@ export class DesignDocsRepository {
   ): Promise<void> {
     const id = buildingBlockNodeId(containerId, bb.name);
     const propertiesJson = serializeProperties(bb.properties);
+    const implementsJson = JSON.stringify(bb.implements ?? []);
     if (!(await this.nodeExists("DesignedBuildingBlock", id))) {
       await this.db.query(
-        "CREATE (b:DesignedBuildingBlock {id: $id, name: $name, type: $type, description: $description, properties: $properties})",
+        "CREATE (b:DesignedBuildingBlock {id: $id, name: $name, type: $type, description: $description, properties: $properties, implements: $implements})",
         {
           id,
           name: bb.name,
           type: bb.type ?? "",
           description: bb.description ?? "",
           properties: propertiesJson,
+          implements: implementsJson,
         },
       );
       const relName =
@@ -624,17 +627,19 @@ export class DesignDocsRepository {
         relName,
       );
     } else {
+      const partialBase = buildPartialFields({
+        type: bb.type,
+        description: bb.description,
+        properties: bb.properties === undefined ? undefined : propertiesJson,
+      });
       const fields = isModification
-        ? buildPartialFields({
-            type: bb.type,
-            description: bb.description,
-            properties: bb.properties === undefined ? undefined : propertiesJson,
-          })
+        ? { ...partialBase, implements: implementsJson }
         : {
             name: bb.name,
             type: bb.type ?? "",
             description: bb.description ?? "",
             properties: propertiesJson,
+            implements: implementsJson,
           };
       await this.updateNodeFields("DesignedBuildingBlock", id, fields);
     }
@@ -1086,7 +1091,7 @@ export class DesignDocsRepository {
     const rawRows = await this.db.query<BuildingBlockRow>(
       matchClause +
         "RETURN bb.id AS id, bb.name AS name, bb.type AS type, bb.description AS description, " +
-        "bb.properties AS properties ORDER BY bb.name",
+        "bb.properties AS properties, bb.implements AS implements ORDER BY bb.name",
       { id: parentId },
     );
     const rows = z.array(BuildingBlockRowSchema).parse(rawRows);
@@ -1099,6 +1104,7 @@ export class DesignDocsRepository {
         name: r.name,
         type: emptyToNull(r.type) as DesignedBuildingBlock["type"],
         description: emptyToNull(r.description),
+        implements: deserializeImplements(r.implements),
         properties: {
           added: deserializeProperties(r.properties),
           removed: [],
@@ -1328,6 +1334,16 @@ function deserializeProperties(json: string): DesignedProperty[] {
   try {
     const parsed = JSON.parse(json) as DesignedProperty[];
     return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function deserializeImplements(json: string): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json) as string[];
+    return Array.isArray(parsed) ? parsed.filter((s) => typeof s === "string") : [];
   } catch {
     return [];
   }

@@ -272,6 +272,62 @@ describe("DesignDocsService", () => {
       expect(bh?.usedBuildingBlocks?.added).toEqual([]);
     });
 
+    test("round-trips DesignedBuildingBlock.implements and enriched DesignedProperty fields", async () => {
+      const doc = {
+        id: "dd-implements",
+        name: "implements",
+        description: "OOP polymorphism via implements + enriched properties",
+        boundedContexts: {
+          added: [
+            {
+              name: "BC",
+              buildingBlocks: {
+                added: [
+                  { name: "Component", type: "value_object" },
+                  {
+                    name: "CompositeComponent",
+                    type: "value_object",
+                    implements: ["Component"],
+                    properties: {
+                      added: [
+                        {
+                          name: "children",
+                          type: "Component",
+                          collection: true,
+                        },
+                        {
+                          name: "scope",
+                          type: "Integer",
+                          description: "1, 2, or 3",
+                          nullable: true,
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      };
+      const path = await writeDoc(doc, "implements.json");
+      const result = await service.saveDesignDocFromFile(path);
+      expect(result.status).toBe("Ok");
+      const read = await service.readDesignDoc("dd-implements");
+      const composite = read?.boundedContexts?.added[0].buildingBlocks?.added.find(
+        (b) => b.name === "CompositeComponent",
+      );
+      expect(composite?.implements).toEqual(["Component"]);
+      const children = composite?.properties?.added.find(
+        (p) => p.name === "children",
+      );
+      expect(children?.collection).toBe(true);
+      expect(children?.type).toBe("Component");
+      const scope = composite?.properties?.added.find((p) => p.name === "scope");
+      expect(scope?.nullable).toBe(true);
+      expect(scope?.description).toBe("1, 2, or 3");
+    });
+
     test("rejects null in place of a ChangeSet", async () => {
       const path = await writeDoc(
         {

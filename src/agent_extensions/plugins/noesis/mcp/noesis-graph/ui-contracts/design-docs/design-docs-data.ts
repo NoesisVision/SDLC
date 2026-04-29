@@ -20,6 +20,9 @@ export interface DesignDocChangeSet<T> {
 export interface DesignedPropertyData {
   name: string;
   type: string | null;
+  description?: string | null;
+  nullable?: boolean;
+  collection?: boolean;
 }
 
 export interface DesignedRuleData {
@@ -53,6 +56,7 @@ export interface DesignedBuildingBlockData {
   name: string;
   type: string | null;
   description: string | null;
+  implements?: string[];
   properties?: DesignDocChangeSet<DesignedPropertyData>;
   behaviours?: DesignDocChangeSet<DesignedBehaviourData>;
   rules?: DesignDocChangeSet<DesignedRuleData>;

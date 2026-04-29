@@ -1,14 +1,16 @@
 ---
 name: noesis:create-design-doc
-description: Produce or iterate a Design Doc that meets new requirements. Pulls evidence from existing graph conversations, documents and decisions plus arbitrary user-provided files, plans the diff against the current Bounded Context map, and persists the result as JSON.
+description: Produce or iterate a Design Doc that meets new requirements. Pulls evidence from existing graph conversations, documents and decisions plus arbitrary user-provided files, plans the diff against the currently implemented codebase, and persists the result as JSON.
 ---
 
 # Create Design Doc
 
-The main agent does the reasoning. Pull evidence from the knowledge graph via `noesis-graph` MCP tools, analyse it as an experienced architect and analyst would, and emit a `DesignDoc` JSON expressed as a diff (added / modified / removed) from the current model.
+The main agent does the reasoning. Pull evidence from the knowledge graph via `noesis-graph` MCP tools, analyse it as an experienced architect and analyst would, and emit a `DesignDoc` JSON expressed as a diff (added / modified / removed) from the **currently implemented codebase**.
 Persistence happens via `noesis-graph:save_design_doc`; never write graph data directly.
 
 Use **progressive disclosure** for analysis files: every analysis sub-step writes its findings to a separate Markdown file under `<working_dir>` and is then offloaded from the agent's context. Reload only when later steps need it.
+
+For long runs, optionally use `TaskCreate` to track Steps 1–4; mark each completed before progressing.
 
 ## Pre-flight reads
 
@@ -22,9 +24,11 @@ Before Setup, load these reference files in a **single parallel `Read` batch** a
 
 These references are knowledge inputs — they are exempt from the **Minimum reload principle**, which applies only to scratch analysis files.
 
+**MCP tool preload.** In a deferred-tool harness, the workflow needs the following tools — load them in **one** `ToolSearch` call up front: `mcp__plugin_noesis_noesis-graph__list_design_docs`, `…__read_bounded_context_map`, `…__list_topic_summaries_for_sources`, `…__list_decisions_for_sources`, `…__read_design_doc`, `…__read_model_for_modules`, `…__list_topic_items_since`, `…__save_design_doc`, plus `AskUserQuestion`.
+
 ## Setup
 
-Parse arguments from `$ARGUMENTS` using these conventions, then ask the user for anything missing:
+Parse arguments from `$ARGUMENTS` using these conventions, then ask the user for anything missing.
 
 | Token form | Routes to |
 |---|---|
@@ -35,9 +39,15 @@ Parse arguments from `$ARGUMENTS` using these conventions, then ask the user for
 | `doc:<id>` | `document_ids` |
 | `out:<path>` | `design_doc_path` |
 
+The token-form table is the canonical syntax. Also accept natural-language fall-throughs:
+
+- A bare UUID after a heading like `conversations:` / `convs:` routes to `conversation_ids`.
+- A bare UUID after `documents:` / `docs:` routes to `document_ids`.
+- `Update <doc-name>` or `Iterate on <doc-name>` without `id:` or `title:` is iteration mode — call `list_design_docs` and resolve the title to an id. If the title doesn't match any existing doc, ask via `AskUserQuestion` whether the user meant to create.
+
 Required after parsing:
 
-- **Design Doc target** — exactly one of `design_doc_id` (iterate on existing) or `design_doc_title` (create new). If both are supplied, ask via `AskUserQuestion` which mode the user wants.
+- **Design Doc target** — exactly one of `design_doc_id` (iterate on existing) or `design_doc_title` (create new). If both are supplied, ask via `AskUserQuestion` which mode the user wants. **Title fallback:** when neither `design_doc_id` nor `design_doc_title` is supplied, derive `design_doc_title` from the dominant heading (`H1`) of the first `file_paths` entry, falling back to the kebab-case slug of the file basename. Confirm via `AskUserQuestion` only when no `file_paths` entry exists or the derived title collides with an existing doc.
 - **conversation_ids**, **document_ids**, **file_paths** — at least one of the three lists must be non-empty. If all three are empty, ask via `AskUserQuestion` for at least one source before continuing.
 - **design_doc_path** — absolute path for the JSON artefact. Default: `<repo_root>/work_items/<slug>.json`, where `<slug>` is the kebab-case slug of `design_doc_title` (or of the existing doc's name when iterating).
 
@@ -45,7 +55,7 @@ When `design_doc_title` is supplied, call `noesis-graph:list_design_docs` and co
 
 The skill-invocation message itself (the user's prompt body, beyond `$ARGUMENTS`) is the **highest-priority source of intent** — see the **Source of truth ranking** Rule.
 
-Pick a `<working_dir>` for analysis scratch files: a sibling directory of `design_doc_path` named `<basename>.analysis/`. Create it with the Bash tool. **Lifetime:** scratch — never committed. The repository's `.gitignore` should cover `*.analysis/`; if it does not, the user is responsible for cleanup, but the skill must not leave scratch artefacts in version control.
+Pick a `<working_dir>` for analysis scratch files: a sibling directory of `design_doc_path` named `<basename>.analysis/`, where `<basename>` is the file basename of `design_doc_path` *without* the `.json` extension. When iterating on an existing design doc and a JSON file already exists at the canonical path, **prefer that file's basename** to the slug of the title — they may differ. Create the directory with the Bash tool. **Lifetime:** scratch — never committed. The repository's `.gitignore` should cover `*.analysis/`; if it does not, the user is responsible for cleanup, but the skill must not leave scratch artefacts in version control.
 
 ## Workflow
 
@@ -57,9 +67,22 @@ Each sub-step is a single MCP call. Read the returned tmp file, extract what is 
 
 #### 1.0 Existing Design Doc baseline
 
-Run only when iterating (i.e. `design_doc_id` was provided in Setup). Call `noesis-graph:read_design_doc` with that id. The tool writes a Markdown rendering of the full current state (actors, bounded contexts → modules → building blocks → behaviours, rules, scenarios, quality attributes) to a tmp file and returns the path. Read it once to orient, then offload it — it will be re-read in Step 4 as the authoritative baseline for the diff.
+Run only when iterating (i.e. `design_doc_id` was provided in Setup). Call `noesis-graph:read_design_doc` with that id. The tool writes a Markdown rendering of the full current state (actors, bounded contexts → modules → building blocks → behaviours, rules, scenarios, quality attributes) to a tmp file and returns the path. Read it once to orient, then offload it — it will be re-read in Step 4 as a *hint* about what was last asked-for. **It is not the diff baseline.** The diff baseline is determined in §1.0a and is the implemented codebase.
 
-If creating a new Design Doc (`design_doc_title` was provided), skip this sub-step. Step 4 will emit everything as `added`.
+If creating a new Design Doc (`design_doc_title` was provided), skip this sub-step.
+
+#### 1.0a Implementation status
+
+Determine whether the in-scope Bounded Context(s) have been **implemented in code**. Sources of evidence, in order:
+
+1. Explicit user statement in the invocation message (e.g. *"this BC has not been implemented yet"*).
+2. `noesis-graph` provenance fields, when exposed, indicating whether `implement-design-doc` has run on the prior design doc.
+3. The codebase, when accessible from this invocation — search for the modules / building blocks named in §1.0.
+
+When unsure, ask via `AskUserQuestion`. The answer pins the diff baseline used in Step 4:
+
+- **Green-field implementation status** (no `implement-design-doc` run yet — the typical case for a first or second authoring pass): every item belongs in `added` regardless of what §1.0 contains. `modified` and `removed` stay empty.
+- **Post-implementation status** (one or more `implement-design-doc` runs have produced code from this design): the diff is against the resulting code; §1.0 is a hint, the code is the system of record.
 
 #### 1.1 Topic long summaries
 
@@ -75,11 +98,13 @@ Call `noesis-graph:read_bounded_context_map`. The tool returns a small Markdown 
 
 #### 1.4 Determine in-scope Bounded Contexts and Modules
 
-Reason from §1.1 and §1.2 against the BC map from §1.3. Decide which existing Bounded Contexts and Modules the requirements touch. Capture the chosen list as `(bounded_context_name, module_path?)` pairs — keep this list in active context for §1.5.
+Reason from §1.1 and §1.2 against the BC map from §1.3. Decide which existing Bounded Contexts and Modules the requirements touch. Capture the chosen list as `(bounded_context_name, module_path?, design_doc_id)` triples — keep this list in active context for §1.5.
 
 #### 1.5 Existing model for in-scope Bounded Contexts and Modules
 
-Call `noesis-graph:read_model_for_modules` with the pairs from §1.4. The tool writes Markdown (Bounded Context → Module → Building Block → Behaviour, with rules and scenarios) to a tmp file and returns the path. Read it.
+Call `noesis-graph:read_model_for_modules` with the entries from §1.4. The tool writes Markdown (Bounded Context → Module → Building Block → Behaviour, with rules and scenarios) to a tmp file and returns the path. Read it.
+
+**Iteration short-circuit.** When §1.0 ran (i.e. iterating on an existing doc) and every entry in the §1.4 candidate list is `(this design doc's BC, …)` — i.e. no in-scope BC lives in another design doc — skip §1.5; the §1.0 markdown is already the model. Run §1.5 only when §1.4 lists at least one BC from a different `design_doc_id`.
 
 The candidate-list from §1.4 is no longer needed after this — offload it.
 
@@ -90,6 +115,10 @@ User-provided files in `file_paths` carry the **highest priority** — they are 
 - What kinds of information the file contains (requirements, decisions, diagrams, BDD, glossary, …).
 - Roughly where to find each kind (section / heading anchors).
 - Any decision, term, rule or scenario from §1 that this file contradicts or refines — flag it explicitly.
+
+When `file_paths` includes a file larger than ~25K tokens (rule of thumb: > ~5000 lines or > ~150 KB), use `Read` with `offset`/`limit` to chunk through it — plan for ~500–600 lines per chunk to stay below the cap.
+
+If the input file is not in English, normalise terms and descriptions to English in the analysis files and the design doc. Preserve ubiquitous-language tokens (proper nouns, established domain terms in the source language) verbatim.
 
 Do **not** dive into the substance yet — Step 3 does that. The index is a navigation map for §3.
 
@@ -123,16 +152,18 @@ Write findings to `<working_dir>/analysis-process.md`:
 - Per Bounded Context: the use case list with target Module, triggering Behaviour name & type, hosting `application_service` BB, initiating Actor, and one-line purpose.
 - Actor list: name + one-line description.
 
+When a Behaviour identified here will use ≥3 Building Blocks (or hosts an `application_service`), record the source diagrams in the input files that can be adapted into a mermaid sequence diagram for §3.5.
+
 #### 3.3 Business rules
 
-Find every business rule expressed in the gathered evidence. Categorise each via the catalog in `business_rules.md`. A Rule attaches to a Building Block when it constrains that block's data shape or invariants; it attaches to a Behaviour when it gates a single transition.
+Find every business rule expressed in the gathered evidence. Categorise each via the catalog in `business_rules.md`. A Rule attaches at **exactly one level** — choose either the BB (when it constrains shape/invariant) or the Behaviour (when it gates a single transition). Never both. If the rule applies to all behaviours of a service, attach it to the BB.
 
 Write findings to `<working_dir>/analysis-rules.md`:
 - One entry per Rule: name, type, description, attachment target.
 
 #### 3.4 Scenarios
 
-Collect business scenarios in Given-When-Then form. Attach a scenario to its Rule when it directly verifies one Rule; attach to a Behaviour when it spans the whole use case; attach at Building Block level only when it is a cross-Behaviour Rule. Use the scenario evidence to refine §3.3 — a scenario that doesn't map to any known Rule usually exposes a missing Rule.
+Collect business scenarios in Given-When-Then form. Attach a scenario to the **same parent (BB or Behaviour)** as the Rule it directly verifies; attach to a Behaviour when it spans the whole use case; attach at Building Block level only when it spans multiple Behaviours. Use the scenario evidence to refine §3.3 — a scenario that doesn't map to any known Rule usually exposes a missing Rule.
 
 Write findings to `<working_dir>/analysis-scenarios.md`:
 - One entry per scenario: name, description, given/when/then, attachment target.
@@ -147,8 +178,12 @@ Mine the inputs for ready domain-model solutions: Modules, Building Blocks, Beha
 
 **Property types must resolve.** Every `properties[].type` must be either a Building Block declared in this doc, a primitive, or a primitive enum literal. Phantom type names (`ApplicabilityPredicate`, `QuantitySource`, …) that don't resolve will be rejected at save; catch them while authoring this file.
 
+**Interchangeable Building Blocks.** When a property's value, a collection's elements, or a behaviour's input/output can be **two or more interchangeable BBs**, introduce an explicit **base Building Block** that models the common abstraction (its description names the role and the shared shape). The interchangeable BBs declare `implements: ["<BaseBB>"]`. The property/input/output `type` references the base BB by name. Do **not** invent a phantom umbrella BB just to satisfy the schema; the base BB is a real domain concept (e.g. a `Component` base for `CompositeComponent` and `SimpleComponent`).
+
+**Mermaid up front.** When a Behaviour will use ≥3 Building Blocks (or hosts an `application_service`), embed a mermaid sequence diagram in its description **here, at the analysis stage** — input files (per §3.2's diagram-source notes) often already have one to adapt. Do not defer this to Step 4.
+
 Write findings to `<working_dir>/analysis-model.md`:
-- Per Bounded Context → Module → Building Block: type, properties (with resolved types), behaviours (with resolved signatures), ruleset references (point at entries from §3.3), scenario references (§3.4), and inbound/outbound interactions (which other Building Blocks are used).
+- Per Bounded Context → Module → Building Block: type, `implements` (when applicable), properties (with resolved types), behaviours (with resolved signatures and embedded mermaid where required), ruleset references (point at entries from §3.3), scenario references (§3.4), and inbound/outbound interactions (which other Building Blocks are used).
 
 #### 3.6 Compile
 
@@ -175,16 +210,62 @@ Write findings to `<working_dir>/analysis-qualities.md`:
 
 Build a `DesignDoc` payload using the schema rules already loaded in **Pre-flight reads**.
 
-- If iterating, re-read the existing Design Doc loaded in §1.0 — that is the authoritative baseline for the diff. Items present there but absent from the new model become `removed` (by name). Items present in both with changed fields become `modified`. New items become `added`. Apply this rule recursively to nested ChangeSets. (§1.5 may be consulted for related BCs that live in other Design Docs, but it is not the baseline.)
-- If creating, every item goes into `added`; `modified` and `removed` stay empty.
+**The diff baseline is the currently implemented codebase**, not the prior Design Doc record (§1.0). Bucket each item by asking *"is this item already in code?"* — pinned by the implementation status determined in §1.0a:
 
-Self-check before saving: every reference in `usedBuildingBlocks`, `input`, `output`, and every `properties[].type` must resolve to a Building Block declared in the produced doc, in the prior model loaded in §1.5 (for iteration), to a primitive, or to a primitive enum literal.
+- **Green-field implementation status** (no `implement-design-doc` run yet, even when §1.0 already lists items): every item goes in `added`. `modified` and `removed` stay empty. A second authoring pass against the same unimplemented design keeps items in `added` (with refined definitions), it does **not** move them to `modified`.
+- **Post-implementation status** (code exists for this design):
+    - **Not in code** → `added`. The implementer needs to bring it into existence.
+    - **In code, definition unchanged** → omit. Do not restate.
+    - **In code, definition changed** → `modified` with only the changed sub-fields plus the identity `name`.
+    - **In code, no longer wanted** → `removed` (by name).
+    - Apply this rule recursively to nested ChangeSets. Use §1.0 only as a hint about what was last asked-for; the code is the system of record.
+
+**Empty ChangeSets may be omitted.** When `added`, `modified`, and `removed` are all empty for a given collection field, drop the field entirely rather than emitting `{ "added": [], "modified": [], "removed": [] }`.
+
+**Renames** (post-implementation only). When renaming a Building Block, Behaviour, Property or Rule that already exists in code, emit `removed: ["<old>"]` and `added: [<full new spec>]`. Then **double-check** that the old name does not appear elsewhere in the JSON (any `input`, `output`, `usedBuildingBlocks`, `properties[].type`, behaviour-host reference, or `implements` entry). If it does, those references must point at the new name. In green-field status renames don't exist as remove+add — the old name was never in code, so just emit the new name in `added`.
+
+#### Step 4.0 — Pre-save validation pass
+
+Before invoking `save_design_doc`, run a programmatic pre-check on `<design_doc_path>` to catch problems locally rather than via a save round-trip:
+
+```bash
+python3 - <<'PY'
+import json, sys, pathlib
+path = pathlib.Path("<design_doc_path>")
+doc = json.loads(path.read_text())
+errs = []
+def walk_changeset(cs, kind, path):
+    for item in cs.get("added", []) or []:
+        if kind == "rule" and len((item.get("description") or "")) < 80:
+            errs.append(f"Rule {path}/{item['name']} description {len(item.get('description') or '')} chars (<80)")
+        if kind == "behaviour" and len((item.get("description") or "")) < 400:
+            errs.append(f"Behaviour {path}/{item['name']} description {len(item.get('description') or '')} chars (<400)")
+# walk the doc; minimal traversal — adapt to the produced shape
+for bc in (doc.get("boundedContexts") or {}).get("added", []) or []:
+    for bb in (bc.get("buildingBlocks") or {}).get("added", []) or []:
+        walk_changeset(bb.get("rules") or {}, "rule", f"{bc['name']}/{bb['name']}")
+        walk_changeset(bb.get("behaviours") or {}, "behaviour", f"{bc['name']}/{bb['name']}")
+    for m in (bc.get("modules") or {}).get("added", []) or []:
+        for bb in (m.get("buildingBlocks") or {}).get("added", []) or []:
+            walk_changeset(bb.get("rules") or {}, "rule", f"{bc['name']}/{m['name']}/{bb['name']}")
+            walk_changeset(bb.get("behaviours") or {}, "behaviour", f"{bc['name']}/{m['name']}/{bb['name']}")
+print(json.dumps({"errors": errs}))
+PY
+```
+
+If `errors` is non-empty, fix in place and re-run. Do not rely on the validator to bounce the save just for length. The `python3 -c "import json; json.load(open('<path>'))"` syntax check is implicit in the snippet above (the `json.loads` call fails fast on a malformed JSON).
+
+#### Step 4.1 — Self-check
+
+Every reference in `usedBuildingBlocks`, `input`, `output`, every `properties[].type`, and every entry in `implements` must resolve to a Building Block declared in the produced doc, in the prior model loaded in §1.5 (for iteration), to a primitive, or to a primitive enum literal. A name listed in `removed` of any nested ChangeSet must **not** appear as `input`, `output`, `usedBuildingBlocks`, `properties[].type`, or `implements` anywhere in the same JSON — `removed` and `referenced` are mutually exclusive sets within one save.
+
+#### Step 4.2 — Save
 
 Write the validated JSON to `<design_doc_path>` (this is the version-controlled artefact). Then call `noesis-graph:save_design_doc` with `path: <design_doc_path>`.
 
 If `save_design_doc` fails after the JSON file write succeeded, the file is the source of truth — fix the offending fields in place and re-call `save_design_doc` until it succeeds. Do not delete the file on failure.
 
-If `save_design_doc` returns warnings, address every warning (re-edit the JSON, re-save) until the warning list is empty or the user has explicitly accepted a remaining warning via `AskUserQuestion`.
+If `save_design_doc` returns warnings, address every warning (re-edit the JSON, re-save) until the warning list is empty or the user has explicitly accepted a remaining warning via `AskUserQuestion`. **Mermaid warnings:** when the input files already contain compatible sequence/class diagrams that can be adapted, embed without prompting (Step §3.5 should already have done this); only escalate via `AskUserQuestion` when no source diagram exists and authoring one from scratch would be speculative.
 
 Report the returned `design_doc_id` and the totals (`added` / `modified` / `removed`) to the user.
 
@@ -192,6 +273,7 @@ Report the returned `design_doc_id` and the totals (`added` / `modified` / `remo
 
 - **Source of truth ranking.** When sources disagree, trust in this order: skill-invocation message (the user's prompt body — inline requirements, decisions, constraints, terminology) → `file_paths` (Step 2) → decisions (§1.2) → topic summaries (§1.1) → existing model (§1.0 / §1.5). The newest, most explicit evidence wins.
 - **Approval gates.** A new Bounded Context, or any change to a relation between Bounded Contexts, requires explicit user confirmation via `AskUserQuestion`. **Green-field carve-out:** confirmation is implicit — and may be skipped — only when (a) the BC map (§1.3) is empty AND (b) the user-supplied `design_doc_title` (or the invocation prompt) explicitly names the BC being introduced. In any other case `AskUserQuestion` is mandatory.
+- **Auto-mode gates.** Only the **Approval gates** Rule (BC creation outside the green-field carve-out, BC-relation changes) is strictly blocking in auto-mode. Other `AskUserQuestion` calls (missing setup info, non-obvious resolution, mermaid warning acceptance) may be replaced by reasonable defaults *only* when the default is explicitly stated in this skill (e.g. the title fallback in Setup, the mermaid embed-by-default in §3.5 / Step 4.2). Otherwise, ask.
 - **Deep-dive on demand.** When a topic summary leaves a question open, call `noesis-graph:list_topic_items_since` with `{ topic_id, since? }`. With `since`, the tool returns only items (IdeaUnits, DocumentFragments) created after that timestamp; without it, all items. Output is a tmp file — read it, extract what you need, drop it.
 - **Minimum reload principle.** Each analysis sub-step lives in its own file. After writing it, do not keep its content in active context unless a later step needs it; reload from disk on demand. (Pre-flight references are exempt — keep them resident.)
 - **Rule terminology.** The schema entity is `Rule` (`DesignedRule`). Detection cues in source material may say "Invariant" or "Constraint", but in this skill's output and prose use **Rule** consistently.

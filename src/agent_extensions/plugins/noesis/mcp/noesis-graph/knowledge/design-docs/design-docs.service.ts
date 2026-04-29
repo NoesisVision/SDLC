@@ -209,6 +209,8 @@ export function validateDesignDocQuality(doc: DesignDoc): QualityReport {
   for (const bc of doc.boundedContexts?.modified ?? []) {
     validateBoundedContext(bc, "modified", report);
   }
+  validateRemovedNotReferenced(doc, report);
+  validateImplementsResolution(doc, report);
   return report;
 }
 
@@ -266,17 +268,41 @@ function validateBuildingBlock(
   report: QualityReport,
 ): void {
   const blockPath = formatBlockPath(bcName, moduleName, bb.name);
+  const ruleNamesAtBB = new Set<string>();
   for (const r of bb.rules?.added ?? []) {
     validateRule(blockPath, r, "added", report);
+    ruleNamesAtBB.add(r.name);
   }
   for (const r of bb.rules?.modified ?? []) {
     validateRule(blockPath, r, "modified", report);
+    ruleNamesAtBB.add(r.name);
   }
   for (const bh of bb.behaviours?.added ?? []) {
     validateBehaviour(blockPath, bh, "added", report);
+    flagDualLevelRules(blockPath, bb.name, bh, ruleNamesAtBB, report);
   }
   for (const bh of bb.behaviours?.modified ?? []) {
     validateBehaviour(blockPath, bh, "modified", report);
+    flagDualLevelRules(blockPath, bb.name, bh, ruleNamesAtBB, report);
+  }
+}
+
+function flagDualLevelRules(
+  blockPath: string,
+  bbName: string,
+  bh: DesignedBehaviour,
+  ruleNamesAtBB: Set<string>,
+  report: QualityReport,
+): void {
+  const behaviourRuleNames: string[] = [];
+  for (const r of bh.rules?.added ?? []) behaviourRuleNames.push(r.name);
+  for (const r of bh.rules?.modified ?? []) behaviourRuleNames.push(r.name);
+  for (const ruleName of behaviourRuleNames) {
+    if (ruleNamesAtBB.has(ruleName)) {
+      report.errors.push(
+        `Rule '${ruleName}' is attached at both Building Block '${bbName}' and Behaviour '${bh.name}' (path '${blockPath}.${bh.name}') — attach at exactly one level.`,
+      );
+    }
   }
 }
 
@@ -391,6 +417,147 @@ function formatBlockPath(
 ): string {
   const mid = moduleName === null ? "" : `${moduleName}/`;
   return `${bcName}/${mid}${bbName}`;
+}
+
+function validateRemovedNotReferenced(
+  doc: DesignDoc,
+  report: QualityReport,
+): void {
+  const removedBBNames = collectRemovedBuildingBlockNames(doc);
+  if (removedBBNames.size === 0) return;
+  for (const ref of collectBuildingBlockReferences(doc)) {
+    if (removedBBNames.has(ref.name)) {
+      report.errors.push(
+        `Building Block '${ref.name}' is listed in 'removed' but still referenced as ${ref.kind} at '${ref.location}'. ` +
+          `Update or drop the reference before saving.`,
+      );
+    }
+  }
+}
+
+function validateImplementsResolution(
+  doc: DesignDoc,
+  report: QualityReport,
+): void {
+  const declared = collectDeclaredBuildingBlockNames(doc);
+  for (const bb of iterateBuildingBlocks(doc)) {
+    for (const baseName of bb.bb.implements ?? []) {
+      if (!declared.has(baseName)) {
+        report.warnings.push(
+          `Building Block '${bb.location}' implements '${baseName}' which is not declared in this DesignDoc — ` +
+            `verify it exists in the prior model, or add it as a Building Block in this iteration.`,
+        );
+      }
+    }
+  }
+}
+
+interface BuildingBlockReference {
+  name: string;
+  kind: "input" | "output" | "usedBuildingBlock" | "property type" | "implements";
+  location: string;
+}
+
+interface BuildingBlockAt {
+  bb: DesignedBuildingBlock;
+  location: string;
+}
+
+function collectRemovedBuildingBlockNames(doc: DesignDoc): Set<string> {
+  const names = new Set<string>();
+  for (const bc of [
+    ...(doc.boundedContexts?.added ?? []),
+    ...(doc.boundedContexts?.modified ?? []),
+  ]) {
+    for (const n of bc.buildingBlocks?.removed ?? []) names.add(n);
+    for (const m of [
+      ...(bc.modules?.added ?? []),
+      ...(bc.modules?.modified ?? []),
+    ]) {
+      for (const n of m.buildingBlocks?.removed ?? []) names.add(n);
+    }
+  }
+  return names;
+}
+
+function collectDeclaredBuildingBlockNames(doc: DesignDoc): Set<string> {
+  const names = new Set<string>();
+  for (const entry of iterateBuildingBlocks(doc)) {
+    names.add(entry.bb.name);
+  }
+  return names;
+}
+
+function* iterateBuildingBlocks(doc: DesignDoc): Generator<BuildingBlockAt> {
+  for (const bc of [
+    ...(doc.boundedContexts?.added ?? []),
+    ...(doc.boundedContexts?.modified ?? []),
+  ]) {
+    for (const bb of [
+      ...(bc.buildingBlocks?.added ?? []),
+      ...(bc.buildingBlocks?.modified ?? []),
+    ]) {
+      yield { bb, location: formatBlockPath(bc.name, null, bb.name) };
+    }
+    for (const m of [
+      ...(bc.modules?.added ?? []),
+      ...(bc.modules?.modified ?? []),
+    ]) {
+      for (const bb of [
+        ...(m.buildingBlocks?.added ?? []),
+        ...(m.buildingBlocks?.modified ?? []),
+      ]) {
+        yield { bb, location: formatBlockPath(bc.name, m.name, bb.name) };
+      }
+    }
+  }
+}
+
+function* collectBuildingBlockReferences(
+  doc: DesignDoc,
+): Generator<BuildingBlockReference> {
+  for (const entry of iterateBuildingBlocks(doc)) {
+    for (const baseName of entry.bb.implements ?? []) {
+      yield { name: baseName, kind: "implements", location: entry.location };
+    }
+    for (const p of entry.bb.properties?.added ?? []) {
+      if (p.type !== null && p.type !== "") {
+        yield {
+          name: p.type,
+          kind: "property type",
+          location: `${entry.location}.${p.name}`,
+        };
+      }
+    }
+    for (const p of entry.bb.properties?.modified ?? []) {
+      if (p.type !== null && p.type !== "") {
+        yield {
+          name: p.type,
+          kind: "property type",
+          location: `${entry.location}.${p.name}`,
+        };
+      }
+    }
+    for (const bh of [
+      ...(entry.bb.behaviours?.added ?? []),
+      ...(entry.bb.behaviours?.modified ?? []),
+    ]) {
+      const behaviourPath = `${entry.location}.${bh.name}`;
+      for (const n of bh.input?.added ?? []) {
+        yield { name: n, kind: "input", location: behaviourPath };
+      }
+      for (const n of bh.output?.added ?? []) {
+        yield { name: n, kind: "output", location: behaviourPath };
+      }
+      for (const n of bh.usedBuildingBlocks?.added ?? []) {
+        yield {
+          name: n,
+          kind: "usedBuildingBlock",
+          location: behaviourPath,
+        };
+      }
+    }
+  }
 }
 
 function formatQualityErrors(errors: string[]): string {

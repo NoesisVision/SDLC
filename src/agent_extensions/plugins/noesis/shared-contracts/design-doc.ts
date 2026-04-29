@@ -50,6 +50,20 @@ export const DesignedPropertySchema = z.object({
     .nullable()
     .default(null)
     .describe("BuildingBlock name or primitive type name"),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      "Optional free-form per-property note (range, format, special semantics) that does not fit `type` or a Rule.",
+    ),
+  nullable: z
+    .boolean()
+    .optional()
+    .describe("True when the property may be absent on an instance. Defaults to false when omitted."),
+  collection: z
+    .boolean()
+    .optional()
+    .describe("True when the property holds a list of `type` values. Defaults to false when omitted."),
 });
 export type DesignedProperty = z.infer<typeof DesignedPropertySchema>;
 
@@ -173,6 +187,14 @@ export const DesignedBuildingBlockSchema = z.object({
   name: z.string(),
   type: DesignedBuildingBlockTypeSchema.nullable().default(null),
   description: z.string().nullable().default(null),
+  implements: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Names of base Building Blocks this block implements (OOP-style polymorphism). " +
+        "Each entry must resolve to another declared Building Block in the same DesignDoc or in the prior model. " +
+        "Defaults to an empty list when omitted.",
+    ),
   properties: DesignedPropertyChangeSetSchema.optional(),
   behaviours: DesignedBehaviourChangeSetSchema.optional(),
   rules: DesignedRuleChangeSetSchema.optional(),
