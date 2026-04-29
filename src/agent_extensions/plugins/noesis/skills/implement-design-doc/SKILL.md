@@ -1,6 +1,6 @@
 ---
 name: noesis:implement-design-doc
-description: Turn a Design Doc (JSON diff of added / modified / removed items) into running C# code. Lays out Bounded Context and Module projects, schedules Building Block implementation in dependency-ordered batches via per-type subagents, plugs in adapters for domain ports, and verifies the result by build + test.
+description: Turn a Design Doc (diff of added / modified / removed items, retrieved from the noesis-graph MCP server by id or name) into running C# code in the current solution repository. Lays out Bounded Context and Module projects, schedules Building Block implementation in dependency-ordered batches dispatched to subagent groups (default per-type, merged when BBs are tightly coupled), plugs in adapters for domain ports, and verifies the result by build + test.
 ---
 
 # Implement Design Doc
@@ -20,15 +20,13 @@ All other references in `${CLAUDE_PLUGIN_ROOT}/skills/implement-design-doc/refer
 
 ## Setup
 
-Parse arguments from `$ARGUMENTS`. Required:
+The skill runs **inside the target solution repository**. The current working directory is the solution root — do not ask for a solution path.
 
-| Token form | Routes to |
-|---|---|
-| `@<path>` or bare path | `design_doc_path` |
-| `solution:<path>` | `solution_root` |
+Parse `$ARGUMENTS` for a single token: a Design Doc reference (id or name).
 
-- **design_doc_path** — absolute path to the Design Doc JSON produced by `noesis:create-design-doc`.
-- **solution_root** — absolute path to the C# solution root (the directory containing the `.sln` and the per-BC project folders). Ask via `AskUserQuestion` if missing.
+- If the token is a Design Doc id, use it directly.
+- If the token is a name, call the `list_design_docs` MCP tool, locate the matching record, and use its id. If multiple match or none match, ask the user via `AskUserQuestion`.
+- If the token is missing entirely, list design docs and ask the user to pick.
 
 Resolve a `<working_dir>` for coordinator scratch files by running:
 
@@ -36,42 +34,37 @@ Resolve a `<working_dir>` for coordinator scratch files by running:
 bun run ${CLAUDE_PLUGIN_ROOT}/scripts/resolve-working-dir.ts noesis:implement-design-doc <execution_id>
 ```
 
-Use the file basename of `design_doc_path` *without* the `.json` extension as `<execution_id>`. The script returns JSON `{ "status": "Ok", "working_dir": "...", "skill_name": "...", "execution_id": "..." }`. Treat `working_dir` as an opaque absolute path and use it verbatim for `changes.md`, `batches.md`, and any subagent reports. **Lifetime:** kept across runs for debugging; the skill never deletes it. The directory lives under the plugin's per-project tmp area outside the repository, so no `.gitignore` entry is required.
+Use the resolved `design_doc_id` as `<execution_id>`. The script returns JSON `{ "status": "Ok", "working_dir": "...", "skill_name": "...", "execution_id": "..." }`. Treat `working_dir` as an opaque absolute path and use it verbatim for `batches.md` and any subagent reports. **Lifetime:** kept across runs for debugging; the skill never deletes it. The directory lives under the plugin's per-project tmp area outside the repository, so no `.gitignore` entry is required.
 
 ## Workflow
 
 ### Step 1: Load the Design Doc
 
-Read `<design_doc_path>` once. Extract a flat working view into `<working_dir>/changes.md`:
+Call the `read_design_doc` MCP tool with the resolved `design_doc_id`. The tool writes a deterministic Markdown rendering of the full diff (Bounded Contexts → Modules → Building Blocks → Behaviours / Rules / Scenarios / Properties, with `added` / `modified` / `removed` markers) to a tmp file and returns the file path. Read that file once, then re-read it whenever you need to look something up across Steps 2–5 — do not keep the parsed Design Doc resident in active context.
 
-- **Bounded Contexts**: name, change kind (`added` / `modified` / `removed`), description.
-- **Modules** per BC: name, change kind, parent path.
-- **Building Blocks** per (BC, Module): name, type, change kind, target file path (resolved from BC + Module + name).
-- **Behaviours / Rules / Scenarios / Properties** per BB: nested change kinds.
-
-This file is the single source of truth for Steps 2-5. Re-read it whenever you need to look something up — do not keep the parsed Design Doc resident in active context.
+Do **not** create a coordinator-side re-shaping of the doc. Any alternative view (e.g. a flat list with resolved file paths) belongs in the MCP server as a deterministic tool, not in agent scratch.
 
 If the Design Doc is empty (no `added` / `modified` / `removed` items anywhere), stop and tell the user there is nothing to implement.
 
 ### Step 2: Lay out Bounded Contexts and Modules
 
-Apply the BC + Module changes from `<working_dir>/changes.md`. Use `modules.md` (loaded in Pre-flight reads) for the project layout, naming, and inter-project dependency rules.
+Apply the BC + Module changes from the design-doc Markdown produced in Step 1. Use `modules.md` (loaded in Pre-flight reads) for the project layout, naming, and inter-project dependency rules. The solution root is the current working directory.
 
 For each BC:
-- `added` → create a new C# project under `<solution_root>` and register it in the solution. Set its project references per `modules.md`.
+- `added` → create a new C# project under the solution root and register it in the solution. Set its project references per `modules.md`.
 - `modified` → adjust project references only when the diff actually changes BC-level relations; never touch internals here.
-- `removed` → **confirmation gate**. Ask via `AskUserQuestion` before removing the project; deletion is destructive.
+- `removed` → delete the project and remove it from the solution. The doc was approved at design time; no confirmation is required.
 
 For each Module within a BC:
 - `added` → create the module directory under the BC project (nesting reflects the module path).
 - `modified` → no structural change at this step; module-internal edits happen in Step 4.
-- `removed` → confirmation gate, same as BC removal.
+- `removed` → delete the module directory. No confirmation required.
 
 After this step, every BC and Module declared by the diff exists on disk and the solution builds (empty projects compile). Run a quick `dotnet build` to confirm before proceeding.
 
-### Step 3: Plan Building Block batches
+### Step 3: Plan Building Block batches and subagent groups
 
-Read `<working_dir>/changes.md`. Build the dependency graph over Building Blocks in scope (every `added` and `modified` BB):
+Re-read the Step 1 Markdown. Build the dependency graph over Building Blocks in scope (every `added` and `modified` BB):
 
 - A BB depends on every other BB it references — `properties[].type`, `behaviours[].input` / `output` / `usedBuildingBlocks`.
 - Cross-BC references count.
@@ -79,53 +72,59 @@ Read `<working_dir>/changes.md`. Build the dependency graph over Building Blocks
 
 Topologically split the graph into **batches**. Within a batch, BBs are independent (no edges between them). Each subsequent batch depends only on BBs that exist in earlier batches or were already in the codebase before this run.
 
-Within each batch, group BBs by **type**: `aggregate`, `entity`, `value_object`, `domain_event`, `domain_command`, `domain_query`, `domain_service`, `application_service`, `factory`, `repository`, `external_integration`. For `repository` and `external_integration`, Step 4 produces the **port** (the interface that lives in the domain layer); Step 5 adds the adapter that implements it.
+Within each batch, group BBs into **subagent groups**. Default grouping is by type (`aggregate`, `entity`, `value_object`, `domain_event`, `domain_command`, `domain_query`, `domain_service`, `application_service`, `factory`, `repository`, `external_integration`) — different types are usually independent and one type per subagent keeps the prompt narrow.
+
+Deviate from per-type grouping when the BBs in a batch are tightly coupled across types (e.g. a domain event consumed by exactly one aggregate, an entity that only makes sense alongside its parent aggregate). In that case, place the coupled BBs in a **single subagent group** so one subagent implements them together. Step 3's job is to choose the split that minimises cross-subagent coordination — there is no rule that one subagent equals one type.
+
+For `repository` and `external_integration` BBs, Step 4 produces the **port** (the interface in the domain layer); Step 5 adds the adapter that implements it.
 
 Write the plan to `<working_dir>/batches.md`:
 
 ```
 Batch 1
-  value_object
+  Group 1 [value_object]
     - <BC>/<Module>/<Name>
     - ...
-  entity
+  Group 2 [entity, aggregate]   # grouped because Entity X is only used by Aggregate Y
     - ...
 Batch 2
-  aggregate
+  Group 1 [aggregate]
     - ...
   ...
 ```
 
-### Step 4: Implement Building Blocks (per batch, per type)
+Each group is the unit of subagent dispatch in Step 4. Annotate each group with the BB types it contains and a one-line note when the grouping deviates from "one type per group".
 
-Process batches **sequentially** (a later batch depends on earlier ones). Within a batch, process type-groups **in parallel** by dispatching one subagent per type-group via the `Agent` tool.
+### Step 4: Implement Building Blocks (per batch, per group)
 
-Before dispatching the first batch, perform `removed` deletions: for every BB / Behaviour / Rule / Scenario / Property marked `removed` in `<working_dir>/changes.md`, delete the corresponding code (and any test that targets it). These deletions are confirmation-gated only at the BB level and above; sub-BB removals (a property gone from an aggregate) are routine and do not need confirmation.
+Process batches **sequentially** (a later batch depends on earlier ones). Within a batch, process subagent groups **in parallel** by dispatching one subagent per group via the `Agent` tool.
+
+Before dispatching the first batch, perform `removed` deletions: for every BB / Behaviour / Rule / Scenario / Property marked `removed` in the Step 1 Markdown, delete the corresponding code (and any test that targets it). The doc was approved at design time; deletions proceed without confirmation at any level.
 
 Each subagent prompt MUST include:
 
-- The exact Building Block slice to implement (names, types, properties, behaviours, rules, scenarios — read from `<working_dir>/changes.md`).
+- The exact Building Block slice to implement (names, types, properties, behaviours, rules, scenarios — taken from the Step 1 Markdown).
 - The target file paths (one per BB).
-- Instruction to **read only one reference**, picked from this type → file mapping:
-
-  | BB type | Reference file |
-  |---|---|
-  | `aggregate` | `aggregates.md` |
-  | `entity` | `entities.md` |
-  | `value_object` | `value-objects.md` |
-  | `domain_event` | `domain-events.md` |
-  | `domain_command` | `domain-commands.md` |
-  | `domain_query` | `domain-queries.md` |
-  | `domain_service` | `domain-services.md` |
-  | `application_service` | `application-services.md` |
-  | `factory` | `factories.md` |
-  | `repository` | `repositories.md` (port only — adapter is Step 5) |
-  | `external_integration` | `external-integrations.md` (port only — adapter is Step 5) |
-
-  Path: `${CLAUDE_PLUGIN_ROOT}/skills/implement-design-doc/references/<file>`.
+- Instruction to read **the references for every BB type in the group**, picked from the type → file mapping below. A group with a single BB type loads one reference; a mixed group loads one reference per type it contains. Keep groups small enough that the loaded reference set stays focused. Reference path: `${CLAUDE_PLUGIN_ROOT}/skills/implement-design-doc/references/<file>`.
 - Instruction to read `${CLAUDE_PLUGIN_ROOT}/skills/implement-design-doc/references/business-scenarios.md` when the slice contains any `Rule` or `Scenario` — every Rule and Scenario from the design doc must materialise as a business-scenario test at the level the doc specifies (Behaviour or Building Block).
 - Reminder that the Design Doc is authoritative: implement exactly what is in the slice, no extra fields, no extra behaviours.
 - Instruction to return a short report: files written, files modified, tests added.
+
+Type → reference mapping:
+
+| BB type | Reference file |
+| --- | --- |
+| `aggregate` | `aggregates.md` |
+| `entity` | `entities.md` |
+| `value_object` | `value-objects.md` |
+| `domain_event` | `domain-events.md` |
+| `domain_command` | `domain-commands.md` |
+| `domain_query` | `domain-queries.md` |
+| `domain_service` | `domain-services.md` |
+| `application_service` | `application-services.md` |
+| `factory` | `factories.md` |
+| `repository` | `repositories.md` (port only — adapter is Step 5) |
+| `external_integration` | `external-integrations.md` (port only — adapter is Step 5) |
 
 The coordinator collects subagent reports per batch. If any subagent reports an unimplementable item, stop the batch and escalate via `AskUserQuestion` — do not let the next batch start on an inconsistent base.
 
@@ -143,11 +142,11 @@ Each subagent prompt MUST include:
 
 ### Step 6: Build and test
 
-Run `dotnet build <solution_root>`. If it fails:
+Run `dotnet build` from the solution root (the current working directory). If it fails:
 - Read the failure, locate the offending file, fix it directly when the cause is mechanical (missing using, typo, accidental name collision).
 - If the cause is a design-doc inconsistency (a BB references a name that doesn't exist anywhere), stop and `AskUserQuestion`.
 
-Then run `dotnet test <solution_root>`. Apply the same triage: mechanical fixes inline, design-level questions to the user.
+Then run `dotnet test`. Apply the same triage: mechanical fixes inline, design-level questions to the user.
 
 Report to the user:
 - Counts of BCs / Modules / Building Blocks `added` / `modified` / `removed`.
@@ -158,8 +157,8 @@ Report to the user:
 
 - **Strict adherence to the diff.** Implement exactly what `added` / `modified` / `removed` say. Do not refactor neighbouring code, do not add fields the doc doesn't list, do not silently widen scope. Anything outside the diff stays untouched.
 - **Ask before deviating.** If the diff cannot be implemented as written (missing info, contradictory references, language constraint), stop and `AskUserQuestion`. Never invent a workaround.
-- **Confirmation gate for destructive structural changes.** Deleting a Bounded Context, a Module, or a Building Block requires explicit user confirmation via `AskUserQuestion`. Sub-BB deletions (properties, behaviours, rules, scenarios) are routine.
-- **Coordinator never loads type-specific references.** Only `modules.md` lives in the coordinator. Every other file in `references/` is the responsibility of a subagent.
-- **One reference per subagent.** Subagent prompts name a single reference path. This keeps subagent context narrow and prevents cross-contamination between BB types.
+- **No design-time confirmations during implementation.** The Design Doc was approved before this skill ran. Deletions at every level (BC, Module, Building Block, Behaviour, Rule, Scenario, Property) proceed without user confirmation. Confirmation gates are reserved for unimplementable items, not for executing the approved diff.
+- **Coordinator never loads type-specific references.** Only `modules.md` lives in the coordinator. Every other file in `references/` is loaded by subagents at Step 4 / Step 5.
+- **Subagent groups, not strict per-type splits.** Step 3 chooses the grouping. The default is one type per subagent group; tightly coupled BBs across types may share a group when that minimises coordination. A subagent loads one reference per BB type its group contains.
 - **Rules are tested by business scenarios.** Every `Rule` in the diff produces at least one business-scenario test at the level the doc specifies (Behaviour or Building Block). A Rule with no scenario coverage after Step 4 is a bug — the responsible subagent must be re-dispatched, or the user consulted.
-- **Scratch files only in `<working_dir>`.** Coordinator-side analysis (`changes.md`, `batches.md`, subagent reports) never leaves `<working_dir>`. Do not commit it.
+- **Scratch files only in `<working_dir>`.** Coordinator-side artefacts (`batches.md`, subagent reports) never leave `<working_dir>`. Do not commit them.
