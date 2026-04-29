@@ -102,3 +102,4 @@ Report `topics_added`, `topics_updated`, and `decisions_added` to the user.
 - Persist graph state only via `noesis-graph` MCP tools. Edit `output.json` directly with Edit/Write.
 - Generate all titles, summaries, and free-text fields in the same language as the transcript.
 - Reuse before promote: prefer an existing topic over a new one whenever the fit is reasonable.
+- **Respect user edits.** Before changing any existing topic or decision whose on-disk file is marked `edited_by_user: true`, ask for explicit user acceptance via `AskUserQuestion`. The splitter will skip user-edited files at merge time regardless; this rule additionally surfaces the intended overwrite so the user can keep their version, accept the new one, or merge manually. If the user declines, leave the entity unchanged and route the new evidence elsewhere (different topic, new topic, item-only attachment).
