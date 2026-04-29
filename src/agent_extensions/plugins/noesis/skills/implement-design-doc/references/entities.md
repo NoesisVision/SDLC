@@ -1,31 +1,39 @@
-# Entity Implementation (C#)
+- An entity has a stable identity that does not change; equality is by id.
+- Properties expose public getters only; never expose public setters.
+- All state changes go through methods that implement Behaviours from the design doc.
+- Invariants are enforced inside those methods, never via setters.
+- Prefer value objects over primitives for properties.
+- Annotate the type with `[DddEntity]` and `[EntitiesLayer]`; annotate each behaviour method with `[DomainBehavior]`.
 
-Loaded by the subagent that implements `entity` Building Blocks at Step 4. Do not load from the coordinator.
+```csharp
+using NoesisVision.Annotations.Domain;
+using NoesisVision.Annotations.Domain.DDD;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
 
-## Responsibilities
+[DddEntity]
+[EntitiesLayer]
+public class OrderLine
+{
+    public OrderLineId Id { get; }
+    public ProductId ProductId { get; }
+    public Quantity Quantity { get; private set; }
+    public Money UnitPrice { get; }
 
-<!-- TODO: identity-bearing object inside an aggregate; equality by id -->
+    public OrderLine(OrderLineId id, ProductId productId, Quantity quantity, Money unitPrice)
+    {
+        Id = id;
+        ProductId = productId;
+        Quantity = quantity;
+        UnitPrice = unitPrice;
+    }
 
-## Class shape
+    public Money LineTotal => UnitPrice.Multiply(Quantity);
 
-<!-- TODO: constructor, identity field, behaviour methods, invariants -->
-
-## Behaviours
-
-<!-- TODO: how Behaviours map to methods; entities never expose Commands/Events directly to outside the aggregate -->
-
-## Properties
-
-<!-- TODO: prefer value objects over primitives; immutable identity -->
-
-## Rules
-
-<!-- TODO: invariants enforced inside methods, never via public setters -->
-
-## Tests
-
-<!-- TODO: business-scenario tests at the entity level when the design doc attaches scenarios there -->
-
-## Example
-
-<!-- TODO: full annotated example -->
+    [DomainBehavior]
+    public void ChangeQuantity(Quantity newQuantity)
+    {
+        if (newQuantity.IsZero) throw new DomainException("Quantity must be greater than zero.");
+        Quantity = newQuantity;
+    }
+}
+```

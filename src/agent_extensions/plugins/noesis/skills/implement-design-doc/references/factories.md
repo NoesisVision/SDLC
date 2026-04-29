@@ -1,27 +1,25 @@
-# Factory Implementation (C#)
+- A factory encapsulates the complex creation of an aggregate or value object.
+- Enforce invariants before returning the new object.
+- Take the smallest input set needed to produce a fully-initialised target.
+- Static class with `Create...` methods is fine; use an instance class only when creation needs collaborators.
+- Annotate with `[DddFactory]` and `[EntitiesLayer]`.
 
-Loaded by the subagent that implements `factory` Building Blocks at Step 4. Do not load from the coordinator.
+```csharp
+using NoesisVision.Annotations.Domain.DDD;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
 
-## Responsibilities
-
-<!-- TODO: encapsulate complex creation of an aggregate or value object; enforce invariants at construction -->
-
-## Class shape
-
-<!-- TODO: static class with `Create...` methods OR instance class injected with collaborators when creation needs other domain services -->
-
-## Properties / inputs
-
-<!-- TODO: take the smallest set of inputs needed; produce a fully initialised target -->
-
-## Rules
-
-<!-- TODO: structural / validation rules enforced before returning the new object -->
-
-## Tests
-
-<!-- TODO: scenario tests covering valid + invalid creation paths -->
-
-## Example
-
-<!-- TODO: full annotated example -->
+[DddFactory]
+[EntitiesLayer]
+public class OrderFactory
+{
+    public Order CreateDraft(
+        CustomerId customerId,
+        IEnumerable<(ProductId Product, Quantity Quantity, Money UnitPrice)> items)
+    {
+        var order = new Order(OrderId.New(), customerId);
+        foreach (var (product, quantity, unitPrice) in items)
+            order.AddLine(product, quantity, unitPrice);
+        return order;
+    }
+}
+```

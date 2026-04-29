@@ -1,27 +1,19 @@
-# Repository Port Implementation (C#)
+- A repository port is a domain-shaped, collection-like contract for one aggregate.
+- Method names are intent-revealing (`Add`, `GetById`, `FindOpenForCustomer`); they accept and return aggregates and value objects.
+- The interface lives in the domain — no leaking of storage or framework types.
+- Carries no business rules.
+- Annotate the interface with `[DddRepository]` and `[EntitiesLayer]`.
 
-Loaded by the subagent that implements `repository` Building Blocks at Step 4. This file covers the **port** (interface in the domain layer). The infrastructure-side adapter is implemented in Step 5 — see `repository-adapters.md`.
+```csharp
+using NoesisVision.Annotations.Domain.DDD;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
 
-## Responsibilities
-
-<!-- TODO: collection-like access to one aggregate; intent-revealing methods; hides storage details -->
-
-## Interface shape
-
-<!-- TODO: interface naming, method signatures (Add / GetById / Find... by domain criteria); async patterns; cancellation tokens -->
-
-## Methods
-
-<!-- TODO: each Behaviour from the design doc maps to one interface method; return aggregates fully formed; no leaking storage types -->
-
-## Rules
-
-<!-- TODO: this layer carries no business rules; rules live on the aggregate -->
-
-## Tests
-
-<!-- TODO: ports themselves are not unit-tested; adapter tests live in repository-adapters.md -->
-
-## Example
-
-<!-- TODO: full annotated example of one repository port -->
+[DddRepository]
+[EntitiesLayer]
+public interface IOrderRepository
+{
+    Task<Order?> GetById(OrderId id, CancellationToken ct);
+    Task Add(Order order, CancellationToken ct);
+    Task<IReadOnlyList<Order>> FindOpenForCustomer(CustomerId customerId, CancellationToken ct);
+}
+```

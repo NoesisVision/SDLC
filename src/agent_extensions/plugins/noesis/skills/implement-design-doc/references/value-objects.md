@@ -1,27 +1,36 @@
-# Value Object Implementation (C#)
+- A value object has no identity; equality is by structural value.
+- Immutable — properties use `init` or are set only in the constructor.
+- Validate invariants on construction; throw a domain exception on violation.
+- Prefer nested value objects over primitives.
+- Operations return new instances; never mutate.
+- Annotate with `[DddValueObject]` and `[EntitiesLayer]`.
 
-Loaded by the subagent that implements `value_object` Building Blocks at Step 4. Do not load from the coordinator.
+```csharp
+using NoesisVision.Annotations.Domain;
+using NoesisVision.Annotations.Domain.DDD;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
 
-## Responsibilities
+[DddValueObject]
+[EntitiesLayer]
+public sealed record Money
+{
+    public decimal Amount { get; init; }
+    public string Currency { get; init; }
 
-<!-- TODO: no identity, immutable, equality by value, validate on construction -->
+    public Money(decimal amount, string currency)
+    {
+        if (amount < 0) throw new DomainException("Amount cannot be negative.");
+        if (string.IsNullOrWhiteSpace(currency)) throw new DomainException("Currency is required.");
+        Amount = amount;
+        Currency = currency;
+    }
 
-## Class shape
+    public Money Add(Money other)
+    {
+        if (Currency != other.Currency) throw new DomainException("Currency mismatch.");
+        return new Money(Amount + other.Amount, Currency);
+    }
 
-<!-- TODO: record / readonly struct / sealed class with private constructor + factory -->
-
-## Properties
-
-<!-- TODO: init-only properties; nested value objects over primitives -->
-
-## Rules
-
-<!-- TODO: structural and validation rules in factory methods; throw domain-specific exceptions -->
-
-## Tests
-
-<!-- TODO: business-scenario tests for validation rules -->
-
-## Example
-
-<!-- TODO: full annotated example (e.g. Money, Email, Quantity) -->
+    public Money Multiply(Quantity quantity) => new(Amount * quantity.Value, Currency);
+}
+```

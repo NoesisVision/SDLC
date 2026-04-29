@@ -1,35 +1,48 @@
-# Aggregate Implementation (C#)
+- An aggregate is a cluster of objects treated as one unit; the root is the only entry point.
+- The root has a stable identity; equality is by id.
+- All state changes go through public methods on the root that implement Behaviours; no public setters.
+- Invariants spanning the cluster are enforced inside those methods.
+- The root records domain events; the application service publishes them after persistence.
+- Annotate the root with `[DddAggregate]` and `[EntitiesLayer]`; annotate each behaviour method with `[DomainBehavior]`.
 
-Loaded by the subagent that implements `aggregate` Building Blocks at Step 4. Do not load from the coordinator.
+```csharp
+using NoesisVision.Annotations.Domain;
+using NoesisVision.Annotations.Domain.DDD;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
 
-## Responsibilities
+[DddAggregate]
+[EntitiesLayer]
+public class Order
+{
+    private readonly List<OrderLine> _lines = new();
+    private readonly List<IDomainEvent> _events = new();
 
-<!-- TODO: what an aggregate root owns, identity, transactional boundary -->
+    public OrderId Id { get; }
+    public CustomerId CustomerId { get; }
+    public OrderStatus Status { get; private set; }
+    public IReadOnlyCollection<OrderLine> Lines => _lines;
+    public IReadOnlyCollection<IDomainEvent> Events => _events;
 
-## Class shape
+    public Order(OrderId id, CustomerId customerId)
+    {
+        Id = id;
+        CustomerId = customerId;
+        Status = OrderStatus.Draft;
+    }
 
-<!-- TODO: root class skeleton (constructor, factory method, private setters, invariant guards) -->
+    [DomainBehavior]
+    public void AddLine(ProductId productId, Quantity quantity, Money unitPrice)
+    {
+        if (Status != OrderStatus.Draft) throw new DomainException("Cannot modify a confirmed order.");
+        _lines.Add(new OrderLine(OrderLineId.New(), productId, quantity, unitPrice));
+    }
 
-## Behaviours
-
-<!-- TODO: how Behaviours from the design doc map to public methods; Command/Event/Query naming -->
-
-## Properties
-
-<!-- TODO: how properties map to fields; value-object usage over primitives -->
-
-## Rules
-
-<!-- TODO: where invariant checks live; raising domain errors -->
-
-## Domain events
-
-<!-- TODO: how the aggregate records events and exposes them for the unit-of-work -->
-
-## Tests
-
-<!-- TODO: business-scenario tests at the aggregate level; reference business-scenarios.md -->
-
-## Example
-
-<!-- TODO: full annotated example of one aggregate with two behaviours and one rule -->
+    [DomainBehavior]
+    public void Confirm()
+    {
+        if (_lines.Count == 0) throw new DomainException("Order must have at least one line.");
+        Status = OrderStatus.Confirmed;
+        _events.Add(new OrderConfirmed(Id));
+    }
+}
+```

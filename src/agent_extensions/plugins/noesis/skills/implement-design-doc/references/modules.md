@@ -1,23 +1,30 @@
-# Bounded Context and Module Layout (C#)
+- One C# project per Bounded Context; nested Modules become subdirectories under that project.
+- All Clean Architecture layers (entities, use cases, adapters, framework wiring) live together in the same project — separated by directory and by layer annotation, not by project.
+- Every type carries a layer annotation: `[EntitiesLayer]`, `[UseCasesLayer]`, `[AdaptersLayer]`, or `[FrameworkLayer]`.
+- A Bounded Context project may reference shared kernels and other contexts' public-API contracts; never another context's internals.
+- Annotate the context's marker class with `[DddBoundedContext]`.
 
-Loaded by the **coordinator** at Pre-flight reads. Governs Step 2: laying out C# projects for Bounded Contexts and directories for nested Modules, plus inter-project dependencies.
+```csharp
+using NoesisVision.Annotations.Domain.DDD;
 
-## Project layout per Bounded Context
+[DddBoundedContext("Sales")]
+public sealed class SalesContext { }
+```
 
-<!-- TODO: solution-level conventions; per-BC project naming; Domain / Application / Infrastructure split (or single-project layout) -->
-
-## Module directories within a Bounded Context
-
-<!-- TODO: how nested Modules map to directory hierarchy under the BC project -->
-
-## Inter-project dependencies
-
-<!-- TODO: which BC may reference which; rules for shared kernels / contracts; forbidden cycles -->
-
-## Naming conventions
-
-<!-- TODO: project name pattern, namespace pattern, root namespace mapping, file naming -->
-
-## Examples
-
-<!-- TODO: concrete example showing one BC with two Modules and the resulting solution layout -->
+```
+Sales/                              # one C# project = one Bounded Context
+├── Sales.csproj
+├── SalesContext.cs                 # [DddBoundedContext]
+├── Orders/                         # nested Module
+│   ├── Order.cs                    # [DddAggregate, EntitiesLayer]
+│   ├── OrderLine.cs                # [DddEntity, EntitiesLayer]
+│   ├── ConfirmOrder.cs             # [Command, EntitiesLayer]
+│   ├── OrderConfirmed.cs           # [DddDomainEvent, EntitiesLayer]
+│   ├── IOrderRepository.cs         # [DddRepository, EntitiesLayer]
+│   ├── IBillingGateway.cs          # [ExternalSystemIntegration, EntitiesLayer]
+│   ├── OrderApplicationService.cs  # [DddApplicationService, UseCasesLayer]
+│   ├── OrderRepository.cs          # [DddRepository, AdaptersLayer]   — EF Core
+│   └── BillingGateway.cs           # [ExternalSystemIntegration, AdaptersLayer]
+└── Pricing/                        # nested Module
+    └── PricingService.cs           # [DddDomainService, EntitiesLayer]
+```

@@ -1,27 +1,14 @@
-# Domain Command Implementation (C#)
+- A domain command is an imperative request to change state, named in imperative form (e.g. `ConfirmOrder`).
+- Carries inputs only — no behaviour, no state.
+- Use a sealed record with required init properties.
+- Prefer value objects over primitives.
+- Annotate with `[Command]` and `[EntitiesLayer]`.
 
-Loaded by the subagent that implements `domain_command` Building Blocks at Step 4. Do not load from the coordinator.
+```csharp
+using NoesisVision.Annotations.Domain;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
 
-## Responsibilities
-
-<!-- TODO: imperative request to change state; carries inputs only -->
-
-## Class shape
-
-<!-- TODO: sealed record with required fields; imperative name -->
-
-## Properties
-
-<!-- TODO: only the data the handler needs; value objects over primitives -->
-
-## Rules
-
-<!-- TODO: structural rules (mandatory fields, formats) enforced at construction -->
-
-## Tests
-
-<!-- TODO: validation-rule tests if the design doc attaches scenarios -->
-
-## Example
-
-<!-- TODO: full annotated example -->
+[Command]
+[EntitiesLayer]
+public sealed record ConfirmOrder(OrderId OrderId);
+```

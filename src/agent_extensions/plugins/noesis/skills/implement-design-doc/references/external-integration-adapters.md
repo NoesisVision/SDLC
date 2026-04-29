@@ -1,27 +1,34 @@
-# External Integration Adapter Implementation (C#)
+- An external-integration adapter implements the port by calling the target module's command/query handler directly (in-process, modular monolith).
+- The adapter translates the other module's DTOs and exceptions into domain types and domain exceptions; nothing from the other module leaks beyond it.
+- No HTTP or message-bus transport — these are in-process integrations for now.
+- Annotate with `[ExternalSystemIntegration("<other-module-name>")]` and `[AdaptersLayer]`.
 
-Loaded by the subagent that implements external-integration adapters at Step 5. Do not load from the coordinator. The port (interface) was created in Step 4 — see `external-integration.md`.
+```csharp
+using NoesisVision.Annotations.Domain;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
+using Billing.PublicApi;
 
-## Responsibilities
+[ExternalSystemIntegration("Billing")]
+[AdaptersLayer]
+public class BillingGateway : IBillingGateway
+{
+    private readonly IIssueInvoiceHandler _handler;
 
-<!-- TODO: implement the external-integration port using the actual transport (HTTP client, message queue, SDK, …); translate transport errors to domain errors -->
+    public BillingGateway(IIssueInvoiceHandler handler) => _handler = handler;
 
-## Class shape
-
-<!-- TODO: class implementing the port; constructor injects HttpClient / SDK client; configuration via options pattern -->
-
-## Mapping
-
-<!-- TODO: external DTOs ↔ domain types; never leak external types into the domain -->
-
-## Resilience
-
-<!-- TODO: retries, timeouts, circuit-breaking — only when the design doc calls for them; do not add silently -->
-
-## Tests
-
-<!-- TODO: integration tests against a stubbed remote (WireMock / TestServer) covering the port methods -->
-
-## Example
-
-<!-- TODO: full annotated example of one HTTP adapter with mapping, error translation, and one integration test -->
+    public async Task<InvoiceId> IssueInvoice(OrderId orderId, Money total, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _handler.Handle(
+                new IssueInvoiceCommand(orderId.Value, total.Amount, total.Currency),
+                ct);
+            return new InvoiceId(result.InvoiceId);
+        }
+        catch (BillingValidationException ex)
+        {
+            throw new DomainException($"Billing rejected the invoice: {ex.Message}");
+        }
+    }
+}
+```

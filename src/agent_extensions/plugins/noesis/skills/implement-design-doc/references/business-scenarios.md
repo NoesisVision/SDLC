@@ -1,35 +1,39 @@
-# Business Scenarios as Tests (C#)
+- Every `Rule` from the design doc is exercised by at least one business-scenario test.
+- The test attaches at the level the design doc specifies: Behaviour → end-to-end test of that method; Building Block → test across multiple Behaviours; Rule → single transition.
+- Use xUnit; mirror `src` directory structure under `tests`.
+- Map Given/When/Then directly to Arrange/Act/Assert; one design-doc scenario maps to one test method, named after the scenario.
+- Use deterministic builders; never randomness.
+- Annotate the test class or method with `[Scenario("<scenario name>")]`.
+- Never invent scenarios that aren't in the design doc; never weaken assertions to make a test pass — fix the implementation.
 
-Loaded by every Step 4 / Step 5 subagent whose Building Block slice contains at least one `Rule` or `Scenario` from the design doc. Do not load from the coordinator.
+```csharp
+using NoesisVision.Annotations.Domain;
+using Xunit;
 
-## Principle
+public class OrderConfirmationScenarios
+{
+    [Fact]
+    [Scenario("Confirming an order with no lines fails")]
+    public void Confirming_an_order_with_no_lines_fails()
+    {
+        var order = new Order(OrderId.New(), CustomerId.New());
 
-Every `Rule` from the design doc must be exercised by at least one business-scenario test. The test attaches at the level the design doc specifies:
+        var act = () => order.Confirm();
 
-- Scenario attached to a Behaviour → test the Behaviour end-to-end.
-- Scenario attached to a Building Block → test the BB across multiple Behaviours.
-- Scenario attached directly to a Rule → test the single transition the Rule guards.
+        Assert.Throws<DomainException>(act);
+    }
 
-## Test framework
+    [Fact]
+    [Scenario("Confirming a draft order with at least one line transitions it to Confirmed")]
+    public void Confirming_a_draft_order_with_lines_transitions_to_confirmed()
+    {
+        var order = new Order(OrderId.New(), CustomerId.New());
+        order.AddLine(ProductId.New(), new Quantity(1), new Money(10, "USD"));
 
-<!-- TODO: chosen framework (xUnit / NUnit / SpecFlow / Reqnroll); naming convention; project layout mirroring src -->
+        order.Confirm();
 
-## Given-When-Then mapping
-
-<!-- TODO: how Given/When/Then from the design doc map to Arrange/Act/Assert in the test; whether to use Gherkin tooling or plain test methods -->
-
-## Scenario name → test name
-
-<!-- TODO: convention for translating scenario names from the design doc into test method names -->
-
-## Test data
-
-<!-- TODO: fixtures, builders, object mothers; do not introduce randomness; reproducible inputs -->
-
-## Don'ts
-
-<!-- TODO: never invent rules or scenarios not in the design doc; never weaken assertions to make a test pass — fix the implementation instead -->
-
-## Example
-
-<!-- TODO: full annotated example mapping one design-doc scenario to one test -->
+        Assert.Equal(OrderStatus.Confirmed, order.Status);
+        Assert.Contains(order.Events, e => e is OrderConfirmed);
+    }
+}
+```

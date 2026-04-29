@@ -1,27 +1,25 @@
-# Domain Service Implementation (C#)
+- A domain service holds stateless domain operations that don't naturally belong to an entity or value object.
+- Inputs and outputs are domain types; no infrastructure concerns.
+- Each Behaviour from the design doc maps to one method.
+- Pure where possible.
+- Annotate with `[DddDomainService]` and `[EntitiesLayer]`; annotate each behaviour method with `[DomainBehavior]`.
 
-Loaded by the subagent that implements `domain_service` Building Blocks at Step 4. Do not load from the coordinator.
+```csharp
+using NoesisVision.Annotations.Domain;
+using NoesisVision.Annotations.Domain.DDD;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
 
-## Responsibilities
-
-<!-- TODO: stateless domain operation that doesn't fit on an entity or value object; pure where possible -->
-
-## Class shape
-
-<!-- TODO: interface + implementation OR static class; constructor injects only domain dependencies -->
-
-## Behaviours
-
-<!-- TODO: each Behaviour from the design doc maps to one method; inputs/outputs are domain types -->
-
-## Rules
-
-<!-- TODO: computational and categorisation rules implemented as pure methods -->
-
-## Tests
-
-<!-- TODO: business-scenario tests at the domain-service level -->
-
-## Example
-
-<!-- TODO: full annotated example -->
+[DddDomainService]
+[EntitiesLayer]
+public class PricingService
+{
+    [DomainBehavior]
+    public Money CalculateTotal(IReadOnlyCollection<OrderLine> lines, DiscountPolicy policy)
+    {
+        var subtotal = lines
+            .Select(l => l.LineTotal)
+            .Aggregate((a, b) => a.Add(b));
+        return policy.Apply(subtotal);
+    }
+}
+```

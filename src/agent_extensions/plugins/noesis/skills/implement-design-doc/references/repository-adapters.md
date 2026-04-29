@@ -1,27 +1,32 @@
-# Repository Adapter Implementation (C#)
+- A repository adapter implements the port using EF Core.
+- Constructor injects the EF `DbContext`; the adapter participates in the application-service unit-of-work.
+- Map between the EF persistence model and the aggregate; never leak EF types beyond the adapter.
+- Annotate with `[DddRepository]` and `[AdaptersLayer]`.
 
-Loaded by the subagent that implements repository adapters at Step 5. Do not load from the coordinator. The port (interface) was created in Step 4 — see `repository.md`.
+```csharp
+using Microsoft.EntityFrameworkCore;
+using NoesisVision.Annotations.Domain.DDD;
+using NoesisVision.Annotations.Technology.CleanArchitecture;
 
-## Responsibilities
+[DddRepository]
+[AdaptersLayer]
+public class OrderRepository : IOrderRepository
+{
+    private readonly OrdersDbContext _db;
 
-<!-- TODO: implement the repository port against a concrete store (EF Core, Dapper, Mongo, …); map between persistence and domain types -->
+    public OrderRepository(OrdersDbContext db) => _db = db;
 
-## Class shape
+    public Task<Order?> GetById(OrderId id, CancellationToken ct) =>
+        _db.Orders
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.Id == id, ct);
 
-<!-- TODO: class implementing the port; constructor injects DbContext / connection / client -->
+    public async Task Add(Order order, CancellationToken ct) =>
+        await _db.Orders.AddAsync(order, ct);
 
-## Mapping
-
-<!-- TODO: persistence model ↔ aggregate; loading whole aggregates; tracking change for save -->
-
-## Transactions and unit-of-work
-
-<!-- TODO: how the adapter participates in the application-service transaction boundary -->
-
-## Tests
-
-<!-- TODO: integration tests against a real database (per CLAUDE.md guidance); cover the methods from the port -->
-
-## Example
-
-<!-- TODO: full annotated example of one EF Core repository adapter with mapping and one integration test -->
+    public async Task<IReadOnlyList<Order>> FindOpenForCustomer(CustomerId customerId, CancellationToken ct) =>
+        await _db.Orders
+            .Where(o => o.CustomerId == customerId && o.Status == OrderStatus.Draft)
+            .ToListAsync(ct);
+}
+```
