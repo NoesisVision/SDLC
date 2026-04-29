@@ -124,7 +124,7 @@ User-provided files in `file_paths` carry the **highest priority** — they are 
 
 When `file_paths` includes a file larger than ~25K tokens (rule of thumb: > ~5000 lines or > ~150 KB), use `Read` with `offset`/`limit` to chunk through it — plan for ~500–600 lines per chunk to stay below the cap.
 
-If the input file is not in English, normalise terms and descriptions to English in the analysis files and the design doc. Preserve ubiquitous-language tokens (proper nouns, established domain terms in the source language) verbatim.
+See the **English-only output** Rule for language handling — applies to every source (files, conversations, topics, documents, decisions).
 
 Do **not** dive into the substance yet — Step 3 does that. The index is a navigation map for §3.
 
@@ -147,7 +147,7 @@ Write findings to `<working_dir>/analysis-bounded-contexts.md`:
 
 Identify use cases — actions triggerable from outside a Bounded Context by Command, Event or Query. **A use case is a public Behaviour** (`isPublic: true`, `type: Command | Event | Query`). Group cohesive use cases under one `application_service` Building Block; do not 1:1-map every use case to its own service.
 
-Identify the **actors** that initiate those Behaviours (humans, external systems, scheduled triggers). The actor list in `DesignDoc.actors` is produced here, not invented at Step 4.
+Identify the **actors** that initiate those Behaviours. An **actor is always an end-user persona or role** (e.g. *Customer*, *Warehouse Operator*, *Approving Manager*). An actor is **never** an external system, another module, a scheduled trigger, or any abstract/technical/architectural concept (e.g. "application layer", "scheduler", "upstream service"). When a Behaviour is initiated by a non-human trigger, model the trigger as an inbound Event/Command on the hosting Building Block — do **not** invent an actor for it. The actor list in `DesignDoc.actors` is produced here, not invented at Step 4.
 
 When the input contains a table, decide what the table represents before treating its rows as model elements:
 - *Each row has distinct behaviour or invariants* → row = Building Block.
@@ -285,4 +285,5 @@ Report the returned `design_doc_id` and the totals (`added` / `modified` / `remo
 - **Rule terminology.** The schema entity is `Rule` (`DesignedRule`). Detection cues in source material may say "Invariant" or "Constraint", but in this skill's output and prose use **Rule** consistently.
 - **Use existing references unmodified.** The `references/` directory is curated input; do not edit it as part of this skill's run.
 - **Persist via MCP only.** Edit the design doc JSON locally, then hand the path to `noesis-graph:save_design_doc` — do not call lower-level graph mutations.
+- **English-only output.** The Design Doc — and every scratch analysis file produced under `<working_dir>` — must be written in **English**, regardless of the language of the source material (conversations, topics, documents, decisions, user-supplied files, or the invocation prompt). Translate prose, headings, names, descriptions, and BDD scenarios to English while authoring; do not defer translation to a later pass. Preserve ubiquitous-language tokens (proper nouns, established domain terms with no clean English equivalent) verbatim and, on first use, gloss them in English in parentheses.
 - **Respect user edits.** Before producing a `modified` or `removed` entry against any existing design-doc element (Bounded Context, Module, Building Block, Behaviour, Rule, Scenario, Quality Attribute, Actor) whose on-disk record is marked `edited_by_user: true`, ask for explicit user acceptance via `AskUserQuestion`. `save_design_doc` will reject overwrites of user-edited content regardless; this rule additionally surfaces the intended change so the user can keep their version, accept the new one, or merge manually. If the user declines, drop the change from the ChangeSet and proceed with the rest of the diff.
