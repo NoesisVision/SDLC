@@ -21,6 +21,7 @@ import {
   IconTopologyStar,
 } from "@tabler/icons-react";
 import { MarkdownContent } from "../shared/markdown-content.js";
+import { InlineEdit } from "../shared/inline-edit.js";
 import {
   categoryColor,
   groupIdeaUnitsByTurn,
@@ -49,6 +50,42 @@ interface NavState {
   stack: View[];
 }
 
+type TopicEditableFields = Partial<{
+  title: string;
+  short_summary: string;
+  long_summary: string;
+}>;
+
+async function patchTopic(
+  topicId: string,
+  fields: TopicEditableFields,
+): Promise<void> {
+  const res = await fetch(`/api/ui/topics/${encodeURIComponent(topicId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to save (${res.status})`);
+  }
+}
+
+function applyTopicUpdate(
+  topics: TopicNode[],
+  topicId: string,
+  fields: TopicEditableFields,
+): TopicNode[] {
+  return topics.map((t) => {
+    if (t.id === topicId) {
+      return { ...t, ...fields };
+    }
+    if (t.subtopics.length > 0) {
+      return { ...t, subtopics: applyTopicUpdate(t.subtopics, topicId, fields) };
+    }
+    return t;
+  });
+}
+
 export function TopicsPage() {
   const [data, setData] = useState<TopicsPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +100,27 @@ export function TopicsPage() {
       .then((d) => setData(d))
       .catch((err: Error) => setError(err.message));
   }, []);
+
+  const updateTopic = useCallback(
+    async (topicId: string, fields: TopicEditableFields): Promise<void> => {
+      await patchTopic(topicId, fields);
+      setData((prev) =>
+        prev === null ? prev : { topics: applyTopicUpdate(prev.topics, topicId, fields) },
+      );
+      setNav((prev) => {
+        if (prev.current === null) return prev;
+        const updateView = (view: View): View => {
+          if (view.topic.id !== topicId) return view;
+          return { ...view, topic: { ...view.topic, ...fields } };
+        };
+        return {
+          current: updateView(prev.current),
+          stack: prev.stack.map(updateView),
+        };
+      });
+    },
+    [],
+  );
 
   const pushView = useCallback((view: View) => {
     setNav((prev) => {
@@ -145,6 +203,7 @@ export function TopicsPage() {
               onSelectDocument={(topic, document) =>
                 pushView({ kind: "document", topic, document })
               }
+              onUpdateTopic={updateTopic}
             />
           </Box>
         </Box>
@@ -374,6 +433,7 @@ function DetailsPanel({
   onBack,
   onSelectConversation,
   onSelectDocument,
+  onUpdateTopic,
 }: {
   current: View | null;
   canGoBack: boolean;
@@ -383,6 +443,7 @@ function DetailsPanel({
     conversation: TopicConversationRef,
   ) => void;
   onSelectDocument: (topic: TopicNode, document: TopicDocumentRef) => void;
+  onUpdateTopic: (topicId: string, fields: TopicEditableFields) => Promise<void>;
 }) {
   if (current === null) {
     return (
@@ -407,6 +468,7 @@ function DetailsPanel({
               onSelectConversation(current.topic, c)
             }
             onSelectDocument={(d) => onSelectDocument(current.topic, d)}
+            onUpdateTopic={onUpdateTopic}
           />
         )}
         {current.kind === "conversation" && (
@@ -452,41 +514,77 @@ function TopicDetails({
   topic,
   onSelectConversation,
   onSelectDocument,
+  onUpdateTopic,
 }: {
   topic: TopicNode;
   onSelectConversation: (conversation: TopicConversationRef) => void;
   onSelectDocument: (document: TopicDocumentRef) => void;
+  onUpdateTopic: (topicId: string, fields: TopicEditableFields) => Promise<void>;
 }) {
   return (
     <Box p="lg">
       <Stack gap="lg">
-        <Group gap="sm" align="center">
+        <Group gap="sm" align="center" wrap="nowrap">
           <ThemeIcon size="lg" variant="light" color="noesisIndigo" radius="sm">
             <IconTopologyStar size={18} stroke={1.5} />
           </ThemeIcon>
-          <Stack gap={2}>
-            <Text size="xl" fw={700} c="gray.1">
-              {topic.title}
-            </Text>
+          <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+            <InlineEdit
+              value={topic.title}
+              mode="text"
+              ariaLabel="Edit title"
+              onSave={(next) => onUpdateTopic(topic.id, { title: next })}
+              display={
+                <Text size="xl" fw={700} c="gray.1">
+                  {topic.title}
+                </Text>
+              }
+            />
             <Text size="xs" c="dimmed">
               Topic
             </Text>
           </Stack>
         </Group>
 
-        {topic.short_summary !== "" && (
-          <Stack gap={4}>
-            <SectionLabel>Summary</SectionLabel>
-            <MarkdownContent text={topic.short_summary} />
-          </Stack>
-        )}
+        <Stack gap={4}>
+          <SectionLabel>Summary</SectionLabel>
+          <InlineEdit
+            value={topic.short_summary}
+            mode="textarea"
+            block
+            ariaLabel="Edit short summary"
+            onSave={(next) => onUpdateTopic(topic.id, { short_summary: next })}
+            display={
+              topic.short_summary === "" ? (
+                <Text size="sm" c="dimmed">
+                  No summary.
+                </Text>
+              ) : (
+                <MarkdownContent text={topic.short_summary} />
+              )
+            }
+          />
+        </Stack>
 
-        {topic.long_summary !== "" && (
-          <Stack gap={4}>
-            <SectionLabel>Details</SectionLabel>
-            <MarkdownContent text={topic.long_summary} />
-          </Stack>
-        )}
+        <Stack gap={4}>
+          <SectionLabel>Details</SectionLabel>
+          <InlineEdit
+            value={topic.long_summary}
+            mode="textarea"
+            block
+            ariaLabel="Edit long summary"
+            onSave={(next) => onUpdateTopic(topic.id, { long_summary: next })}
+            display={
+              topic.long_summary === "" ? (
+                <Text size="sm" c="dimmed">
+                  No details.
+                </Text>
+              ) : (
+                <MarkdownContent text={topic.long_summary} />
+              )
+            }
+          />
+        </Stack>
 
         <Stack gap="xs">
           <SectionLabel>Conversations</SectionLabel>

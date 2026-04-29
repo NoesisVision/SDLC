@@ -280,6 +280,44 @@ export class DecisionsService {
     return this.repository.readDecision(decisionId);
   }
 
+  async updateDecisionEditableFields(
+    decisionId: string,
+    fields: Partial<{
+      title: string;
+      context_text: string;
+      decision_text: string;
+      decision_rationale: string;
+    }>,
+  ): Promise<void> {
+    await this.repository.requireDecision(decisionId);
+    const cleaned: Partial<{
+      title: string;
+      context_text: string;
+      decision_text: string;
+      decision_rationale: string;
+    }> = {};
+    if (fields.title !== undefined) {
+      const trimmed = fields.title.trim();
+      if (trimmed === "") throw new Error("Decision title must not be empty");
+      cleaned.title = trimmed;
+    }
+    if (fields.context_text !== undefined) cleaned.context_text = fields.context_text;
+    if (fields.decision_text !== undefined) cleaned.decision_text = fields.decision_text;
+    if (fields.decision_rationale !== undefined)
+      cleaned.decision_rationale = fields.decision_rationale;
+    await this.repository.updateDecisionFields(decisionId, cleaned);
+  }
+
+  async updateAlternativeEditableFields(
+    decisionId: string,
+    optionIndex: number,
+    fields: Partial<{ text: string; rationale: string }>,
+  ): Promise<void> {
+    await this.repository.requireDecision(decisionId);
+    await this.repository.requireAlternative(decisionId, optionIndex);
+    await this.repository.updateAlternativeFields(decisionId, optionIndex, fields);
+  }
+
   private async computeDecisionDates(): Promise<Map<string, string>> {
     const entries = await this.repository.listDecisionSourceDates();
     const max = new Map<string, string>();

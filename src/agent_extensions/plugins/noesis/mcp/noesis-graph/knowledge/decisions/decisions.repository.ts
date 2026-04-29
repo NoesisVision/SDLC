@@ -446,6 +446,40 @@ export class DecisionsRepository {
     };
   }
 
+  async updateDecisionFields(
+    decisionId: string,
+    fields: Partial<{
+      title: string;
+      status: string;
+      context_text: string;
+      decision_text: string;
+      decision_rationale: string;
+    }>,
+  ): Promise<void> {
+    const keys = Object.keys(fields);
+    if (keys.length === 0) return;
+    const setClause = keys.map((k) => `d.${k} = $${k}`).join(", ");
+    await this.db.query(
+      `MATCH (d:Decision) WHERE d.id = $id SET ${setClause}`,
+      { id: decisionId, ...fields },
+    );
+  }
+
+  async updateAlternativeFields(
+    decisionId: string,
+    optionIndex: number,
+    fields: Partial<{ text: string; rationale: string }>,
+  ): Promise<void> {
+    const keys = Object.keys(fields);
+    if (keys.length === 0) return;
+    const altId = alternativeOptionNodeId(decisionId, optionIndex);
+    const setClause = keys.map((k) => `a.${k} = $${k}`).join(", ");
+    await this.db.query(
+      `MATCH (a:AlternativeOption) WHERE a.id = $id SET ${setClause}`,
+      { id: altId, ...fields },
+    );
+  }
+
   async requireAlternative(
     decisionId: string,
     optionIndex: number,

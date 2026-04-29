@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch } from "@nestjs/common";
 import type {
   DecisionConversationDetailData,
   DecisionDetailData,
@@ -6,6 +6,18 @@ import type {
   DecisionsPageData,
 } from "../../ui-contracts/decisions/decisions-data.js";
 import { DecisionsService } from "./decisions.service.js";
+
+interface DecisionUpdateBody {
+  title?: string;
+  context_text?: string;
+  decision_text?: string;
+  decision_rationale?: string;
+}
+
+interface AlternativeUpdateBody {
+  text?: string;
+  rationale?: string;
+}
 
 @Controller("api/ui/decisions")
 export class DecisionsController {
@@ -21,6 +33,29 @@ export class DecisionsController {
     @Param("decisionId") decisionId: string,
   ): Promise<DecisionDetailData> {
     return this.decisions.getDecisionDetail(decisionId);
+  }
+
+  @Patch(":decisionId")
+  async update(
+    @Param("decisionId") decisionId: string,
+    @Body() body: DecisionUpdateBody,
+  ): Promise<{ ok: true }> {
+    await this.decisions.updateDecisionEditableFields(decisionId, body);
+    return { ok: true };
+  }
+
+  @Patch(":decisionId/alternatives/:optionIndex")
+  async updateAlternative(
+    @Param("decisionId") decisionId: string,
+    @Param("optionIndex") optionIndex: string,
+    @Body() body: AlternativeUpdateBody,
+  ): Promise<{ ok: true }> {
+    const idx = Number(optionIndex);
+    if (!Number.isInteger(idx) || idx < 0) {
+      throw new Error(`Invalid alternative option index: ${optionIndex}`);
+    }
+    await this.decisions.updateAlternativeEditableFields(decisionId, idx, body);
+    return { ok: true };
   }
 
   @Get(":decisionId/slots/:slot/conversations/:conversationId")

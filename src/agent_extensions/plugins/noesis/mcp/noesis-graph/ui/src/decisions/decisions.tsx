@@ -19,6 +19,7 @@ import {
   IconMessageCircle,
 } from "@tabler/icons-react";
 import { MarkdownContent } from "../shared/markdown-content.js";
+import { InlineEdit } from "../shared/inline-edit.js";
 import {
   categoryColor,
   groupIdeaUnitsByTurn,
@@ -346,6 +347,41 @@ function BackButton({
   );
 }
 
+type DecisionEditableFields = Partial<{
+  title: string;
+  context_text: string;
+  decision_text: string;
+  decision_rationale: string;
+}>;
+
+async function patchDecision(
+  decisionId: string,
+  fields: DecisionEditableFields,
+): Promise<void> {
+  const res = await fetch(`/api/ui/decisions/${encodeURIComponent(decisionId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+}
+
+async function patchAlternative(
+  decisionId: string,
+  optionIndex: number,
+  fields: Partial<{ text: string; rationale: string }>,
+): Promise<void> {
+  const res = await fetch(
+    `/api/ui/decisions/${encodeURIComponent(decisionId)}/alternatives/${optionIndex}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
+    },
+  );
+  if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+}
+
 function DecisionDetails({
   decisionId,
   onSelectConversation,
@@ -378,6 +414,33 @@ function DecisionDetails({
     };
   }, [decisionId]);
 
+  const updateField = useCallback(
+    async (fields: DecisionEditableFields): Promise<void> => {
+      await patchDecision(decisionId, fields);
+      setData((prev) => (prev === null ? prev : { ...prev, ...fields }));
+    },
+    [decisionId],
+  );
+
+  const updateAlternative = useCallback(
+    async (
+      optionIndex: number,
+      fields: Partial<{ text: string; rationale: string }>,
+    ): Promise<void> => {
+      await patchAlternative(decisionId, optionIndex, fields);
+      setData((prev) => {
+        if (prev === null) return prev;
+        return {
+          ...prev,
+          alternatives: prev.alternatives.map((a) =>
+            a.option_index === optionIndex ? { ...a, ...fields } : a,
+          ),
+        };
+      });
+    },
+    [decisionId],
+  );
+
   if (error !== null) {
     return (
       <Box p="lg">
@@ -404,14 +467,22 @@ function DecisionDetails({
   return (
     <Stack gap={0}>
       <Box className={classes.section}>
-        <Group gap="sm" align="flex-start">
+        <Group gap="sm" align="flex-start" wrap="nowrap">
           <ThemeIcon size="lg" variant="light" color="noesisIndigo" radius="sm">
             <IconGavel size={18} stroke={1.5} />
           </ThemeIcon>
-          <Stack gap={6} style={{ flex: 1 }}>
-            <Title order={1} size="h3" c="gray.1" fw={700}>
-              {data.title}
-            </Title>
+          <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
+            <InlineEdit
+              value={data.title}
+              mode="text"
+              ariaLabel="Edit title"
+              onSave={(next) => updateField({ title: next })}
+              display={
+                <Title order={1} size="h3" c="gray.1" fw={700}>
+                  {data.title}
+                </Title>
+              }
+            />
             <Group gap={8}>
               <StatusBadge status={data.status} />
               <Text size="xs" c="dimmed">
@@ -432,11 +503,20 @@ function DecisionDetails({
         <Title order={2} size="h4" c="gray.1" fw={700} mb="xs">
           Context
         </Title>
-        {data.context_text === "" ? (
-          <Text className={classes.sectionBody}>—</Text>
-        ) : (
-          <MarkdownContent text={data.context_text} />
-        )}
+        <InlineEdit
+          value={data.context_text}
+          mode="textarea"
+          block
+          ariaLabel="Edit context"
+          onSave={(next) => updateField({ context_text: next })}
+          display={
+            data.context_text === "" ? (
+              <Text className={classes.sectionBody}>—</Text>
+            ) : (
+              <MarkdownContent text={data.context_text} />
+            )
+          }
+        />
         <SourceLists
           decisionId={data.id}
           slot="context"
@@ -452,17 +532,39 @@ function DecisionDetails({
         <Title order={2} size="h4" c="gray.1" fw={700} mb="xs">
           Decision
         </Title>
-        {data.decision_text === "" ? (
-          <Text className={classes.sectionBody}>—</Text>
-        ) : (
-          <MarkdownContent text={data.decision_text} />
-        )}
-        {data.decision_rationale !== "" && (
-          <Box className={classes.rationaleBlock}>
-            <Text className={classes.rationaleLabel}>Rationale</Text>
-            <MarkdownContent text={data.decision_rationale} variant="sm" italic />
-          </Box>
-        )}
+        <InlineEdit
+          value={data.decision_text}
+          mode="textarea"
+          block
+          ariaLabel="Edit decision"
+          onSave={(next) => updateField({ decision_text: next })}
+          display={
+            data.decision_text === "" ? (
+              <Text className={classes.sectionBody}>—</Text>
+            ) : (
+              <MarkdownContent text={data.decision_text} />
+            )
+          }
+        />
+        <Box className={classes.rationaleBlock}>
+          <Text className={classes.rationaleLabel}>Rationale</Text>
+          <InlineEdit
+            value={data.decision_rationale}
+            mode="textarea"
+            block
+            ariaLabel="Edit rationale"
+            onSave={(next) => updateField({ decision_rationale: next })}
+            display={
+              data.decision_rationale === "" ? (
+                <Text size="sm" c="dimmed">
+                  No rationale.
+                </Text>
+              ) : (
+                <MarkdownContent text={data.decision_rationale} variant="sm" italic />
+              )
+            }
+          />
+        </Box>
         <SourceLists
           decisionId={data.id}
           slot="decision"
@@ -491,17 +593,47 @@ function DecisionDetails({
                   <Title order={3} size="h5" c="gray.2" fw={600} mb={4}>
                     {optionLabel}
                   </Title>
-                  {a.text === "" ? (
-                    <Text className={classes.sectionBody}>—</Text>
-                  ) : (
-                    <MarkdownContent text={a.text} />
-                  )}
-                  {a.rationale !== "" && (
-                    <Box className={classes.rationaleBlock}>
-                      <Text className={classes.rationaleLabel}>Rationale</Text>
-                      <MarkdownContent text={a.rationale} variant="sm" italic />
-                    </Box>
-                  )}
+                  <InlineEdit
+                    value={a.text}
+                    mode="textarea"
+                    block
+                    ariaLabel={`Edit ${optionLabel} text`}
+                    onSave={(next) =>
+                      updateAlternative(a.option_index, { text: next })
+                    }
+                    display={
+                      a.text === "" ? (
+                        <Text className={classes.sectionBody}>—</Text>
+                      ) : (
+                        <MarkdownContent text={a.text} />
+                      )
+                    }
+                  />
+                  <Box className={classes.rationaleBlock}>
+                    <Text className={classes.rationaleLabel}>Rationale</Text>
+                    <InlineEdit
+                      value={a.rationale}
+                      mode="textarea"
+                      block
+                      ariaLabel={`Edit ${optionLabel} rationale`}
+                      onSave={(next) =>
+                        updateAlternative(a.option_index, { rationale: next })
+                      }
+                      display={
+                        a.rationale === "" ? (
+                          <Text size="sm" c="dimmed">
+                            No rationale.
+                          </Text>
+                        ) : (
+                          <MarkdownContent
+                            text={a.rationale}
+                            variant="sm"
+                            italic
+                          />
+                        )
+                      }
+                    />
+                  </Box>
                   <SourceLists
                     decisionId={data.id}
                     slot={`alternative-${a.option_index}` as DecisionSlotPath}

@@ -276,6 +276,22 @@ export class TopicsService {
     return { topic_id: topicId, new_parent_topic_id: newParentTopicId };
   }
 
+  async updateTopicEditableFields(
+    topicId: string,
+    fields: Partial<{ title: string; short_summary: string; long_summary: string }>,
+  ): Promise<void> {
+    await this.repository.require(topicId);
+    const cleaned: Partial<{ title: string; short_summary: string; long_summary: string }> = {};
+    if (fields.title !== undefined) {
+      const trimmed = fields.title.trim();
+      if (trimmed === "") throw new Error("Topic title must not be empty");
+      cleaned.title = trimmed;
+    }
+    if (fields.short_summary !== undefined) cleaned.short_summary = fields.short_summary;
+    if (fields.long_summary !== undefined) cleaned.long_summary = fields.long_summary;
+    await this.repository.updateTopicPartialFields(topicId, cleaned);
+  }
+
   async upsertTopic(input: NewTopicInput): Promise<UpsertTopicResult> {
     if (await this.repository.exists(input.id)) {
       await this.repository.updateTopicFields(input.id, {

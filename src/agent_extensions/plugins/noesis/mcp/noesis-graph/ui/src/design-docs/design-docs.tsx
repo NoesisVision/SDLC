@@ -43,7 +43,73 @@ import type {
   DesignedScenarioData,
 } from "../../../ui-contracts/design-docs/design-docs-data.js";
 import { MarkdownContent } from "../shared/markdown-content.js";
+import { InlineEdit } from "../shared/inline-edit.js";
 import classes from "./design-docs.module.css";
+
+type ElementKind =
+  | "actor"
+  | "qualityAttribute"
+  | "boundedContext"
+  | "module"
+  | "buildingBlock"
+  | "behavior"
+  | "rule"
+  | "scenario";
+
+interface ElementPathSegment {
+  kind: ElementKind;
+  name: string;
+}
+
+async function patchDesignDocElement(
+  designDocId: string,
+  path: ElementPathSegment[],
+  fields: { name?: string; description?: string },
+): Promise<void> {
+  const res = await fetch(
+    `/api/ui/design-docs/${encodeURIComponent(designDocId)}/elements`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, fields }),
+    },
+  );
+  if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+}
+
+function treeIdMarker(kind: ElementKind): string {
+  switch (kind) {
+    case "actor":
+      return "actor";
+    case "qualityAttribute":
+      return "qa";
+    case "boundedContext":
+      return "bc";
+    case "module":
+      return "module";
+    case "buildingBlock":
+      return "bb";
+    case "behavior":
+      return "behavior";
+    case "rule":
+      return "rule";
+    case "scenario":
+      return "scenario";
+  }
+}
+
+function mapRenamedSelectedId(
+  prev: string | null,
+  path: ElementPathSegment[],
+  newName: string,
+): string | null {
+  if (prev === null || path.length === 0) return prev;
+  const last = path[path.length - 1];
+  const marker = treeIdMarker(last.kind);
+  const suffix = `|${marker}:${last.name}`;
+  if (!prev.endsWith(suffix)) return prev;
+  return prev.slice(0, -suffix.length) + `|${marker}:${newName}`;
+}
 
 type TreeNodeKind =
   | "section"
@@ -62,6 +128,7 @@ interface TreeNode {
   label: string;
   status: ChangeStatus | null;
   payload: NodePayload | null;
+  path: ElementPathSegment[];
   children: TreeNode[];
 }
 
@@ -132,6 +199,30 @@ export function DesignDocsPage() {
   const handleSelectDoc = useCallback((id: string) => {
     setActiveDocId(id);
   }, []);
+
+  const handleEdit = useCallback(
+    async (
+      path: ElementPathSegment[],
+      fields: { name?: string; description?: string },
+    ): Promise<void> => {
+      if (activeDocId === null) {
+        throw new Error("No active design doc");
+      }
+      await patchDesignDocElement(activeDocId, path, fields);
+      const refreshed = await fetch(
+        `/api/ui/design-docs/${encodeURIComponent(activeDocId)}`,
+      );
+      if (!refreshed.ok) {
+        throw new Error(`Failed to reload design doc (${refreshed.status})`);
+      }
+      const next = (await refreshed.json()) as DesignDocDetailData;
+      setDetail(next);
+      if (selectedNodeId !== null && fields.name !== undefined) {
+        setSelectedNodeId((prev) => mapRenamedSelectedId(prev, path, fields.name!));
+      }
+    },
+    [activeDocId, selectedNodeId],
+  );
 
   return (
     <Box className={classes.page}>
@@ -229,7 +320,7 @@ export function DesignDocsPage() {
             ) : (
               <Box className={classes.detailsShell}>
                 <Box className={classes.detailsBody}>
-                  <NodeDetailsView node={selectedNode} />
+                  <NodeDetailsView node={selectedNode} onEdit={handleEdit} />
                 </Box>
               </Box>
             )}
@@ -470,7 +561,18 @@ function nodeIcon(kind: TreeNodeKind): React.ReactNode {
   }
 }
 
-function NodeDetailsView({ node }: { node: TreeNode }) {
+type EditFn = (
+  path: ElementPathSegment[],
+  fields: { name?: string; description?: string },
+) => Promise<void>;
+
+function NodeDetailsView({
+  node,
+  onEdit,
+}: {
+  node: TreeNode;
+  onEdit: EditFn;
+}) {
   if (node.payload === null) {
     return (
       <Box p="lg">
@@ -502,36 +604,77 @@ function NodeDetailsView({ node }: { node: TreeNode }) {
   }
 
   const payload = node.payload;
+  const editable = node.status !== "removed";
   switch (payload.kind) {
     case "actor":
-      return <ActorDetails data={payload.data} status={node.status} name={node.label} />;
+      return (
+        <ActorDetails
+          data={payload.data}
+          status={node.status}
+          name={node.label}
+          path={node.path}
+          onEdit={editable ? onEdit : null}
+        />
+      );
     case "boundedContext":
       return (
         <BoundedContextDetails
           data={payload.data}
           status={node.status}
           name={node.label}
+          path={node.path}
+          onEdit={editable ? onEdit : null}
         />
       );
     case "module":
-      return <ModuleDetails data={payload.data} status={node.status} name={node.label} />;
+      return (
+        <ModuleDetails
+          data={payload.data}
+          status={node.status}
+          name={node.label}
+          path={node.path}
+          onEdit={editable ? onEdit : null}
+        />
+      );
     case "buildingBlock":
       return (
         <BuildingBlockDetails
           data={payload.data}
           status={node.status}
           name={node.label}
+          path={node.path}
+          onEdit={editable ? onEdit : null}
         />
       );
     case "behavior":
       return (
-        <BehaviorDetails data={payload.data} status={node.status} name={node.label} />
+        <BehaviorDetails
+          data={payload.data}
+          status={node.status}
+          name={node.label}
+          path={node.path}
+          onEdit={editable ? onEdit : null}
+        />
       );
     case "rule":
-      return <RuleDetails data={payload.data} status={node.status} name={node.label} />;
+      return (
+        <RuleDetails
+          data={payload.data}
+          status={node.status}
+          name={node.label}
+          path={node.path}
+          onEdit={editable ? onEdit : null}
+        />
+      );
     case "scenario":
       return (
-        <ScenarioDetails data={payload.data} status={node.status} name={node.label} />
+        <ScenarioDetails
+          data={payload.data}
+          status={node.status}
+          name={node.label}
+          path={node.path}
+          onEdit={editable ? onEdit : null}
+        />
       );
     case "qualityAttribute":
       return (
@@ -539,6 +682,8 @@ function NodeDetailsView({ node }: { node: TreeNode }) {
           data={payload.data}
           status={node.status}
           name={node.label}
+          path={node.path}
+          onEdit={editable ? onEdit : null}
         />
       );
   }
@@ -549,23 +694,40 @@ function DetailsHeader({
   name,
   status,
   subtitle,
+  path,
+  onEdit,
 }: {
   kind: TreeNodeKind;
   name: string;
   status: ChangeStatus | null;
   subtitle?: string;
+  path?: ElementPathSegment[];
+  onEdit?: EditFn | null;
 }) {
   const color = status !== null ? statusMantineColor(status) : "noesisBlue";
+  const titleNode = (
+    <Title order={1} size="h3" c="gray.1" fw={700}>
+      {name}
+    </Title>
+  );
   return (
     <Box className={classes.section}>
-      <Group gap="sm" align="center">
+      <Group gap="sm" align="center" wrap="nowrap">
         <ThemeIcon size="lg" variant="light" color={color} radius="sm">
           {nodeIcon(kind)}
         </ThemeIcon>
-        <Stack gap={4}>
-          <Title order={1} size="h3" c="gray.1" fw={700}>
-            {name}
-          </Title>
+        <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+          {onEdit !== undefined && onEdit !== null && path !== undefined ? (
+            <InlineEdit
+              value={name}
+              mode="text"
+              ariaLabel="Edit name"
+              onSave={(next) => onEdit(path, { name: next })}
+              display={titleNode}
+            />
+          ) : (
+            titleNode
+          )}
           <Group gap={6}>
             {status !== null && <StatusBadge status={status} />}
             <Text size="xs" c="dimmed">
@@ -579,22 +741,79 @@ function DetailsHeader({
   );
 }
 
+function DescriptionEditor({
+  value,
+  path,
+  onEdit,
+}: {
+  value: string;
+  path: ElementPathSegment[];
+  onEdit: EditFn | null;
+}) {
+  const display =
+    value === "" || value === "—" ? (
+      <Text className={classes.kvValue}>{value === "" ? "—" : value}</Text>
+    ) : (
+      <MarkdownContent text={value} />
+    );
+  if (onEdit === null) return display;
+  return (
+    <InlineEdit
+      value={value === "—" ? "" : value}
+      mode="textarea"
+      block
+      ariaLabel="Edit description"
+      onSave={(next) => onEdit(path, { description: next })}
+      display={display}
+    />
+  );
+}
+
+interface DetailsProps<T> {
+  data: T | null;
+  status: ChangeStatus | null;
+  name: string;
+  path: ElementPathSegment[];
+  onEdit: EditFn | null;
+}
+
+function DescriptionSection({
+  value,
+  path,
+  onEdit,
+}: {
+  value: string | null;
+  path: ElementPathSegment[];
+  onEdit: EditFn | null;
+}) {
+  return (
+    <Box className={classes.section}>
+      <Box className={classes.kvRow}>
+        <Text className={classes.kvKey}>Description</Text>
+        <DescriptionEditor value={value ?? ""} path={path} onEdit={onEdit} />
+      </Box>
+    </Box>
+  );
+}
+
 function ActorDetails({
   data,
   status,
   name,
-}: {
-  data: DesignedActorData | null;
-  status: ChangeStatus | null;
-  name: string;
-}) {
+  path,
+  onEdit,
+}: DetailsProps<DesignedActorData>) {
   return (
     <Stack gap={0}>
-      <DetailsHeader kind="actor" name={data?.name ?? name} status={status} />
+      <DetailsHeader
+        kind="actor"
+        name={data?.name ?? name}
+        status={status}
+        path={path}
+        onEdit={onEdit}
+      />
       {data !== null && (
-        <Box className={classes.section}>
-          <KvRow label="Description" value={emptyToDash(data.description)} />
-        </Box>
+        <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
       )}
     </Stack>
   );
@@ -604,11 +823,9 @@ function QualityAttributeDetails({
   data,
   status,
   name,
-}: {
-  data: DesignedQualityAttributeData | null;
-  status: ChangeStatus | null;
-  name: string;
-}) {
+  path,
+  onEdit,
+}: DetailsProps<DesignedQualityAttributeData>) {
   return (
     <Stack gap={0}>
       <DetailsHeader
@@ -616,11 +833,11 @@ function QualityAttributeDetails({
         name={data?.name ?? name}
         status={status}
         subtitle={data?.type ?? undefined}
+        path={path}
+        onEdit={onEdit}
       />
       {data !== null && (
-        <Box className={classes.section}>
-          <KvRow label="Description" value={emptyToDash(data.description)} />
-        </Box>
+        <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
       )}
     </Stack>
   );
@@ -630,18 +847,20 @@ function BoundedContextDetails({
   data,
   status,
   name,
-}: {
-  data: DesignedBoundedContextData | null;
-  status: ChangeStatus | null;
-  name: string;
-}) {
+  path,
+  onEdit,
+}: DetailsProps<DesignedBoundedContextData>) {
   return (
     <Stack gap={0}>
-      <DetailsHeader kind="boundedContext" name={data?.name ?? name} status={status} />
+      <DetailsHeader
+        kind="boundedContext"
+        name={data?.name ?? name}
+        status={status}
+        path={path}
+        onEdit={onEdit}
+      />
       {data !== null && (
-        <Box className={classes.section}>
-          <KvRow label="Description" value={emptyToDash(data.description)} />
-        </Box>
+        <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
       )}
       {data !== null && (
         <ChangeSummary
@@ -657,22 +876,22 @@ function ModuleDetails({
   data,
   status,
   name,
-}: {
-  data: DesignedDomainModuleData | null;
-  status: ChangeStatus | null;
-  name: string;
-}) {
+  path,
+  onEdit,
+}: DetailsProps<DesignedDomainModuleData>) {
   return (
     <Stack gap={0}>
-      <DetailsHeader kind="module" name={data?.name ?? name} status={status} />
+      <DetailsHeader
+        kind="module"
+        name={data?.name ?? name}
+        status={status}
+        path={path}
+        onEdit={onEdit}
+      />
       {data !== null && (
-        <Box className={classes.section}>
-          <KvRow label="Description" value={emptyToDash(data.description)} />
-        </Box>
+        <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
       )}
-      {data !== null && (
-        <ChangeSummary buildingBlocks={data.buildingBlocks} />
-      )}
+      {data !== null && <ChangeSummary buildingBlocks={data.buildingBlocks} />}
     </Stack>
   );
 }
@@ -681,11 +900,9 @@ function BuildingBlockDetails({
   data,
   status,
   name,
-}: {
-  data: DesignedBuildingBlockData | null;
-  status: ChangeStatus | null;
-  name: string;
-}) {
+  path,
+  onEdit,
+}: DetailsProps<DesignedBuildingBlockData>) {
   return (
     <Stack gap={0}>
       <DetailsHeader
@@ -693,11 +910,11 @@ function BuildingBlockDetails({
         name={data?.name ?? name}
         status={status}
         subtitle={data?.type ?? undefined}
+        path={path}
+        onEdit={onEdit}
       />
       {data !== null && (
-        <Box className={classes.section}>
-          <KvRow label="Description" value={emptyToDash(data.description)} />
-        </Box>
+        <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
       )}
       {data !== null && data.properties !== undefined && (
         <Box className={classes.section}>
@@ -722,11 +939,9 @@ function BehaviorDetails({
   data,
   status,
   name,
-}: {
-  data: DesignedBehaviourData | null;
-  status: ChangeStatus | null;
-  name: string;
-}) {
+  path,
+  onEdit,
+}: DetailsProps<DesignedBehaviourData>) {
   return (
     <Stack gap={0}>
       <DetailsHeader
@@ -734,16 +949,18 @@ function BehaviorDetails({
         name={data?.name ?? name}
         status={status}
         subtitle={behaviorSubtitle(data)}
+        path={path}
+        onEdit={onEdit}
       />
       {data !== null && (
-        <Box className={classes.section}>
-          <KvRow label="Description" value={emptyToDash(data.description)} />
+        <>
+          <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
           {data.actor !== null && data.actor !== "" && (
-            <Box mt="md">
+            <Box className={classes.section}>
               <KvRow label="Actor" value={data.actor} />
             </Box>
           )}
-        </Box>
+        </>
       )}
       {data !== null && data.input !== undefined && (
         <Box className={classes.section}>
@@ -780,11 +997,9 @@ function RuleDetails({
   data,
   status,
   name,
-}: {
-  data: DesignedRuleData | null;
-  status: ChangeStatus | null;
-  name: string;
-}) {
+  path,
+  onEdit,
+}: DetailsProps<DesignedRuleData>) {
   return (
     <Stack gap={0}>
       <DetailsHeader
@@ -792,11 +1007,11 @@ function RuleDetails({
         name={data?.name ?? name}
         status={status}
         subtitle={data?.ruleType ?? undefined}
+        path={path}
+        onEdit={onEdit}
       />
       {data !== null && (
-        <Box className={classes.section}>
-          <KvRow label="Description" value={emptyToDash(data.description)} />
-        </Box>
+        <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
       )}
     </Stack>
   );
@@ -806,18 +1021,20 @@ function ScenarioDetails({
   data,
   status,
   name,
-}: {
-  data: DesignedScenarioData | null;
-  status: ChangeStatus | null;
-  name: string;
-}) {
+  path,
+  onEdit,
+}: DetailsProps<DesignedScenarioData>) {
   return (
     <Stack gap={0}>
-      <DetailsHeader kind="scenario" name={data?.name ?? name} status={status} />
+      <DetailsHeader
+        kind="scenario"
+        name={data?.name ?? name}
+        status={status}
+        path={path}
+        onEdit={onEdit}
+      />
       {data !== null && (
-        <Box className={classes.section}>
-          <KvRow label="Description" value={data.description} />
-        </Box>
+        <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
       )}
       {data !== null && (
         <Box className={classes.section}>
@@ -1014,6 +1231,7 @@ function buildTree(source: DesignDocSourceData): TreeNode[] {
       label: "Actors",
       status: null,
       payload: null,
+      path: [],
       children: actorChildren(docId, source.actors),
     });
   }
@@ -1025,6 +1243,7 @@ function buildTree(source: DesignDocSourceData): TreeNode[] {
       label: "Bounded Contexts",
       status: null,
       payload: null,
+      path: [],
       children: boundedContextChildren(docId, source.boundedContexts),
     });
   }
@@ -1036,11 +1255,20 @@ function buildTree(source: DesignDocSourceData): TreeNode[] {
       label: "Quality Attributes",
       status: null,
       payload: null,
+      path: [],
       children: qualityAttributeChildren(docId, source.qualityAttributes),
     });
   }
 
   return sections;
+}
+
+function appendSegment(
+  parentPath: ElementPathSegment[],
+  kind: ElementKind,
+  name: string,
+): ElementPathSegment[] {
+  return [...parentPath, { kind, name }];
 }
 
 function actorChildren(
@@ -1061,6 +1289,7 @@ function actorChildren(
       label: name,
       status: "removed",
       payload: { kind: "actor", data: null },
+      path: appendSegment([], "actor", name),
       children: [],
     });
   }
@@ -1078,6 +1307,7 @@ function actorNode(
     label: data.name,
     status,
     payload: { kind: "actor", data },
+    path: appendSegment([], "actor", data.name),
     children: [],
   };
 }
@@ -1100,6 +1330,7 @@ function qualityAttributeChildren(
       label: name,
       status: "removed",
       payload: { kind: "qualityAttribute", data: null },
+      path: appendSegment([], "qualityAttribute", name),
       children: [],
     });
   }
@@ -1117,6 +1348,7 @@ function qaNode(
     label: data.name,
     status,
     payload: { kind: "qualityAttribute", data },
+    path: appendSegment([], "qualityAttribute", data.name),
     children: [],
   };
 }
@@ -1139,6 +1371,7 @@ function boundedContextChildren(
       label: name,
       status: "removed",
       payload: { kind: "boundedContext", data: null },
+      path: appendSegment([], "boundedContext", name),
       children: [],
     });
   }
@@ -1151,10 +1384,13 @@ function bcNode(
   status: ChangeStatus,
 ): TreeNode {
   const id = `${parentId}|bc:${data.name}`;
+  const path = appendSegment([], "boundedContext", data.name);
   const children: TreeNode[] = [];
   if (data.modules !== undefined) {
-    for (const m of data.modules.added) children.push(moduleNode(id, m, "added"));
-    for (const m of data.modules.modified) children.push(moduleNode(id, m, "modified"));
+    for (const m of data.modules.added)
+      children.push(moduleNode(id, path, m, "added"));
+    for (const m of data.modules.modified)
+      children.push(moduleNode(id, path, m, "modified"));
     for (const name of data.modules.removed) {
       children.push({
         id: `${id}|module:${name}`,
@@ -1162,15 +1398,16 @@ function bcNode(
         label: name,
         status: "removed",
         payload: { kind: "module", data: null },
+        path: appendSegment(path, "module", name),
         children: [],
       });
     }
   }
   if (data.buildingBlocks !== undefined) {
     for (const bb of data.buildingBlocks.added)
-      children.push(buildingBlockNode(id, bb, "added"));
+      children.push(buildingBlockNode(id, path, bb, "added"));
     for (const bb of data.buildingBlocks.modified)
-      children.push(buildingBlockNode(id, bb, "modified"));
+      children.push(buildingBlockNode(id, path, bb, "modified"));
     for (const name of data.buildingBlocks.removed) {
       children.push({
         id: `${id}|bb:${name}`,
@@ -1178,6 +1415,7 @@ function bcNode(
         label: name,
         status: "removed",
         payload: { kind: "buildingBlock", data: null },
+        path: appendSegment(path, "buildingBlock", name),
         children: [],
       });
     }
@@ -1188,22 +1426,25 @@ function bcNode(
     label: data.name,
     status,
     payload: { kind: "boundedContext", data },
+    path,
     children,
   };
 }
 
 function moduleNode(
   parentId: string,
+  parentPath: ElementPathSegment[],
   data: DesignedDomainModuleData,
   status: ChangeStatus,
 ): TreeNode {
   const id = `${parentId}|module:${data.name}`;
+  const path = appendSegment(parentPath, "module", data.name);
   const children: TreeNode[] = [];
   if (data.buildingBlocks !== undefined) {
     for (const bb of data.buildingBlocks.added)
-      children.push(buildingBlockNode(id, bb, "added"));
+      children.push(buildingBlockNode(id, path, bb, "added"));
     for (const bb of data.buildingBlocks.modified)
-      children.push(buildingBlockNode(id, bb, "modified"));
+      children.push(buildingBlockNode(id, path, bb, "modified"));
     for (const name of data.buildingBlocks.removed) {
       children.push({
         id: `${id}|bb:${name}`,
@@ -1211,6 +1452,7 @@ function moduleNode(
         label: name,
         status: "removed",
         payload: { kind: "buildingBlock", data: null },
+        path: appendSegment(path, "buildingBlock", name),
         children: [],
       });
     }
@@ -1221,22 +1463,25 @@ function moduleNode(
     label: data.name,
     status,
     payload: { kind: "module", data },
+    path,
     children,
   };
 }
 
 function buildingBlockNode(
   parentId: string,
+  parentPath: ElementPathSegment[],
   data: DesignedBuildingBlockData,
   status: ChangeStatus,
 ): TreeNode {
   const id = `${parentId}|bb:${data.name}`;
+  const path = appendSegment(parentPath, "buildingBlock", data.name);
   const children: TreeNode[] = [];
   if (data.behaviours !== undefined) {
     for (const bh of data.behaviours.added)
-      children.push(behaviorNode(id, bh, "added"));
+      children.push(behaviorNode(id, path, bh, "added"));
     for (const bh of data.behaviours.modified)
-      children.push(behaviorNode(id, bh, "modified"));
+      children.push(behaviorNode(id, path, bh, "modified"));
     for (const name of data.behaviours.removed) {
       children.push({
         id: `${id}|behavior:${name}`,
@@ -1244,13 +1489,15 @@ function buildingBlockNode(
         label: name,
         status: "removed",
         payload: { kind: "behavior", data: null },
+        path: appendSegment(path, "behavior", name),
         children: [],
       });
     }
   }
   if (data.rules !== undefined) {
-    for (const r of data.rules.added) children.push(ruleNode(id, r, "added"));
-    for (const r of data.rules.modified) children.push(ruleNode(id, r, "modified"));
+    for (const r of data.rules.added) children.push(ruleNode(id, path, r, "added"));
+    for (const r of data.rules.modified)
+      children.push(ruleNode(id, path, r, "modified"));
     for (const name of data.rules.removed) {
       children.push({
         id: `${id}|rule:${name}`,
@@ -1258,14 +1505,16 @@ function buildingBlockNode(
         label: name,
         status: "removed",
         payload: { kind: "rule", data: null },
+        path: appendSegment(path, "rule", name),
         children: [],
       });
     }
   }
   if (data.scenarios !== undefined) {
-    for (const s of data.scenarios.added) children.push(scenarioNode(id, s, "added"));
+    for (const s of data.scenarios.added)
+      children.push(scenarioNode(id, path, s, "added"));
     for (const s of data.scenarios.modified)
-      children.push(scenarioNode(id, s, "modified"));
+      children.push(scenarioNode(id, path, s, "modified"));
     for (const name of data.scenarios.removed) {
       children.push({
         id: `${id}|scenario:${name}`,
@@ -1273,6 +1522,7 @@ function buildingBlockNode(
         label: name,
         status: "removed",
         payload: { kind: "scenario", data: null },
+        path: appendSegment(path, "scenario", name),
         children: [],
       });
     }
@@ -1283,20 +1533,24 @@ function buildingBlockNode(
     label: data.name,
     status,
     payload: { kind: "buildingBlock", data },
+    path,
     children,
   };
 }
 
 function behaviorNode(
   parentId: string,
+  parentPath: ElementPathSegment[],
   data: DesignedBehaviourData,
   status: ChangeStatus,
 ): TreeNode {
   const id = `${parentId}|behavior:${data.name}`;
+  const path = appendSegment(parentPath, "behavior", data.name);
   const children: TreeNode[] = [];
   if (data.rules !== undefined) {
-    for (const r of data.rules.added) children.push(ruleNode(id, r, "added"));
-    for (const r of data.rules.modified) children.push(ruleNode(id, r, "modified"));
+    for (const r of data.rules.added) children.push(ruleNode(id, path, r, "added"));
+    for (const r of data.rules.modified)
+      children.push(ruleNode(id, path, r, "modified"));
     for (const name of data.rules.removed) {
       children.push({
         id: `${id}|rule:${name}`,
@@ -1304,14 +1558,16 @@ function behaviorNode(
         label: name,
         status: "removed",
         payload: { kind: "rule", data: null },
+        path: appendSegment(path, "rule", name),
         children: [],
       });
     }
   }
   if (data.scenarios !== undefined) {
-    for (const s of data.scenarios.added) children.push(scenarioNode(id, s, "added"));
+    for (const s of data.scenarios.added)
+      children.push(scenarioNode(id, path, s, "added"));
     for (const s of data.scenarios.modified)
-      children.push(scenarioNode(id, s, "modified"));
+      children.push(scenarioNode(id, path, s, "modified"));
     for (const name of data.scenarios.removed) {
       children.push({
         id: `${id}|scenario:${name}`,
@@ -1319,6 +1575,7 @@ function behaviorNode(
         label: name,
         status: "removed",
         payload: { kind: "scenario", data: null },
+        path: appendSegment(path, "scenario", name),
         children: [],
       });
     }
@@ -1329,12 +1586,14 @@ function behaviorNode(
     label: data.name,
     status,
     payload: { kind: "behavior", data },
+    path,
     children,
   };
 }
 
 function ruleNode(
   parentId: string,
+  parentPath: ElementPathSegment[],
   data: DesignedRuleData,
   status: ChangeStatus,
 ): TreeNode {
@@ -1344,12 +1603,14 @@ function ruleNode(
     label: data.name,
     status,
     payload: { kind: "rule", data },
+    path: appendSegment(parentPath, "rule", data.name),
     children: [],
   };
 }
 
 function scenarioNode(
   parentId: string,
+  parentPath: ElementPathSegment[],
   data: DesignedScenarioData,
   status: ChangeStatus,
 ): TreeNode {
@@ -1359,6 +1620,7 @@ function scenarioNode(
     label: data.name,
     status,
     payload: { kind: "scenario", data },
+    path: appendSegment(parentPath, "scenario", data.name),
     children: [],
   };
 }
@@ -1426,11 +1688,6 @@ function kindLabel(kind: TreeNodeKind): string {
     case "qualityAttribute":
       return "Quality Attribute";
   }
-}
-
-function emptyToDash(value: string | null): string {
-  if (value === null || value === "") return "—";
-  return value;
 }
 
 function behaviorSubtitle(data: DesignedBehaviourData | null): string | undefined {

@@ -350,6 +350,19 @@ export class TopicsRepository {
     );
   }
 
+  async updateTopicPartialFields(
+    topicId: string,
+    fields: Partial<{ title: string; short_summary: string; long_summary: string }>,
+  ): Promise<void> {
+    const keys = Object.keys(fields);
+    if (keys.length === 0) return;
+    const setClause = keys.map((k) => `t.${k} = $${k}`).join(", ");
+    await this.db.query(
+      `MATCH (t:Topic) WHERE t.id = $id SET ${setClause}`,
+      { id: topicId, ...fields },
+    );
+  }
+
   private async edgeExists(
     relName: string,
     fromId: string,

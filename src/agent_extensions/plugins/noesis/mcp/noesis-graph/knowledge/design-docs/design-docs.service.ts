@@ -4,11 +4,14 @@ import {
   DesignDocSchema,
   type DesignDoc,
   type DesignDocOverview,
+  type DesignedActor,
   type DesignedBehaviour,
   type DesignedBoundedContext,
   type DesignedBuildingBlock,
   type DesignedDomainModule,
+  type DesignedQualityAttribute,
   type DesignedRule,
+  type DesignedScenario,
 } from "../../../../shared-contracts/design-doc.js";
 import type {
   DesignDocDetailData,
@@ -96,6 +99,49 @@ export class DesignDocsService implements OnModuleInit {
     targets: ModelTarget[],
   ): Promise<DesignedBoundedContext[]> {
     return this.repository.readModelForTargets(targets);
+  }
+
+  async updateDesignDocElement(
+    designDocId: string,
+    path: ElementPathSegment[],
+    fields: { name?: string; description?: string },
+  ): Promise<{ ok: true }> {
+    if (path.length === 0) {
+      throw new Error("Element path must not be empty");
+    }
+    const source = await this.repository.readDesignDocSource(designDocId);
+    if (source === null) {
+      throw new Error(`DesignDoc not found or has no source: ${designDocId}`);
+    }
+    const target = locateElement(source, path);
+    if (target === null) {
+      throw new Error(`Element not found at path: ${describePath(path)}`);
+    }
+    const oldName = target.element.name;
+    let renamed = false;
+    if (fields.name !== undefined) {
+      const trimmed = fields.name.trim();
+      if (trimmed === "") throw new Error("Element name must not be empty");
+      if (trimmed !== oldName) {
+        target.element.name = trimmed;
+        renamed = true;
+      }
+    }
+    if (fields.description !== undefined && "description" in target.element) {
+      (target.element as Record<string, unknown>).description = fields.description;
+    }
+    const overview = await this.findOverview(designDocId);
+    const date = overview === null || overview.date === "" ? todayDate() : overview.date;
+    if (renamed) {
+      await this.repository.deleteDesignDoc(designDocId);
+      await this.repository.applyDesignDoc(source, date);
+    } else {
+      await this.repository.applyDesignDoc(source, date);
+    }
+    this.logger.log(
+      `Updated DesignDoc ${designDocId} element ${describePath(path)}`,
+    );
+    return { ok: true };
   }
 
   async saveDesignDocFromFile(path: string): Promise<SaveDesignDocResult> {
@@ -349,4 +395,157 @@ function formatBlockPath(
 
 function formatQualityErrors(errors: string[]): string {
   return `DesignDoc quality gate rejected the save:\n- ${errors.join("\n- ")}`;
+}
+
+export type ElementKind =
+  | "actor"
+  | "qualityAttribute"
+  | "boundedContext"
+  | "module"
+  | "buildingBlock"
+  | "behavior"
+  | "rule"
+  | "scenario";
+
+export interface ElementPathSegment {
+  kind: ElementKind;
+  name: string;
+}
+
+interface LocatedElement {
+  element:
+    | DesignedActor
+    | DesignedQualityAttribute
+    | DesignedBoundedContext
+    | DesignedDomainModule
+    | DesignedBuildingBlock
+    | DesignedBehaviour
+    | DesignedRule
+    | DesignedScenario;
+}
+
+function describePath(path: ElementPathSegment[]): string {
+  return path.map((p) => `${p.kind}:${p.name}`).join(" / ");
+}
+
+function locateElement(
+  source: DesignDoc,
+  path: ElementPathSegment[],
+): LocatedElement | null {
+  if (path.length === 0) return null;
+  const [head, ...rest] = path;
+  switch (head.kind) {
+    case "actor": {
+      if (rest.length !== 0) return null;
+      const a = findInChangeSet(source.actors, head.name);
+      return a === null ? null : { element: a };
+    }
+    case "qualityAttribute": {
+      if (rest.length !== 0) return null;
+      const q = findInChangeSet(source.qualityAttributes, head.name);
+      return q === null ? null : { element: q };
+    }
+    case "boundedContext": {
+      const bc = findInChangeSet(source.boundedContexts, head.name);
+      if (bc === null) return null;
+      if (rest.length === 0) return { element: bc };
+      return locateInBoundedContext(bc, rest);
+    }
+    default:
+      return null;
+  }
+}
+
+function locateInBoundedContext(
+  bc: DesignedBoundedContext,
+  path: ElementPathSegment[],
+): LocatedElement | null {
+  const [head, ...rest] = path;
+  switch (head.kind) {
+    case "module": {
+      const m = findInChangeSet(bc.modules, head.name);
+      if (m === null) return null;
+      if (rest.length === 0) return { element: m };
+      return locateInModule(m, rest);
+    }
+    case "buildingBlock": {
+      const bb = findInChangeSet(bc.buildingBlocks, head.name);
+      if (bb === null) return null;
+      if (rest.length === 0) return { element: bb };
+      return locateInBuildingBlock(bb, rest);
+    }
+    default:
+      return null;
+  }
+}
+
+function locateInModule(
+  m: DesignedDomainModule,
+  path: ElementPathSegment[],
+): LocatedElement | null {
+  const [head, ...rest] = path;
+  if (head.kind !== "buildingBlock") return null;
+  const bb = findInChangeSet(m.buildingBlocks, head.name);
+  if (bb === null) return null;
+  if (rest.length === 0) return { element: bb };
+  return locateInBuildingBlock(bb, rest);
+}
+
+function locateInBuildingBlock(
+  bb: DesignedBuildingBlock,
+  path: ElementPathSegment[],
+): LocatedElement | null {
+  const [head, ...rest] = path;
+  switch (head.kind) {
+    case "behavior": {
+      const bh = findInChangeSet(bb.behaviours, head.name);
+      if (bh === null) return null;
+      if (rest.length === 0) return { element: bh };
+      return locateInBehavior(bh, rest);
+    }
+    case "rule": {
+      if (rest.length !== 0) return null;
+      const r = findInChangeSet(bb.rules, head.name);
+      return r === null ? null : { element: r };
+    }
+    case "scenario": {
+      if (rest.length !== 0) return null;
+      const s = findInChangeSet(bb.scenarios, head.name);
+      return s === null ? null : { element: s };
+    }
+    default:
+      return null;
+  }
+}
+
+function locateInBehavior(
+  bh: DesignedBehaviour,
+  path: ElementPathSegment[],
+): LocatedElement | null {
+  if (path.length !== 1) return null;
+  const seg = path[0];
+  switch (seg.kind) {
+    case "rule": {
+      const r = findInChangeSet(bh.rules, seg.name);
+      return r === null ? null : { element: r };
+    }
+    case "scenario": {
+      const s = findInChangeSet(bh.scenarios, seg.name);
+      return s === null ? null : { element: s };
+    }
+    default:
+      return null;
+  }
+}
+
+function findInChangeSet<T extends { name: string }>(
+  cs: { added: T[]; modified: T[]; removed: string[] } | undefined,
+  name: string,
+): T | null {
+  if (cs === undefined) return null;
+  return (
+    cs.added.find((x) => x.name === name) ??
+    cs.modified.find((x) => x.name === name) ??
+    null
+  );
 }
