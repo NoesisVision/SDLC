@@ -340,6 +340,8 @@ function buildTopicForest(
       conversations: conversationsById.get(t.id) ?? [],
       documents: documentsById.get(t.id) ?? [],
       subtopics: [],
+      is_stale: t.is_stale,
+      edited_by_user: t.edited_by_user,
     });
   }
 

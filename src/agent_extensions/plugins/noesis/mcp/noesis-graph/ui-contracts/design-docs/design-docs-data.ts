@@ -5,6 +5,7 @@ export interface DesignDocListItem {
   date: string;
   title: string;
   description: string;
+  edited_by_user?: boolean;
 }
 
 export interface DesignDocsPageData {

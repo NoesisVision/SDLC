@@ -19,6 +19,8 @@ const DecisionOverviewRowSchema = z.object({
   title: z.string(),
   status: z.string(),
   context_text: z.string(),
+  is_stale: z.boolean().nullable().optional(),
+  edited_by_user: z.boolean().nullable().optional(),
 });
 type DecisionOverviewRow = z.infer<typeof DecisionOverviewRowSchema>;
 
@@ -115,6 +117,8 @@ export interface DecisionOverview {
   title: string;
   status: string;
   context_text: string;
+  is_stale: boolean;
+  edited_by_user: boolean;
 }
 
 export interface AlternativeRow {
@@ -405,16 +409,26 @@ export class DecisionsRepository {
     const rawRows = topicId === null
       ? await this.db.query<DecisionOverviewRow>(
           "MATCH (t:Topic)-[:TOPIC_HAS_DECISION]->(d:Decision) " +
-            "RETURN d.id AS id, t.id AS topic_id, t.title AS topic_title, d.title AS title, d.status AS status, d.context_text AS context_text " +
+            "RETURN d.id AS id, t.id AS topic_id, t.title AS topic_title, d.title AS title, d.status AS status, d.context_text AS context_text, d.is_stale AS is_stale, d.edited_by_user AS edited_by_user " +
             "ORDER BY t.title, d.title",
         )
       : await this.db.query<DecisionOverviewRow>(
           "MATCH (t:Topic)-[:TOPIC_HAS_DECISION]->(d:Decision) WHERE t.id = $topicId " +
-            "RETURN d.id AS id, t.id AS topic_id, t.title AS topic_title, d.title AS title, d.status AS status, d.context_text AS context_text " +
+            "RETURN d.id AS id, t.id AS topic_id, t.title AS topic_title, d.title AS title, d.status AS status, d.context_text AS context_text, d.is_stale AS is_stale, d.edited_by_user AS edited_by_user " +
             "ORDER BY d.title",
           { topicId },
         );
-    return z.array(DecisionOverviewRowSchema).parse(rawRows);
+    const rows = z.array(DecisionOverviewRowSchema).parse(rawRows);
+    return rows.map((r) => ({
+      id: r.id,
+      topic_id: r.topic_id,
+      topic_title: r.topic_title,
+      title: r.title,
+      status: r.status,
+      context_text: r.context_text,
+      is_stale: r.is_stale ?? false,
+      edited_by_user: r.edited_by_user ?? false,
+    }));
   }
 
   async readDecision(decisionId: string): Promise<DecisionDetail | null> {

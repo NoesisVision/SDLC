@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
-import { randomUUID } from "crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
+import { createHash } from "crypto";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
 import { parseTranscript } from "./structure-transcript.js";
 import { CONVERSATION_ID_PATTERN, type RawTranscript } from "./types.js";
@@ -9,12 +9,14 @@ import {
   type AnalyzeConversationOutput,
 } from "../../shared-contracts/skills/analyze-conversation/output.js";
 import { resolveWorkingDir } from "../../shared-contracts/plugin-paths.js";
+import { conversationMdPath } from "../../shared-contracts/source-files.js";
 
 const SKILL_NAME = "noesis:analyze-conversation";
 const FILE_MODE = 0o600;
 
 interface PrepareOptions {
   workingDirBase?: string;
+  projectDir?: string;
 }
 
 interface PrepareResult {
@@ -50,8 +52,11 @@ export function buildCleanedMarkdown(
   return lines.join("\n");
 }
 
-export function getCleanedPath(transcriptPath: string): string {
-  return transcriptPath.replace(/\.[^./]+$/, "") + "-cleaned.md";
+export function getCanonicalConversationPath(
+  projectDir: string,
+  conversationId: string,
+): string {
+  return conversationMdPath(projectDir, conversationId);
 }
 
 export function prepareConversation(
@@ -60,11 +65,12 @@ export function prepareConversation(
   mainTopic: string,
   options: PrepareOptions = {},
 ): PrepareResult {
-  const cleanedPath = getCleanedPath(transcriptPath);
-
-  const conversationId = resolveConversationId(transcriptPath, cleanedPath);
+  const projectDir = resolveProjectDir(options.projectDir);
 
   const rawText = readFileSync(transcriptPath, "utf-8");
+  const conversationId = resolveConversationId(transcriptPath, rawText);
+  const cleanedPath = getCanonicalConversationPath(projectDir, conversationId);
+
   const parsed = parseTranscript(rawText, conversationId);
   if (parsed.status === "Error") {
     throw new Error(parsed.message);
@@ -76,6 +82,7 @@ export function prepareConversation(
     mainTopic,
     parsed.transcript,
   );
+  mkdirSync(dirname(cleanedPath), { recursive: true });
   writeFileSync(cleanedPath, cleanedMarkdown, "utf-8");
 
   const workingDir = resolveWorkingDir(
@@ -113,19 +120,39 @@ export function prepareConversation(
 
 // --- Private functions ---
 
-function readIdFromHeader(path: string): string | null {
-  if (!existsSync(path)) return null;
-  const firstLine = readFileSync(path, "utf-8").split("\n", 1)[0];
+function extractIdFromContent(content: string): string | null {
+  const firstLine = content.split("\n", 1)[0];
   const match = CONVERSATION_ID_PATTERN.exec(firstLine);
   return match !== null ? match[1] : null;
 }
 
-function resolveConversationId(transcriptPath: string, cleanedPath: string): string {
-  const fromCleaned = readIdFromHeader(cleanedPath);
-  if (fromCleaned !== null) return fromCleaned;
-  const fromSource = readIdFromHeader(transcriptPath);
-  if (fromSource !== null) return fromSource;
-  return randomUUID();
+function deriveIdFromContent(content: string): string {
+  const hex = createHash("sha256").update(content).digest("hex");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join("-");
+}
+
+function resolveConversationId(transcriptPath: string, rawText: string): string {
+  const stamped = extractIdFromContent(rawText);
+  if (stamped !== null) return stamped;
+  return deriveIdFromContent(rawText);
+}
+
+function resolveProjectDir(explicit: string | undefined): string {
+  if (explicit !== undefined && explicit !== "") return explicit;
+  const fromEnv =
+    process.env["CLAUDE_PROJECT_DIR"] ?? process.env["NOESIS_PROJECT_DIR"];
+  if (fromEnv === undefined || fromEnv === "") {
+    throw new Error(
+      "Project directory is required. Set CLAUDE_PROJECT_DIR or NOESIS_PROJECT_DIR.",
+    );
+  }
+  return fromEnv;
 }
 
 // --- Entry point ---

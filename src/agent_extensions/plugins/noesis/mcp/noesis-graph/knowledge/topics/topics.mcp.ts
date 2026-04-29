@@ -1,6 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TopicItemSchema } from "../../../../shared-contracts/topics.js";
+import type { IndexStateService } from "../../indexer/index-state.service.js";
+import { gateWriteTool } from "../../indexer/write-gate.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -28,11 +30,12 @@ const TopicFields = {
 export function registerTopicsTools(
   mcp: McpServer,
   topics: TopicsService,
+  indexState: IndexStateService,
 ): void {
-  registerAddTopic(mcp, topics);
-  registerAddSubtopic(mcp, topics);
-  registerReparentTopic(mcp, topics);
-  registerAddItemsToTopic(mcp, topics);
+  registerAddTopic(mcp, topics, indexState);
+  registerAddSubtopic(mcp, topics, indexState);
+  registerReparentTopic(mcp, topics, indexState);
+  registerAddItemsToTopic(mcp, topics, indexState);
   registerGenerateTopicIds(mcp, topics);
   registerListTopics(mcp, topics);
   registerReadTopic(mcp, topics);
@@ -68,6 +71,7 @@ function registerGenerateTopicIds(
 function registerAddItemsToTopic(
   mcp: McpServer,
   topics: TopicsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "add_items_to_topic",
@@ -83,11 +87,17 @@ function registerAddItemsToTopic(
       },
     },
     async ({ topic_id, items }) =>
-      runInlineJsonTool(() => topics.addItemsToTopic(topic_id, items)),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => topics.addItemsToTopic(topic_id, items)),
+      ),
   );
 }
 
-function registerAddSubtopic(mcp: McpServer, topics: TopicsService): void {
+function registerAddSubtopic(
+  mcp: McpServer,
+  topics: TopicsService,
+  indexState: IndexStateService,
+): void {
   mcp.registerTool(
     "add_subtopic",
     {
@@ -101,17 +111,23 @@ function registerAddSubtopic(mcp: McpServer, topics: TopicsService): void {
     },
     async ({ parent_topic_id, id, title, short_summary, long_summary }) =>
       runInlineJsonTool(() =>
-        topics.addSubtopic(parent_topic_id, {
-          id,
-          title,
-          short_summary,
-          long_summary,
-        }),
+        gateWriteTool(indexState, () =>
+          topics.addSubtopic(parent_topic_id, {
+            id,
+            title,
+            short_summary,
+            long_summary,
+          }),
+        ),
       ),
   );
 }
 
-function registerAddTopic(mcp: McpServer, topics: TopicsService): void {
+function registerAddTopic(
+  mcp: McpServer,
+  topics: TopicsService,
+  indexState: IndexStateService,
+): void {
   mcp.registerTool(
     "add_topic",
     {
@@ -122,7 +138,9 @@ function registerAddTopic(mcp: McpServer, topics: TopicsService): void {
     },
     async ({ id, title, short_summary, long_summary }) =>
       runInlineJsonTool(() =>
-        topics.addTopic({ id, title, short_summary, long_summary }),
+        gateWriteTool(indexState, () =>
+          topics.addTopic({ id, title, short_summary, long_summary }),
+        ),
       ),
   );
 }
@@ -176,7 +194,11 @@ function registerReadTopic(mcp: McpServer, topics: TopicsService): void {
   );
 }
 
-function registerReparentTopic(mcp: McpServer, topics: TopicsService): void {
+function registerReparentTopic(
+  mcp: McpServer,
+  topics: TopicsService,
+  indexState: IndexStateService,
+): void {
   mcp.registerTool(
     "reparent_topic",
     {
@@ -193,7 +215,9 @@ function registerReparentTopic(mcp: McpServer, topics: TopicsService): void {
     },
     async ({ topic_id, new_parent_topic_id }) =>
       runInlineJsonTool(() =>
-        topics.reparentTopic(topic_id, new_parent_topic_id),
+        gateWriteTool(indexState, () =>
+          topics.reparentTopic(topic_id, new_parent_topic_id),
+        ),
       ),
   );
 }

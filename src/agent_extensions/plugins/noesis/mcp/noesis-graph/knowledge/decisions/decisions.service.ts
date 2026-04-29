@@ -250,6 +250,8 @@ export class DecisionsService {
       date: dateMap.get(d.id) ?? "",
       title: d.title,
       status: d.status,
+      is_stale: d.is_stale,
+      edited_by_user: d.edited_by_user,
     }));
     items.sort(byDateDesc);
     return { decisions: items };

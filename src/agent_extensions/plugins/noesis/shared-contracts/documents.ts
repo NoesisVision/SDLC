@@ -6,6 +6,18 @@ export const DocumentSchema = z.object({
   title: z.string(),
   date: z.string(),
   content: z.string(),
+  md_sha: z
+    .string()
+    .optional()
+    .describe(
+      "SHA-256 of the paired source .md when this sidecar was last authored. Drift indicates fragments may be out of sync with the text.",
+    ),
+  edited_by_user: z
+    .boolean()
+    .optional()
+    .describe(
+      "True when the user has manually changed this file since the last skill write.",
+    ),
 });
 export type Document = z.infer<typeof DocumentSchema>;
 
@@ -14,6 +26,12 @@ export const DocumentFragmentRefSchema = z.object({
   document_id: z.string(),
   start_offset: z.int(),
   end_offset: z.int(),
+  source_sha: z
+    .string()
+    .optional()
+    .describe(
+      "SHA-256 of the document sidecar JSON at ref-creation time. Used to detect stale references when fragments shift.",
+    ),
 });
 export type DocumentFragmentRef = z.infer<typeof DocumentFragmentRefSchema>;
 

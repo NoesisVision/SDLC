@@ -17,6 +17,8 @@ import type {
   BoundedContextMapEntry,
   ModelTarget,
 } from "./design-docs.repository.js";
+import type { IndexStateService } from "../../indexer/index-state.service.js";
+import { gateWriteTool } from "../../indexer/write-gate.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -25,11 +27,12 @@ import {
 export function registerDesignDocsTools(
   mcp: McpServer,
   service: DesignDocsService,
+  indexState: IndexStateService,
 ): void {
-  registerSaveDesignDoc(mcp, service);
+  registerSaveDesignDoc(mcp, service, indexState);
   registerReadDesignDoc(mcp, service);
   registerListDesignDocs(mcp, service);
-  registerDeleteDesignDoc(mcp, service);
+  registerDeleteDesignDoc(mcp, service, indexState);
   registerReadBoundedContextMap(mcp, service);
   registerReadModelForModules(mcp, service);
 }
@@ -37,6 +40,7 @@ export function registerDesignDocsTools(
 function registerSaveDesignDoc(
   mcp: McpServer,
   service: DesignDocsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "save_design_doc",
@@ -60,7 +64,9 @@ function registerSaveDesignDoc(
       },
     },
     async ({ path }) =>
-      runInlineJsonTool(() => service.saveDesignDocFromFile(path)),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => service.saveDesignDocFromFile(path)),
+      ),
   );
 }
 
@@ -112,6 +118,7 @@ function registerListDesignDocs(
 function registerDeleteDesignDoc(
   mcp: McpServer,
   service: DesignDocsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "delete_design_doc",
@@ -124,7 +131,9 @@ function registerDeleteDesignDoc(
       },
     },
     async ({ design_doc_id }) =>
-      runInlineJsonTool(() => service.deleteDesignDoc(design_doc_id)),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => service.deleteDesignDoc(design_doc_id)),
+      ),
   );
 }
 

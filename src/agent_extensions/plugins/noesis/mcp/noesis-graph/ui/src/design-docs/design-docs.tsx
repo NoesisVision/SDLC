@@ -44,6 +44,7 @@ import type {
 } from "../../../ui-contracts/design-docs/design-docs-data.js";
 import { MarkdownContent } from "../shared/markdown-content.js";
 import { InlineEdit } from "../shared/inline-edit.js";
+import { SyncBadges } from "../shared/sync-badges.js";
 import classes from "./design-docs.module.css";
 
 type ElementKind =
@@ -395,9 +396,12 @@ function DocListRow({
       className={`${classes.listItem} ${active ? classes.listItemActive : ""}`}
     >
       <Stack gap={4}>
-        <Text size="xs" c="dimmed">
-          {item.date === "" ? "—" : item.date}
-        </Text>
+        <Group gap={6} justify="space-between" wrap="nowrap">
+          <Text size="xs" c="dimmed">
+            {item.date === "" ? "—" : item.date}
+          </Text>
+          <SyncBadges edited_by_user={item.edited_by_user} />
+        </Group>
         <Text size="sm" fw={600} c="gray.1" lineClamp={2}>
           {item.title}
         </Text>

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import {
@@ -18,6 +18,10 @@ import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
 } from "../../../../shared-contracts/skills/analyze-conversation/output.js";
+import { conversationMdPath } from "../../../../shared-contracts/source-files.js";
+import { PROJECT_DIR } from "../../config/config.module.js";
+import { splitConversation } from "../../file-sync/conversation-splitter.js";
+import { FileLoaderService } from "../../file-sync/file-loader.service.js";
 import { DecisionsService } from "../decisions/decisions.service.js";
 import { DocumentsRepository } from "../documents/documents.repository.js";
 import { TopicsRepository } from "../topics/topics.repository.js";
@@ -34,6 +38,7 @@ export interface MergeConversationResult {
   topics_added: number;
   topics_updated: number;
   decisions_added: number;
+  files_written: number;
 }
 
 export interface ReviewBundle {
@@ -51,6 +56,8 @@ export class ConversationsService {
     private readonly topics: TopicsRepository,
     private readonly documents: DocumentsRepository,
     private readonly decisions: DecisionsService,
+    private readonly fileLoader: FileLoaderService,
+    @Inject(PROJECT_DIR) private readonly projectDir: string,
   ) {}
 
   async addConversationFromFile(path: string): Promise<{
@@ -155,8 +162,28 @@ export class ConversationsService {
       }
     }
 
+    const splitResult = splitConversation(output, {
+      projectDir: this.projectDir,
+      cleanedMdSourcePath: conversationMdPath(
+        this.projectDir,
+        conversation.conversation_id,
+      ),
+    });
+    const allPaths = [
+      splitResult.md_path,
+      splitResult.sidecar_path,
+      ...splitResult.topic_paths,
+      ...splitResult.decision_paths,
+    ];
+    for (const path of allPaths) {
+      await this.fileLoader.registerWritten(path);
+    }
+    await this.fileLoader.refreshStaleFlags();
+    const filesWritten =
+      2 + splitResult.topic_paths.length + splitResult.decision_paths.length;
+
     this.logger.log(
-      `Merged conversation ${conversation.conversation_id}: +${topicsAdded} topics, ~${topicsUpdated} updated, +${decisionsAdded} decisions`,
+      `Merged conversation ${conversation.conversation_id}: +${topicsAdded} topics, ~${topicsUpdated} updated, +${decisionsAdded} decisions, ${filesWritten} files written under noesis/`,
     );
 
     return {
@@ -164,6 +191,7 @@ export class ConversationsService {
       topics_added: topicsAdded,
       topics_updated: topicsUpdated,
       decisions_added: decisionsAdded,
+      files_written: filesWritten,
     };
   }
 

@@ -274,6 +274,7 @@ export const DesignDocSchema = z.object({
   actors: DesignedActorChangeSetSchema.optional(),
   boundedContexts: DesignedBoundedContextChangeSetSchema.optional(),
   qualityAttributes: DesignedQualityAttributeChangeSetSchema.optional(),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignDoc = z.infer<typeof DesignDocSchema>;
 
@@ -285,5 +286,6 @@ export const DesignDocOverviewSchema = z.object({
   actor_count: z.int(),
   bounded_context_count: z.int(),
   quality_attribute_count: z.int(),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignDocOverview = z.infer<typeof DesignDocOverviewSchema>;

@@ -16,6 +16,12 @@ export const IdeaUnitRefSchema = z.object({
   conversation_id: z.string(),
   turn_index: z.int(),
   idea_unit_index: z.int(),
+  source_sha: z
+    .string()
+    .optional()
+    .describe(
+      "SHA-256 of the conversation sidecar JSON at ref-creation time. Used to detect stale references when the sidecar changes.",
+    ),
 });
 export type IdeaUnitRef = z.infer<typeof IdeaUnitRefSchema>;
 
@@ -33,6 +39,18 @@ export const ConversationSchema = z.object({
   main_topic: z.string(),
   turns: z.array(TurnSchema),
   topics: z.array(z.lazy(() => TopicSchema)),
+  md_sha: z
+    .string()
+    .optional()
+    .describe(
+      "SHA-256 of the paired cleaned transcript .md when this sidecar was last authored. Drift indicates structured data may be out of sync with the text.",
+    ),
+  edited_by_user: z
+    .boolean()
+    .optional()
+    .describe(
+      "True when the user has manually changed this file since the last skill write. Skills/splitter set false on every write; the indexer flips this to true when it observes drift it didn't drive.",
+    ),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 

@@ -2,12 +2,15 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { mkdtempSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { DATA_DIR } from "../config/config.module.js";
+import { DATA_DIR, PROJECT_DIR } from "../config/config.module.js";
 import { DatabaseService } from "../database/database.service.js";
+import { FileLoaderService } from "../file-sync/file-loader.service.js";
+import { SourceFilesRepository } from "../file-sync/source-files.repository.js";
 import { ConversationsRepository } from "./conversations/conversations.repository.js";
 import { ConversationsService } from "./conversations/conversations.service.js";
 import { DecisionsRepository } from "./decisions/decisions.repository.js";
 import { DecisionsService } from "./decisions/decisions.service.js";
+import { DesignDocsRepository } from "./design-docs/design-docs.repository.js";
 import { DocumentsRepository } from "./documents/documents.repository.js";
 import { DocumentsService } from "./documents/documents.service.js";
 import { SchemaService } from "./schema/schema.service.js";
@@ -45,10 +48,15 @@ export async function createKnowledgeTestModule(): Promise<KnowledgeTestContext>
       DocumentsRepository,
       DecisionsService,
       DecisionsRepository,
+      DesignDocsRepository,
+      SourceFilesRepository,
+      FileLoaderService,
       { provide: DATA_DIR, useValue: tmpDir },
+      { provide: PROJECT_DIR, useValue: tmpDir },
     ],
   }).compile();
   await module.init();
+  await module.get(DesignDocsRepository).initSchema();
   return { module, db: module.get(DatabaseService), tmpDir };
 }
 

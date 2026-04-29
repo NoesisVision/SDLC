@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs
 import { join } from "path";
 import {
   buildCleanedMarkdown,
-  getCleanedPath,
   prepareConversation,
 } from "./prepare.js";
 import type { RawTranscript } from "./types.js";
@@ -19,17 +18,6 @@ function runScript(...args: string[]) {
     stderr: result.stderr.toString(),
   };
 }
-
-describe("getCleanedPath", () => {
-  test("appends -cleaned.md and replaces extension", () => {
-    expect(getCleanedPath("/foo/bar/transcript.md")).toBe(
-      "/foo/bar/transcript-cleaned.md",
-    );
-    expect(getCleanedPath("/foo/bar/notes.txt")).toBe(
-      "/foo/bar/notes-cleaned.md",
-    );
-  });
-});
 
 describe("buildCleanedMarkdown", () => {
   test("renders header comments and turns", () => {
@@ -55,7 +43,7 @@ describe("buildCleanedMarkdown", () => {
 });
 
 describe("prepareConversation", () => {
-  test("generates id, writes cleaned file next to source, initialises conversation.json", () => {
+  test("generates id, writes cleaned file under noesis/conversations/, initialises output.json", () => {
     const transcriptPath = join(tmpDir, "meeting.md");
     writeFileSync(
       transcriptPath,
@@ -73,11 +61,13 @@ I think we should start with the database schema. It needs careful planning.
       transcriptPath,
       "2026-04-25 10:00:00",
       "Database design",
-      { workingDirBase: tmpDir },
+      { workingDirBase: tmpDir, projectDir: tmpDir },
     );
 
     expect(result.status).toBe("Ok");
-    expect(result.cleaned_path).toBe(join(tmpDir, "meeting-cleaned.md"));
+    expect(result.cleaned_path).toBe(
+      join(tmpDir, "noesis", "conversations", `${result.conversation_id}.md`),
+    );
     expect(existsSync(result.cleaned_path)).toBe(true);
     expect(result.working_dir).toBe(
       join(tmpDir, "noesis:analyze-conversation", result.conversation_id),
@@ -106,9 +96,11 @@ Sentence one. Sentence two.
     );
     const first = prepareConversation(transcriptPath, "t", "m", {
       workingDirBase: tmpDir,
+      projectDir: tmpDir,
     });
     const second = prepareConversation(transcriptPath, "t", "m", {
       workingDirBase: tmpDir,
+      projectDir: tmpDir,
     });
     expect(second.conversation_id).toBe(first.conversation_id);
   });

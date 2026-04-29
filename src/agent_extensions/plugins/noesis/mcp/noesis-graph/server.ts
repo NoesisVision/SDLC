@@ -23,6 +23,7 @@ import { DesignDocsService } from "./knowledge/design-docs/design-docs.service.j
 import { registerDesignDocsTools } from "./knowledge/design-docs/design-docs.mcp.js";
 import { DocumentsService } from "./knowledge/documents/documents.service.js";
 import { registerDocumentsTools } from "./knowledge/documents/documents.mcp.js";
+import { IndexStateService } from "./indexer/index-state.service.js";
 import { TopicsService } from "./knowledge/topics/topics.service.js";
 import { registerTopicsTools } from "./knowledge/topics/topics.mcp.js";
 
@@ -68,12 +69,14 @@ export async function startServer(): Promise<void> {
     app.enableShutdownHooks();
     await app.listen(0);
 
+    const indexState = app.get(IndexStateService);
+
     registerScannerTools(mcp, app.get(ScannerService), app.get(InvocationsService));
-    registerTopicsTools(mcp, app.get(TopicsService));
-    registerDecisionsTools(mcp, app.get(DecisionsService));
-    registerConversationsTools(mcp, app.get(ConversationsService));
-    registerDocumentsTools(mcp, app.get(DocumentsService));
-    registerDesignDocsTools(mcp, app.get(DesignDocsService));
+    registerTopicsTools(mcp, app.get(TopicsService), indexState);
+    registerDecisionsTools(mcp, app.get(DecisionsService), indexState);
+    registerConversationsTools(mcp, app.get(ConversationsService), indexState);
+    registerDocumentsTools(mcp, app.get(DocumentsService), indexState);
+    registerDesignDocsTools(mcp, app.get(DesignDocsService), indexState);
     logger.log("MCP tools registered", "Bootstrap");
 
     const url = await app.getUrl();

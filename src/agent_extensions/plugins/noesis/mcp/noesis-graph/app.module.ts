@@ -3,6 +3,7 @@ import { ServeStaticModule } from "@nestjs/serve-static";
 import { resolve } from "path";
 import { ConfigModule } from "./config/config.module.js";
 import { DatabaseModule } from "./database/database.module.js";
+import { IndexerModule } from "./indexer/indexer.module.js";
 import { SerenaModule } from "./serena/serena.module.js";
 import { ScannerModule } from "./scanner/scanner.module.js";
 import { KnowledgeModule } from "./knowledge/knowledge.module.js";
@@ -20,6 +21,7 @@ export class AppModule {
           exclude: ["/api/{*path}"],
         }),
         DatabaseModule,
+        IndexerModule,
         SerenaModule,
         ScannerModule,
         KnowledgeModule,

@@ -26,7 +26,7 @@ import {
 } from "./node-ids.js";
 
 const SCHEMA_STATEMENTS = [
-  "CREATE NODE TABLE IF NOT EXISTS DesignDoc(id STRING, name STRING, description STRING, source_json STRING, date STRING, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS DesignDoc(id STRING, name STRING, description STRING, source_json STRING, date STRING, source_sha STRING, edited_by_user BOOLEAN, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedActor(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedBoundedContext(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedDomainModule(id STRING, name STRING, full_path STRING, description STRING, PRIMARY KEY(id))",
@@ -69,6 +69,7 @@ const DesignDocRowSchema = z.object({
   description: z.string(),
   source_json: z.string(),
   date: z.string(),
+  edited_by_user: z.boolean().nullable().optional(),
 });
 type DesignDocRow = z.infer<typeof DesignDocRowSchema>;
 
@@ -200,7 +201,7 @@ export class DesignDocsRepository {
 
   async listDesignDocs(): Promise<DesignDocOverview[]> {
     const rawRows = await this.db.query<DesignDocRow>(
-      "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date ORDER BY d.name",
+      "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date, d.edited_by_user AS edited_by_user ORDER BY d.name",
     );
     const rows = z.array(DesignDocRowSchema).parse(rawRows);
     const out: DesignDocOverview[] = [];
@@ -210,6 +211,7 @@ export class DesignDocsRepository {
         name: row.name,
         description: row.description,
         date: row.date,
+        edited_by_user: row.edited_by_user ?? false,
         actor_count: await this.countChildren(row.id, "DD_HAS_ACTOR", "DesignedActor"),
         bounded_context_count: await this.countChildren(
           row.id,

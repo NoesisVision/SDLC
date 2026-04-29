@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { readFile } from "fs/promises";
 import {
   DesignDocSchema,
@@ -13,6 +13,9 @@ import {
   type DesignedRule,
   type DesignedScenario,
 } from "../../../../shared-contracts/design-doc.js";
+import { PROJECT_DIR } from "../../config/config.module.js";
+import { splitDesignDoc } from "../../file-sync/design-doc-splitter.js";
+import { FileLoaderService } from "../../file-sync/file-loader.service.js";
 import type {
   DesignDocDetailData,
   DesignDocSourceData,
@@ -32,6 +35,7 @@ const BEHAVIOUR_USED_BB_DIAGRAM_THRESHOLD = 3;
 export interface SaveDesignDocResult {
   status: "Ok";
   design_doc_id: string;
+  canonical_path: string;
   warnings: string[];
 }
 
@@ -39,7 +43,11 @@ export interface SaveDesignDocResult {
 export class DesignDocsService implements OnModuleInit {
   private readonly logger = new Logger(DesignDocsService.name);
 
-  constructor(private readonly repository: DesignDocsRepository) {}
+  constructor(
+    private readonly repository: DesignDocsRepository,
+    private readonly fileLoader: FileLoaderService,
+    @Inject(PROJECT_DIR) private readonly projectDir: string
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.repository.initSchema();
@@ -50,9 +58,7 @@ export class DesignDocsService implements OnModuleInit {
     return { id: designDocId };
   }
 
-  async getDesignDocDetail(
-    designDocId: string,
-  ): Promise<DesignDocDetailData> {
+  async getDesignDocDetail(designDocId: string): Promise<DesignDocDetailData> {
     const overview = await this.findOverview(designDocId);
     if (overview === null) {
       throw new Error(`DesignDoc not found: ${designDocId}`);
@@ -78,6 +84,7 @@ export class DesignDocsService implements OnModuleInit {
         date: o.date,
         title: o.name,
         description: o.description,
+        edited_by_user: o.edited_by_user ?? false,
       }))
       .sort(byDateDesc);
     return { docs };
@@ -95,16 +102,14 @@ export class DesignDocsService implements OnModuleInit {
     return this.repository.readBoundedContextMap();
   }
 
-  async readModelForTargets(
-    targets: ModelTarget[],
-  ): Promise<DesignedBoundedContext[]> {
+  async readModelForTargets(targets: ModelTarget[]): Promise<DesignedBoundedContext[]> {
     return this.repository.readModelForTargets(targets);
   }
 
   async updateDesignDocElement(
     designDocId: string,
     path: ElementPathSegment[],
-    fields: { name?: string; description?: string },
+    fields: { name?: string; description?: string }
   ): Promise<{ ok: true }> {
     if (path.length === 0) {
       throw new Error("Element path must not be empty");
@@ -138,9 +143,7 @@ export class DesignDocsService implements OnModuleInit {
     } else {
       await this.repository.applyDesignDoc(source, date);
     }
-    this.logger.log(
-      `Updated DesignDoc ${designDocId} element ${describePath(path)}`,
-    );
+    this.logger.log(`Updated DesignDoc ${designDocId} element ${describePath(path)}`);
     return { ok: true };
   }
 
@@ -151,26 +154,42 @@ export class DesignDocsService implements OnModuleInit {
       throw new Error(formatQualityErrors(errors));
     }
     await this.repository.applyDesignDoc(doc, todayDate());
-    this.logger.log(`Saved DesignDoc ${doc.id} (${doc.name})`);
-    return { status: "Ok", design_doc_id: doc.id, warnings };
+    const split = splitDesignDoc(doc, {
+      projectDir: this.projectDir,
+      sourcePath: path,
+    });
+    await this.fileLoader.registerWritten(split.canonical_path);
+    this.logger.log(
+      `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${split.canonical_path}`
+    );
+    return {
+      status: "Ok",
+      design_doc_id: doc.id,
+      canonical_path: split.canonical_path,
+      warnings,
+    };
   }
 
-  async saveDesignDoc(
-    doc: DesignDoc,
-    date: string,
-  ): Promise<SaveDesignDocResult> {
+  async saveDesignDoc(doc: DesignDoc, date: string): Promise<SaveDesignDocResult> {
     const { errors, warnings } = validateDesignDocQuality(doc);
     if (errors.length > 0) {
       throw new Error(formatQualityErrors(errors));
     }
     await this.repository.applyDesignDoc(doc, date);
-    this.logger.log(`Saved DesignDoc ${doc.id} (${doc.name})`);
-    return { status: "Ok", design_doc_id: doc.id, warnings };
+    const split = splitDesignDoc(doc, { projectDir: this.projectDir });
+    await this.fileLoader.registerWritten(split.canonical_path);
+    this.logger.log(
+      `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${split.canonical_path}`
+    );
+    return {
+      status: "Ok",
+      design_doc_id: doc.id,
+      canonical_path: split.canonical_path,
+      warnings,
+    };
   }
 
-  private async findOverview(
-    designDocId: string,
-  ): Promise<DesignDocOverview | null> {
+  private async findOverview(designDocId: string): Promise<DesignDocOverview | null> {
     const overviews = await this.repository.listDesignDocs();
     return overviews.find((o) => o.id === designDocId) ?? null;
   }
@@ -182,10 +201,7 @@ export class DesignDocsService implements OnModuleInit {
   }
 }
 
-function byDateDesc(
-  a: { date: string },
-  b: { date: string },
-): number {
+function byDateDesc(a: { date: string }, b: { date: string }): number {
   if (a.date === b.date) return 0;
   if (a.date === "") return 1;
   if (b.date === "") return -1;
@@ -217,18 +233,15 @@ export function validateDesignDocQuality(doc: DesignDoc): QualityReport {
 function validateBoundedContext(
   bc: DesignedBoundedContext,
   mode: "added" | "modified",
-  report: QualityReport,
+  report: QualityReport
 ): void {
   if (mode === "added") {
     const directBlockCount = bc.buildingBlocks?.added.length ?? 0;
     const moduleCount = bc.modules?.added.length ?? 0;
-    if (
-      directBlockCount > BC_BUILDING_BLOCKS_FLAT_THRESHOLD &&
-      moduleCount === 0
-    ) {
+    if (directBlockCount > BC_BUILDING_BLOCKS_FLAT_THRESHOLD && moduleCount === 0) {
       report.warnings.push(
         `Bounded Context '${bc.name}' has ${directBlockCount} building blocks and no modules — ` +
-          `consider grouping them into 3–7 modules along the natural cohesion axes.`,
+          `consider grouping them into 3–7 modules along the natural cohesion axes.`
       );
     }
   }
@@ -250,7 +263,7 @@ function validateModule(
   bcName: string,
   m: DesignedDomainModule,
   _mode: "added" | "modified",
-  report: QualityReport,
+  report: QualityReport
 ): void {
   for (const bb of m.buildingBlocks?.added ?? []) {
     validateBuildingBlock(bcName, m.name, bb, "added", report);
@@ -265,7 +278,7 @@ function validateBuildingBlock(
   moduleName: string | null,
   bb: DesignedBuildingBlock,
   _mode: "added" | "modified",
-  report: QualityReport,
+  report: QualityReport
 ): void {
   const blockPath = formatBlockPath(bcName, moduleName, bb.name);
   const ruleNamesAtBB = new Set<string>();
@@ -292,7 +305,7 @@ function flagDualLevelRules(
   bbName: string,
   bh: DesignedBehaviour,
   ruleNamesAtBB: Set<string>,
-  report: QualityReport,
+  report: QualityReport
 ): void {
   const behaviourRuleNames: string[] = [];
   for (const r of bh.rules?.added ?? []) behaviourRuleNames.push(r.name);
@@ -300,7 +313,7 @@ function flagDualLevelRules(
   for (const ruleName of behaviourRuleNames) {
     if (ruleNamesAtBB.has(ruleName)) {
       report.errors.push(
-        `Rule '${ruleName}' is attached at both Building Block '${bbName}' and Behaviour '${bh.name}' (path '${blockPath}.${bh.name}') — attach at exactly one level.`,
+        `Rule '${ruleName}' is attached at both Building Block '${bbName}' and Behaviour '${bh.name}' (path '${blockPath}.${bh.name}') — attach at exactly one level.`
       );
     }
   }
@@ -310,27 +323,24 @@ function validateBehaviour(
   blockPath: string,
   bh: DesignedBehaviour,
   mode: "added" | "modified",
-  report: QualityReport,
+  report: QualityReport
 ): void {
   const behaviourPath = `${blockPath}.${bh.name}`;
   if (mode === "added") {
     if (bh.description === null || bh.description.length === 0) {
       report.errors.push(
         `Behaviour '${behaviourPath}' is missing description ` +
-          `(required ≥${BEHAVIOUR_DESCRIPTION_MIN} chars for added behaviours).`,
+          `(required ≥${BEHAVIOUR_DESCRIPTION_MIN} chars for added behaviours).`
       );
     } else if (bh.description.length < BEHAVIOUR_DESCRIPTION_MIN) {
       report.errors.push(
         `Behaviour '${behaviourPath}' description is ${bh.description.length} chars ` +
-          `(need ≥${BEHAVIOUR_DESCRIPTION_MIN}). Cover Input / Validation / numbered Steps / Output.`,
+          `(need ≥${BEHAVIOUR_DESCRIPTION_MIN}). Cover Input / Validation / numbered Steps / Output.`
       );
-    } else if (
-      shouldHaveDiagram(bh) &&
-      !bh.description.includes("```mermaid")
-    ) {
+    } else if (shouldHaveDiagram(bh) && !bh.description.includes("```mermaid")) {
       report.warnings.push(
         `Behaviour '${behaviourPath}' is an application_service or uses ≥${BEHAVIOUR_USED_BB_DIAGRAM_THRESHOLD} ` +
-          `building blocks — embed a \`\`\`mermaid sequence diagram in description for clarity.`,
+          `building blocks — embed a \`\`\`mermaid sequence diagram in description for clarity.`
       );
     }
   } else if (
@@ -340,7 +350,7 @@ function validateBehaviour(
   ) {
     report.errors.push(
       `Behaviour '${behaviourPath}' modified description is ${bh.description.length} chars ` +
-        `(need ≥${BEHAVIOUR_DESCRIPTION_MIN}).`,
+        `(need ≥${BEHAVIOUR_DESCRIPTION_MIN}).`
     );
   }
   for (const r of bh.rules?.added ?? []) {
@@ -355,27 +365,25 @@ function validateRule(
   parentPath: string,
   r: DesignedRule,
   mode: "added" | "modified",
-  report: QualityReport,
+  report: QualityReport
 ): void {
   const rulePath = `${parentPath}#${r.name}`;
   const tautological =
-    r.description !== null &&
-    r.description.length > 0 &&
-    isTautology(r.name, r.description);
+    r.description !== null && r.description.length > 0 && isTautology(r.name, r.description);
   if (mode === "added") {
     if (r.description === null || r.description.length === 0) {
       report.errors.push(
         `Rule '${rulePath}' is missing description ` +
-          `(required ≥${RULE_DESCRIPTION_MIN} chars for added rules).`,
+          `(required ≥${RULE_DESCRIPTION_MIN} chars for added rules).`
       );
     } else if (r.description.length < RULE_DESCRIPTION_MIN) {
       report.errors.push(
         `Rule '${rulePath}' description is ${r.description.length} chars ` +
-          `(need ≥${RULE_DESCRIPTION_MIN}). Cover Trigger / Pre / Algorithm / Post / Edge cases.`,
+          `(need ≥${RULE_DESCRIPTION_MIN}). Cover Trigger / Pre / Algorithm / Post / Edge cases.`
       );
     } else if (tautological) {
       report.errors.push(
-        `Rule '${rulePath}' description is a tautology — it paraphrases the rule name without an algorithm.`,
+        `Rule '${rulePath}' description is a tautology — it paraphrases the rule name without an algorithm.`
       );
     }
   } else if (
@@ -385,7 +393,7 @@ function validateRule(
   ) {
     report.errors.push(
       `Rule '${rulePath}' modified description is ${r.description.length} chars ` +
-        `(need ≥${RULE_DESCRIPTION_MIN}).`,
+        `(need ≥${RULE_DESCRIPTION_MIN}).`
     );
   }
 }
@@ -394,8 +402,7 @@ function shouldHaveDiagram(bh: DesignedBehaviour): boolean {
   if (bh.type === undefined || bh.type === null) return false;
   // type is the Behaviour message kind; the heuristic uses building-block coupling.
   const usedCount = bh.usedBuildingBlocks?.added.length ?? 0;
-  if (usedCount >= BEHAVIOUR_USED_BB_DIAGRAM_THRESHOLD) return true;
-  return false;
+  return usedCount >= BEHAVIOUR_USED_BB_DIAGRAM_THRESHOLD;
 }
 
 function isTautology(name: string, description: string): boolean {
@@ -407,45 +414,40 @@ function isTautology(name: string, description: string): boolean {
   const n = normalize(name);
   const d = normalize(description);
   if (n.length === 0 || d.length === 0) return false;
-  return d === n || d.startsWith(`${n} `) || d.endsWith(` ${n}`) || d.includes(n) && d.length < n.length + 20;
+  return (
+    d === n ||
+    d.startsWith(`${n} `) ||
+    d.endsWith(` ${n}`) ||
+    (d.includes(n) && d.length < n.length + 20)
+  );
 }
 
-function formatBlockPath(
-  bcName: string,
-  moduleName: string | null,
-  bbName: string,
-): string {
+function formatBlockPath(bcName: string, moduleName: string | null, bbName: string): string {
   const mid = moduleName === null ? "" : `${moduleName}/`;
   return `${bcName}/${mid}${bbName}`;
 }
 
-function validateRemovedNotReferenced(
-  doc: DesignDoc,
-  report: QualityReport,
-): void {
+function validateRemovedNotReferenced(doc: DesignDoc, report: QualityReport): void {
   const removedBBNames = collectRemovedBuildingBlockNames(doc);
   if (removedBBNames.size === 0) return;
   for (const ref of collectBuildingBlockReferences(doc)) {
     if (removedBBNames.has(ref.name)) {
       report.errors.push(
         `Building Block '${ref.name}' is listed in 'removed' but still referenced as ${ref.kind} at '${ref.location}'. ` +
-          `Update or drop the reference before saving.`,
+          `Update or drop the reference before saving.`
       );
     }
   }
 }
 
-function validateImplementsResolution(
-  doc: DesignDoc,
-  report: QualityReport,
-): void {
+function validateImplementsResolution(doc: DesignDoc, report: QualityReport): void {
   const declared = collectDeclaredBuildingBlockNames(doc);
   for (const bb of iterateBuildingBlocks(doc)) {
     for (const baseName of bb.bb.implements ?? []) {
       if (!declared.has(baseName)) {
         report.warnings.push(
           `Building Block '${bb.location}' implements '${baseName}' which is not declared in this DesignDoc — ` +
-            `verify it exists in the prior model, or add it as a Building Block in this iteration.`,
+            `verify it exists in the prior model, or add it as a Building Block in this iteration.`
         );
       }
     }
@@ -470,10 +472,7 @@ function collectRemovedBuildingBlockNames(doc: DesignDoc): Set<string> {
     ...(doc.boundedContexts?.modified ?? []),
   ]) {
     for (const n of bc.buildingBlocks?.removed ?? []) names.add(n);
-    for (const m of [
-      ...(bc.modules?.added ?? []),
-      ...(bc.modules?.modified ?? []),
-    ]) {
+    for (const m of [...(bc.modules?.added ?? []), ...(bc.modules?.modified ?? [])]) {
       for (const n of m.buildingBlocks?.removed ?? []) names.add(n);
     }
   }
@@ -499,10 +498,7 @@ function* iterateBuildingBlocks(doc: DesignDoc): Generator<BuildingBlockAt> {
     ]) {
       yield { bb, location: formatBlockPath(bc.name, null, bb.name) };
     }
-    for (const m of [
-      ...(bc.modules?.added ?? []),
-      ...(bc.modules?.modified ?? []),
-    ]) {
+    for (const m of [...(bc.modules?.added ?? []), ...(bc.modules?.modified ?? [])]) {
       for (const bb of [
         ...(m.buildingBlocks?.added ?? []),
         ...(m.buildingBlocks?.modified ?? []),
@@ -513,9 +509,7 @@ function* iterateBuildingBlocks(doc: DesignDoc): Generator<BuildingBlockAt> {
   }
 }
 
-function* collectBuildingBlockReferences(
-  doc: DesignDoc,
-): Generator<BuildingBlockReference> {
+function* collectBuildingBlockReferences(doc: DesignDoc): Generator<BuildingBlockReference> {
   for (const entry of iterateBuildingBlocks(doc)) {
     for (const baseName of entry.bb.implements ?? []) {
       yield { name: baseName, kind: "implements", location: entry.location };
@@ -595,10 +589,7 @@ function describePath(path: ElementPathSegment[]): string {
   return path.map((p) => `${p.kind}:${p.name}`).join(" / ");
 }
 
-function locateElement(
-  source: DesignDoc,
-  path: ElementPathSegment[],
-): LocatedElement | null {
+function locateElement(source: DesignDoc, path: ElementPathSegment[]): LocatedElement | null {
   if (path.length === 0) return null;
   const [head, ...rest] = path;
   switch (head.kind) {
@@ -625,7 +616,7 @@ function locateElement(
 
 function locateInBoundedContext(
   bc: DesignedBoundedContext,
-  path: ElementPathSegment[],
+  path: ElementPathSegment[]
 ): LocatedElement | null {
   const [head, ...rest] = path;
   switch (head.kind) {
@@ -648,7 +639,7 @@ function locateInBoundedContext(
 
 function locateInModule(
   m: DesignedDomainModule,
-  path: ElementPathSegment[],
+  path: ElementPathSegment[]
 ): LocatedElement | null {
   const [head, ...rest] = path;
   if (head.kind !== "buildingBlock") return null;
@@ -660,7 +651,7 @@ function locateInModule(
 
 function locateInBuildingBlock(
   bb: DesignedBuildingBlock,
-  path: ElementPathSegment[],
+  path: ElementPathSegment[]
 ): LocatedElement | null {
   const [head, ...rest] = path;
   switch (head.kind) {
@@ -687,7 +678,7 @@ function locateInBuildingBlock(
 
 function locateInBehavior(
   bh: DesignedBehaviour,
-  path: ElementPathSegment[],
+  path: ElementPathSegment[]
 ): LocatedElement | null {
   if (path.length !== 1) return null;
   const seg = path[0];
@@ -707,12 +698,8 @@ function locateInBehavior(
 
 function findInChangeSet<T extends { name: string }>(
   cs: { added: T[]; modified: T[]; removed: string[] } | undefined,
-  name: string,
+  name: string
 ): T | null {
   if (cs === undefined) return null;
-  return (
-    cs.added.find((x) => x.name === name) ??
-    cs.modified.find((x) => x.name === name) ??
-    null
-  );
+  return cs.added.find((x) => x.name === name) ?? cs.modified.find((x) => x.name === name) ?? null;
 }

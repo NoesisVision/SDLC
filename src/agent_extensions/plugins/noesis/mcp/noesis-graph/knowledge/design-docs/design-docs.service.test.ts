@@ -14,7 +14,10 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { DatabaseService } from "../../database/database.service.js";
-import { DATA_DIR } from "../../config/config.module.js";
+import { DATA_DIR, PROJECT_DIR } from "../../config/config.module.js";
+import { FileLoaderService } from "../../file-sync/file-loader.service.js";
+import { SourceFilesRepository } from "../../file-sync/source-files.repository.js";
+import { SchemaService } from "../schema/schema.service.js";
 import { DesignDocsRepository } from "./design-docs.repository.js";
 import { DesignDocsService } from "./design-docs.service.js";
 
@@ -56,9 +59,13 @@ describe("DesignDocsService", () => {
     module = await Test.createTestingModule({
       providers: [
         DatabaseService,
+        SchemaService,
         DesignDocsRepository,
         DesignDocsService,
+        SourceFilesRepository,
+        FileLoaderService,
         { provide: DATA_DIR, useValue: tmpDir },
+        { provide: PROJECT_DIR, useValue: tmpDir },
       ],
     }).compile();
     await module.init();

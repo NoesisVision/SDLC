@@ -22,6 +22,7 @@ import {
 } from "@tabler/icons-react";
 import { MarkdownContent } from "../shared/markdown-content.js";
 import { InlineEdit } from "../shared/inline-edit.js";
+import { SyncBadges } from "../shared/sync-badges.js";
 import {
   categoryColor,
   groupIdeaUnitsByTurn,
@@ -281,9 +282,15 @@ function TopicTreeRoot({
         }
         label={topic.title}
         badge={
-          <Badge size="xs" variant="light" color="noesisIndigo" radius="xl">
-            Topic
-          </Badge>
+          <Group gap={4}>
+            <Badge size="xs" variant="light" color="noesisIndigo" radius="xl">
+              Topic
+            </Badge>
+            <SyncBadges
+              is_stale={topic.is_stale}
+              edited_by_user={topic.edited_by_user}
+            />
+          </Group>
         }
         level={0}
       />
@@ -335,7 +342,12 @@ function TopicTreeBranch({
           </ThemeIcon>
         }
         label={topic.title}
-        badge={null}
+        badge={
+          <SyncBadges
+            is_stale={topic.is_stale}
+            edited_by_user={topic.edited_by_user}
+          />
+        }
         level={level}
       />
       {hasChildren && (

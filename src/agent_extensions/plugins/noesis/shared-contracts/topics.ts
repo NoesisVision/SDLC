@@ -34,6 +34,7 @@ export const DecisionSchema = z
     context: DecisionContextSchema,
     decision: DecisionOptionSchema,
     alternative_options: z.array(DecisionOptionSchema),
+    edited_by_user: z.boolean().optional(),
   })
   .superRefine((decision, ctx) => {
     const max = decision.referenced_items.length;
@@ -95,6 +96,7 @@ export const TopicSchema = z.object({
   decisions: z.array(DecisionSchema).default(() => []),
   reviewed: z.boolean().default(false),
   decisions_extracted: z.boolean().default(false),
+  edited_by_user: z.boolean().optional(),
 });
 export type Topic = z.infer<typeof TopicSchema>;
 

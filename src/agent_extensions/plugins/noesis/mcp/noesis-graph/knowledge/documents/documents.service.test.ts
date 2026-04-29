@@ -7,10 +7,11 @@ import {
   afterAll,
   beforeEach,
 } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { writeFile } from "fs/promises";
-import { join } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
+import { documentMdPath } from "../../../../shared-contracts/source-files.js";
 import {
   clearGraph,
   countNodes,
@@ -213,15 +214,19 @@ describe("DocumentsService", () => {
           join(workingDir, "output.json"),
           JSON.stringify(output),
         );
+        const sourceMd = documentMdPath(ctx.tmpDir, "doc-merge-1");
+        mkdirSync(dirname(sourceMd), { recursive: true });
+        writeFileSync(sourceMd, "<!-- document_id: doc-merge-1 -->\n# Test\n");
 
         const result = await documents.mergeDocument(workingDir);
-        expect(result).toEqual({
+        expect(result).toMatchObject({
           document_id: "doc-merge-1",
           topics_added: 1,
           topics_updated: 0,
           decisions_added: 1,
           decision_attachments: 1,
         });
+        expect(result.files_written).toBeGreaterThan(0);
 
         expect(await countNodes(ctx.db, "Document")).toBe(1);
         expect(await countNodes(ctx.db, "DocumentFragment")).toBe(2);

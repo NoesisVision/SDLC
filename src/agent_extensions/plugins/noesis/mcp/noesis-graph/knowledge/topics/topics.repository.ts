@@ -47,6 +47,8 @@ export interface TopicWithParent {
   short_summary: string;
   long_summary: string;
   parent_id: string | null;
+  is_stale: boolean;
+  edited_by_user: boolean;
 }
 
 export interface TopicSummaryRow {
@@ -178,14 +180,25 @@ export class TopicsRepository {
       short_summary: z.string(),
       long_summary: z.string(),
       parent_id: z.string().nullable(),
+      is_stale: z.boolean().nullable(),
+      edited_by_user: z.boolean().nullable(),
     });
     const rawRows = await this.db.query<unknown>(
       "MATCH (t:Topic) " +
         "OPTIONAL MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(t) " +
-        "RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary, p.id AS parent_id " +
+        "RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary, p.id AS parent_id, t.is_stale AS is_stale, t.edited_by_user AS edited_by_user " +
         "ORDER BY t.title",
     );
-    return z.array(RowSchema).parse(rawRows);
+    const rows = z.array(RowSchema).parse(rawRows);
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      short_summary: r.short_summary,
+      long_summary: r.long_summary,
+      parent_id: r.parent_id,
+      is_stale: r.is_stale ?? false,
+      edited_by_user: r.edited_by_user ?? false,
+    }));
   }
 
   async listRootTopics(): Promise<TopicOverview[]> {

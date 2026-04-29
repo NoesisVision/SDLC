@@ -1,5 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { IndexStateService } from "../../indexer/index-state.service.js";
+import { gateWriteTool } from "../../indexer/write-gate.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -12,10 +14,11 @@ import {
 export function registerConversationsTools(
   mcp: McpServer,
   conversations: ConversationsService,
+  indexState: IndexStateService,
 ): void {
-  registerAddConversation(mcp, conversations);
+  registerAddConversation(mcp, conversations, indexState);
   registerHasConversation(mcp, conversations);
-  registerMergeConversation(mcp, conversations);
+  registerMergeConversation(mcp, conversations, indexState);
   registerPrepareReviewBundle(mcp, conversations);
   registerValidateOutput(mcp, conversations);
 }
@@ -23,6 +26,7 @@ export function registerConversationsTools(
 function registerAddConversation(
   mcp: McpServer,
   conversations: ConversationsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "add_conversation",
@@ -39,7 +43,9 @@ function registerAddConversation(
       },
     },
     async ({ path }) =>
-      runInlineJsonTool(() => conversations.addConversationFromFile(path)),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => conversations.addConversationFromFile(path)),
+      ),
   );
 }
 
@@ -67,6 +73,7 @@ function registerHasConversation(
 function registerMergeConversation(
   mcp: McpServer,
   conversations: ConversationsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "merge_conversation",
@@ -87,7 +94,9 @@ function registerMergeConversation(
       },
     },
     async ({ working_dir }) =>
-      runInlineJsonTool(() => conversations.mergeConversation(working_dir)),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => conversations.mergeConversation(working_dir)),
+      ),
   );
 }
 

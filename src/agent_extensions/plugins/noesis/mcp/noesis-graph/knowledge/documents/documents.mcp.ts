@@ -1,5 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { IndexStateService } from "../../indexer/index-state.service.js";
+import { gateWriteTool } from "../../indexer/write-gate.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -12,17 +14,19 @@ import {
 export function registerDocumentsTools(
   mcp: McpServer,
   documents: DocumentsService,
+  indexState: IndexStateService,
 ): void {
-  registerAddDocument(mcp, documents);
+  registerAddDocument(mcp, documents, indexState);
   registerHasDocument(mcp, documents);
   registerGetTopicForDocumentReview(mcp, documents);
   registerListUnreviewedTopicsForDocument(mcp, documents);
-  registerMergeDocument(mcp, documents);
+  registerMergeDocument(mcp, documents, indexState);
 }
 
 function registerAddDocument(
   mcp: McpServer,
   documents: DocumentsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "add_document",
@@ -39,7 +43,9 @@ function registerAddDocument(
       },
     },
     async ({ path }) =>
-      runInlineJsonTool(() => documents.addDocumentFromFile(path)),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => documents.addDocumentFromFile(path)),
+      ),
   );
 }
 
@@ -133,6 +139,7 @@ function registerHasDocument(
 function registerMergeDocument(
   mcp: McpServer,
   documents: DocumentsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "merge_document",
@@ -154,7 +161,9 @@ function registerMergeDocument(
       },
     },
     async ({ working_dir }) =>
-      runInlineJsonTool(() => documents.mergeDocument(working_dir)),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => documents.mergeDocument(working_dir)),
+      ),
   );
 }
 

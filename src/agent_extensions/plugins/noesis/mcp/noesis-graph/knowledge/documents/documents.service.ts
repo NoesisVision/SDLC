@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import {
@@ -18,6 +18,10 @@ import {
 } from "../../../../shared-contracts/documents.js";
 import { type TopicItem } from "../../../../shared-contracts/topics.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
+import { documentMdPath } from "../../../../shared-contracts/source-files.js";
+import { PROJECT_DIR } from "../../config/config.module.js";
+import { splitDocument } from "../../file-sync/document-splitter.js";
+import { FileLoaderService } from "../../file-sync/file-loader.service.js";
 import {
   DecisionsService,
   type DecisionSupportSlot,
@@ -31,6 +35,7 @@ export interface MergeDocumentResult {
   topics_updated: number;
   decisions_added: number;
   decision_attachments: number;
+  files_written: number;
 }
 
 export interface TopicForDocumentReview {
@@ -49,6 +54,8 @@ export class DocumentsService {
     private readonly repository: DocumentsRepository,
     private readonly topics: TopicsRepository,
     private readonly decisions: DecisionsService,
+    private readonly fileLoader: FileLoaderService,
+    @Inject(PROJECT_DIR) private readonly projectDir: string,
   ) {}
 
   async addDocumentFromFile(path: string): Promise<{ id: string }> {
@@ -240,8 +247,25 @@ export class DocumentsService {
       attachmentsApplied++;
     }
 
+    const splitResult = splitDocument(output, {
+      projectDir: this.projectDir,
+      sourceMdPath: documentMdPath(this.projectDir, document.id),
+    });
+    const allPaths = [
+      splitResult.md_path,
+      splitResult.sidecar_path,
+      ...splitResult.topic_paths,
+      ...splitResult.decision_paths,
+    ];
+    for (const path of allPaths) {
+      await this.fileLoader.registerWritten(path);
+    }
+    await this.fileLoader.refreshStaleFlags();
+    const filesWritten =
+      2 + splitResult.topic_paths.length + splitResult.decision_paths.length;
+
     this.logger.log(
-      `Merged document ${document.id}: +${topicsAdded} topics, ~${topicsUpdated} updated, +${decisionsAdded} decisions, +${attachmentsApplied} attachments`,
+      `Merged document ${document.id}: +${topicsAdded} topics, ~${topicsUpdated} updated, +${decisionsAdded} decisions, +${attachmentsApplied} attachments, ${filesWritten} files written under noesis/`,
     );
 
     return {
@@ -250,6 +274,7 @@ export class DocumentsService {
       topics_updated: topicsUpdated,
       decisions_added: decisionsAdded,
       decision_attachments: attachmentsApplied,
+      files_written: filesWritten,
     };
   }
 

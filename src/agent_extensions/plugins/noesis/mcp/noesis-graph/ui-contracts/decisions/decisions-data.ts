@@ -8,6 +8,8 @@ export interface DecisionListItem {
   date: string;
   title: string;
   status: string;
+  is_stale?: boolean;
+  edited_by_user?: boolean;
 }
 
 export interface DecisionsPageData {

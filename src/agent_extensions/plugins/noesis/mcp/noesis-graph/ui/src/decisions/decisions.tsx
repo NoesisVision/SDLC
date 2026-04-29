@@ -20,6 +20,7 @@ import {
 } from "@tabler/icons-react";
 import { MarkdownContent } from "../shared/markdown-content.js";
 import { InlineEdit } from "../shared/inline-edit.js";
+import { SyncBadges } from "../shared/sync-badges.js";
 import {
   categoryColor,
   groupIdeaUnitsByTurn,
@@ -226,7 +227,13 @@ function DecisionListRow({
           <Text size="xs" c="dimmed">
             {decision.date === "" ? "—" : decision.date}
           </Text>
-          <StatusBadge status={decision.status} />
+          <Group gap={4}>
+            <SyncBadges
+              is_stale={decision.is_stale}
+              edited_by_user={decision.edited_by_user}
+            />
+            <StatusBadge status={decision.status} />
+          </Group>
         </Group>
         <Text size="sm" fw={600} c="gray.1" lineClamp={2}>
           {decision.title}

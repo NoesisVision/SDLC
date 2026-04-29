@@ -16,7 +16,7 @@ function runScript(...args: string[]) {
 }
 
 describe("prepareDocument", () => {
-  test("generates id, leaves source untouched, writes output.json with raw content", () => {
+  test("generates id, copies source to noesis/documents/, leaves user-provided source untouched", () => {
     const docPath = join(tmpDir, "spec.md");
     const sourceContent = `# Spec
 
@@ -36,6 +36,7 @@ Another paragraph.
       designDocId: null,
       designDocTitle: "auth-system",
       workingDirBase: tmpDir,
+      projectDir: tmpDir,
     });
 
     expect(result.status).toBe("Ok");
@@ -44,6 +45,13 @@ Another paragraph.
     );
     expect(existsSync(result.output_path)).toBe(true);
     expect(existsSync(result.section_tree_path)).toBe(true);
+    expect(result.source_md_path).toBe(
+      join(tmpDir, "noesis", "documents", `${result.document_id}.md`),
+    );
+    expect(existsSync(result.source_md_path)).toBe(true);
+    expect(readFileSync(result.source_md_path, "utf-8")).toContain(
+      `<!-- document_id: ${result.document_id} -->`,
+    );
     expect(result.num_fragments).toBeGreaterThan(0);
     expect(result.design_doc_title).toBe("auth-system");
     expect(existsSync(join(tmpDir, "spec-cleaned.md"))).toBe(false);
@@ -66,6 +74,7 @@ Another paragraph.
       designDocId: null,
       designDocTitle: null,
       workingDirBase: tmpDir,
+      projectDir: tmpDir,
     });
     expect(result.document_id).toBe("pinned-id");
   });
@@ -77,11 +86,13 @@ Another paragraph.
       designDocId: null,
       designDocTitle: null,
       workingDirBase: tmpDir,
+      projectDir: tmpDir,
     });
     const second = prepareDocument(docPath, "Rerun", "2026-04-25", {
       designDocId: null,
       designDocTitle: null,
       workingDirBase: tmpDir,
+      projectDir: tmpDir,
     });
     expect(first.document_id).not.toBe(second.document_id);
   });

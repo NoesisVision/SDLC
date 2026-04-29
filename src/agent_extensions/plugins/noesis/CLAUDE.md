@@ -22,3 +22,18 @@ Layered on `src/agent_extensions/CLAUDE.md` and `SDLC/CLAUDE.md`. Only the noesi
 ## Boundaries
 
 - **No LLM in the MCP server**: `noesis-graph` has no Anthropic API access. All semantic reasoning (Goldilocks topic search, summarisation, decision/design extraction) happens in the agent driving the skill. The server provides deterministic data access only.
+
+## File-first persistence
+
+- **Source of truth lives on disk** under `<projectDir>/noesis/`:
+  - `conversations/<conversation_id>.{md,json}` — cleaned transcript (md) + sidecar (turns/idea_units).
+  - `documents/<document_id>.{md,json}` — source markdown + sidecar (fragments + section tree).
+  - `topics/<topic_id>.json` — flat topic file with `parent_id`, items carry `source_sha`.
+  - `decisions/<decision_id>.json` — decision file with `topic_id`, referenced items carry `source_sha`.
+  - `design-docs/<design_doc_id>.json` — design doc.
+- The graph DB is a **cache rebuilt from these files**. Skills produce the same output they always have; the MCP server splits that output into the canonical files (in `mcp/noesis-graph/file-sync/`) on `merge_conversation` / `merge_document` / `save_design_doc`.
+- **Every json file carries `edited_by_user: boolean`**. Splitter writes `false` on every skill-driven write. The indexer flips it to `true` when it sees on-disk content drift it didn't drive (and patches the file in place). When `true`, the splitter skips the file on the next merge — the user's content wins until they reset the flag.
+- **Cross-file references store `source_sha`** (sha-256 of the referenced file at ref-creation time). Mismatches are how the indexer detects stale dependents.
+- **Indexer + loader**: `mcp/noesis-graph/indexer/` boots on `OnApplicationBootstrap`, scans `<projectDir>/noesis/`, and watches it afterwards. Each discovered file flows through `mcp/noesis-graph/file-sync/file-loader.service.ts`, which upserts the entity row, records the file in the `SourceFile` registry, and detects user edits (file sha drifts from the registry sha → flips `edited_by_user=true` and stamps the file). The merge tools call `splitter` then `loader.registerWritten` for every produced path, so the watcher's later event matches the registry and is recognised as a skill write rather than a user edit. After every pass the loader walks topics/decisions and recomputes `is_stale` from cross-ref `source_sha` vs current `SourceFile.sha`. State exposed at `GET /api/health/index` and rendered in the UI header.
+- **Conversation IDs are content-addressed**: derived from a sha-256 of the source transcript. Same source → same id across reruns; no legacy `<source>-cleaned.md` file is required for id stability.
+- **Write gate**: every write MCP tool wraps its call in `gateWriteTool(indexState, …)` so writes return `{ status: "NotReady" }` until the indexer is consistent. Read tools are never gated.

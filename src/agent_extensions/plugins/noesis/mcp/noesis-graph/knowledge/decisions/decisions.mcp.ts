@@ -5,6 +5,8 @@ import {
   TopicItemSchema,
 } from "../../../../shared-contracts/topics.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
+import type { IndexStateService } from "../../indexer/index-state.service.js";
+import { gateWriteTool } from "../../indexer/write-gate.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -28,9 +30,10 @@ const SlotSchema = z
 export function registerDecisionsTools(
   mcp: McpServer,
   decisions: DecisionsService,
+  indexState: IndexStateService,
 ): void {
-  registerAddDecision(mcp, decisions);
-  registerAddItemsToDecision(mcp, decisions);
+  registerAddDecision(mcp, decisions, indexState);
+  registerAddItemsToDecision(mcp, decisions, indexState);
   registerListDecisions(mcp, decisions);
   registerReadDecision(mcp, decisions);
   registerListDecisionsForSources(mcp, decisions);
@@ -39,6 +42,7 @@ export function registerDecisionsTools(
 function registerAddDecision(
   mcp: McpServer,
   decisions: DecisionsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "add_decision",
@@ -57,13 +61,16 @@ function registerAddDecision(
       },
     },
     async ({ topic_id, decision }) =>
-      runInlineJsonTool(() => decisions.addDecision(topic_id, decision)),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => decisions.addDecision(topic_id, decision)),
+      ),
   );
 }
 
 function registerAddItemsToDecision(
   mcp: McpServer,
   decisions: DecisionsService,
+  indexState: IndexStateService,
 ): void {
   mcp.registerTool(
     "add_items_to_decision",
@@ -88,10 +95,12 @@ function registerAddItemsToDecision(
       },
     },
     async ({ decision_id, slot, alternative_index, items }) =>
-      runInlineJsonTool(() => {
-        const resolvedSlot = resolveSlot(slot, alternative_index);
-        return decisions.addItemsToDecisionSlot(decision_id, resolvedSlot, items);
-      }),
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () => {
+          const resolvedSlot = resolveSlot(slot, alternative_index);
+          return decisions.addItemsToDecisionSlot(decision_id, resolvedSlot, items);
+        }),
+      ),
   );
 }
 
