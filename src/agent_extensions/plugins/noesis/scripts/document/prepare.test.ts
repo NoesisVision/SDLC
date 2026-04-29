@@ -40,7 +40,7 @@ Another paragraph.
 
     expect(result.status).toBe("Ok");
     expect(result.working_dir).toBe(
-      join(tmpDir, `noesis-doc-${result.document_id}`),
+      join(tmpDir, "noesis:analyze-design-draft", result.document_id),
     );
     expect(existsSync(result.output_path)).toBe(true);
     expect(existsSync(result.section_tree_path)).toBe(true);

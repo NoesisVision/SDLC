@@ -5,9 +5,10 @@ description: Turn a Design Doc (JSON diff of added / modified / removed items) i
 
 # Implement Design Doc
 
-The main agent is the **coordinator**. It reads the Design Doc, lays out the project skeleton, plans batches, dispatches subagents, and runs the build. Per-type implementation knowledge (how to write an aggregate, an application service, a repository adapter, …) lives in `references/` and is loaded **only by subagents** — never by the coordinator.
+## Core principles
 
-A Design Doc is a **diff** (`added` / `modified` / `removed` per ChangeSet). Every change in the diff must be implemented; nothing outside the diff may be touched. When the diff cannot be implemented as written — missing information, contradictory references, an item that can't be expressed in the target language — stop and ask the user via `AskUserQuestion`.
+- The main agent is the **coordinator**. It reads the Design Doc, lays out the project skeleton, plans batches, dispatches subagents, and runs the build. Per-type implementation knowledge (how to write an aggregate, an application service, a repository adapter, …) lives in `references/` and is loaded **only by subagents** — never by the coordinator.
+- A Design Doc is a **diff** (`added` / `modified` / `removed` per ChangeSet). Every change in the diff must be implemented; nothing outside the diff may be touched. When the diff cannot be implemented as written — missing information, contradictory references, an item that can't be expressed in the target language — stop and ask the user via `AskUserQuestion`.
 
 ## Pre-flight reads
 
@@ -29,7 +30,13 @@ Parse arguments from `$ARGUMENTS`. Required:
 - **design_doc_path** — absolute path to the Design Doc JSON produced by `noesis:create-design-doc`.
 - **solution_root** — absolute path to the C# solution root (the directory containing the `.sln` and the per-BC project folders). Ask via `AskUserQuestion` if missing.
 
-Pick a `<working_dir>` for coordinator scratch files: a sibling of `design_doc_path` named `<basename>.implementation/`. Create it with `Bash`. **Lifetime:** scratch — never committed.
+Resolve a `<working_dir>` for coordinator scratch files by running:
+
+```
+bun run ${CLAUDE_PLUGIN_ROOT}/scripts/resolve-working-dir.ts noesis:implement-design-doc <execution_id>
+```
+
+Use the file basename of `design_doc_path` *without* the `.json` extension as `<execution_id>`. The script returns JSON `{ "status": "Ok", "working_dir": "...", "skill_name": "...", "execution_id": "..." }`. Treat `working_dir` as an opaque absolute path and use it verbatim for `changes.md`, `batches.md`, and any subagent reports. **Lifetime:** kept across runs for debugging; the skill never deletes it. The directory lives under the plugin's per-project tmp area outside the repository, so no `.gitignore` entry is required.
 
 ## Workflow
 

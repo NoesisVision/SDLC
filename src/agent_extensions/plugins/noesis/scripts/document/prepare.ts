@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { randomUUID } from "crypto";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
@@ -8,10 +8,10 @@ import {
   type AnalyzeDesignDraftOutput,
 } from "../../shared-contracts/skills/analyze-design-draft/output.js";
 import { formatSectionTreeMarkdown } from "../../shared-contracts/documents.js";
-import { resolveScriptTmpDir } from "../../shared-contracts/plugin-paths.js";
+import { resolveWorkingDir } from "../../shared-contracts/plugin-paths.js";
 
+const SKILL_NAME = "noesis:analyze-design-draft";
 const FILE_MODE = 0o600;
-const DIR_MODE = 0o700;
 
 const DOCUMENT_ID_PATTERN = /^<!--\s*document_id:\s*([\w-]+)\s*-->/;
 
@@ -50,9 +50,11 @@ export function prepareDocument(
 
   const { fragments, section_tree } = fragmentMarkdown(sourceContent);
 
-  const baseDir = options.workingDirBase ?? resolveScriptTmpDir();
-  const workingDir = join(baseDir, `noesis-doc-${documentId}`);
-  mkdirSync(workingDir, { recursive: true, mode: DIR_MODE });
+  const workingDir = resolveWorkingDir(
+    SKILL_NAME,
+    documentId,
+    options.workingDirBase,
+  );
 
   const output: AnalyzeDesignDraftOutput = {
     document: {

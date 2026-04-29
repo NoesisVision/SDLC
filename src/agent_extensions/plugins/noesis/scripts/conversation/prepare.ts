@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
@@ -8,10 +8,10 @@ import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
 } from "../../shared-contracts/skills/analyze-conversation/output.js";
-import { resolveScriptTmpDir } from "../../shared-contracts/plugin-paths.js";
+import { resolveWorkingDir } from "../../shared-contracts/plugin-paths.js";
 
+const SKILL_NAME = "noesis:analyze-conversation";
 const FILE_MODE = 0o600;
-const DIR_MODE = 0o700;
 
 interface PrepareOptions {
   workingDirBase?: string;
@@ -78,9 +78,11 @@ export function prepareConversation(
   );
   writeFileSync(cleanedPath, cleanedMarkdown, "utf-8");
 
-  const baseDir = options.workingDirBase ?? resolveScriptTmpDir();
-  const workingDir = join(baseDir, `noesis-conv-${conversationId}`);
-  mkdirSync(workingDir, { recursive: true, mode: DIR_MODE });
+  const workingDir = resolveWorkingDir(
+    SKILL_NAME,
+    conversationId,
+    options.workingDirBase,
+  );
 
   const output: AnalyzeConversationOutput = {
     conversation: {

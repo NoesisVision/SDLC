@@ -6,6 +6,7 @@ import {
   ensureTmpDir,
   projectKeyFor,
   resolveScriptTmpDir,
+  resolveWorkingDir,
   scopeDataDirToProject,
 } from "./plugin-paths.js";
 
@@ -79,6 +80,23 @@ describe("resolveScriptTmpDir", () => {
     const result = resolveScriptTmpDir({});
     expect(result).toBe(resolve(tmpdir(), "noesis"));
     expect(existsSync(result)).toBe(true);
+  });
+});
+
+describe("resolveWorkingDir", () => {
+  test("nests <skillName>/<executionId> under the supplied base", () => {
+    const base = join(tmpRoot, "wd-base");
+    const dir = resolveWorkingDir("noesis:demo-skill", "exec-123", base);
+    expect(dir).toBe(resolve(base, "noesis:demo-skill", "exec-123"));
+    expect(existsSync(dir)).toBe(true);
+    expect(statSync(dir).isDirectory()).toBe(true);
+  });
+
+  test("reuses the same directory across calls with the same id", () => {
+    const base = join(tmpRoot, "wd-stable");
+    const first = resolveWorkingDir("skill", "stable-id", base);
+    const second = resolveWorkingDir("skill", "stable-id", base);
+    expect(second).toBe(first);
   });
 });
 

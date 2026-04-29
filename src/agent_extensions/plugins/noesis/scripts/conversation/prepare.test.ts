@@ -80,7 +80,7 @@ I think we should start with the database schema. It needs careful planning.
     expect(result.cleaned_path).toBe(join(tmpDir, "meeting-cleaned.md"));
     expect(existsSync(result.cleaned_path)).toBe(true);
     expect(result.working_dir).toBe(
-      join(tmpDir, `noesis-conv-${result.conversation_id}`),
+      join(tmpDir, "noesis:analyze-conversation", result.conversation_id),
     );
     expect(existsSync(result.output_path)).toBe(true);
     expect(result.num_turns).toBe(2);

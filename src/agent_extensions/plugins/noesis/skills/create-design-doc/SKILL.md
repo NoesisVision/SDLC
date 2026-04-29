@@ -55,7 +55,13 @@ When `design_doc_title` is supplied, call `noesis-graph:list_design_docs` and co
 
 The skill-invocation message itself (the user's prompt body, beyond `$ARGUMENTS`) is the **highest-priority source of intent** — see the **Source of truth ranking** Rule.
 
-Pick a `<working_dir>` for analysis scratch files: a sibling directory of `design_doc_path` named `<basename>.analysis/`, where `<basename>` is the file basename of `design_doc_path` *without* the `.json` extension. When iterating on an existing design doc and a JSON file already exists at the canonical path, **prefer that file's basename** to the slug of the title — they may differ. Create the directory with the Bash tool. **Lifetime:** scratch — never committed. The repository's `.gitignore` should cover `*.analysis/`; if it does not, the user is responsible for cleanup, but the skill must not leave scratch artefacts in version control.
+Resolve a `<working_dir>` for analysis scratch files by running:
+
+```
+bun run ${CLAUDE_PLUGIN_ROOT}/scripts/resolve-working-dir.ts noesis:create-design-doc <execution_id>
+```
+
+Use the file basename of `design_doc_path` *without* the `.json` extension as `<execution_id>`. When iterating on an existing design doc and a JSON file already exists at the canonical path, **prefer that file's basename** to the slug of the title — they may differ. The script returns JSON `{ "status": "Ok", "working_dir": "...", "skill_name": "...", "execution_id": "..." }`. Treat `working_dir` as an opaque absolute path and use it verbatim for every scratch file produced by Steps 1–3. **Lifetime:** kept across runs for debugging; the skill never deletes it. The directory lives under the plugin's per-project tmp area outside the repository, so no `.gitignore` entry is required.
 
 ## Workflow
 

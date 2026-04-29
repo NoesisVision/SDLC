@@ -42,3 +42,14 @@ export function resolveScriptTmpDir(
   mkdirSync(fallback, { recursive: true, mode: DIR_MODE });
   return fallback;
 }
+
+export function resolveWorkingDir(
+  skillName: string,
+  executionId: string,
+  baseTmpDir?: string,
+): string {
+  const base = baseTmpDir ?? resolveScriptTmpDir();
+  const dir = resolve(base, skillName, executionId);
+  mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  return dir;
+}
