@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -22,6 +22,7 @@ import { IndexerService } from "./indexer.service.js";
 
 interface Ctx {
   module: TestingModule;
+  db: DatabaseService;
   indexer: IndexerService;
   state: IndexStateService;
   sourceFiles: SourceFilesRepository;
@@ -45,6 +46,7 @@ async function createCtx(projectDir: string): Promise<Ctx> {
   await module.get(DesignDocsRepository).initSchema();
   return {
     module,
+    db: module.get(DatabaseService),
     indexer: module.get(IndexerService),
     state: module.get(IndexStateService),
     sourceFiles: module.get(SourceFilesRepository),
@@ -55,14 +57,19 @@ describe("IndexerService", () => {
   let projectDir: string;
   let ctx: Ctx;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     projectDir = mkdtempSync(join(tmpdir(), "noesis-indexer-"));
     ctx = await createCtx(projectDir);
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await ctx.module.close();
     rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  beforeEach(async () => {
+    rmSync(join(projectDir, "noesis"), { recursive: true, force: true });
+    await ctx.db.query("MATCH (s:SourceFile) DETACH DELETE s");
   });
 
   test("creates the noesis layout when missing and reaches consistent state", async () => {

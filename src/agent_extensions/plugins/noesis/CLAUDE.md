@@ -23,6 +23,11 @@ Layered on `src/agent_extensions/CLAUDE.md` and `SDLC/CLAUDE.md`. Only the noesi
 
 - **No LLM in the MCP server**: `noesis-graph` has no Anthropic API access. All semantic reasoning (Goldilocks topic search, summarisation, decision/design extraction) happens in the agent driving the skill. The server provides deterministic data access only.
 
+## Testing
+
+- **Never run `bun test` for the whole noesis plugin.** Bun segfaults when more than one test file initialises/closes the `lbug` (Kuzu fork) native binding in the same process. Single-file runs (`bun test path/to/x.test.ts`) are fine.
+- **Use the wrapper to run the full suite**: `bun run scripts/run-tests.ts` from `src/agent_extensions/plugins/noesis/`. It executes each `*.test.ts` in its own Bun subprocess and aggregates results.
+
 ## File-first persistence
 
 - **Source of truth lives on disk** under `<projectDir>/noesis/`:
