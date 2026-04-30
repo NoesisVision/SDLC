@@ -13,7 +13,10 @@ import { mkdirSync, mkdtempSync, rmSync } from "fs";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { noesisSubdirPath } from "../../../../shared-contracts/source-files.js";
+import {
+  designDocCanonicalPath,
+  noesisSubdirPath,
+} from "../../../../shared-contracts/source-files.js";
 import { DatabaseService } from "../../database/database.service.js";
 import { DATA_DIR, PROJECT_DIR } from "../../config/config.module.js";
 import { FileLoaderService } from "../../file-sync/file-loader.service.js";
@@ -88,8 +91,10 @@ describe("DesignDocsService", () => {
     }
   });
 
-  async function writeDoc(doc: unknown, name: string): Promise<string> {
-    const path = join(workDir, name);
+  async function writeDoc(
+    doc: { id: string; name: string } & Record<string, unknown>,
+  ): Promise<string> {
+    const path = designDocCanonicalPath(tmpDir, doc.id, doc.name);
     await writeFile(path, JSON.stringify(doc, null, 2), "utf-8");
     return path;
   }
@@ -106,7 +111,6 @@ describe("DesignDocsService", () => {
     test("persists a minimal DesignDoc with only metadata", async () => {
       const path = await writeDoc(
         { id: "dd-1", name: "auth", description: "Auth system" },
-        "minimal.json",
       );
       const result = await service.saveDesignDocFromFile(path);
       expect(result.design_doc_id).toBe("dd-1");
@@ -189,7 +193,7 @@ describe("DesignDocsService", () => {
           ],
         },
       };
-      const path = await writeDoc(doc, "full.json");
+      const path = await writeDoc(doc);
       const result = await service.saveDesignDocFromFile(path);
 
       expect(result.status).toBe("Ok");
@@ -214,7 +218,7 @@ describe("DesignDocsService", () => {
         },
       };
       await service.saveDesignDocFromFile(
-        await writeDoc(initial, "v1.json"),
+        await writeDoc(initial),
       );
 
       const delta = {
@@ -226,7 +230,7 @@ describe("DesignDocsService", () => {
         },
       };
       const result = await service.saveDesignDocFromFile(
-        await writeDoc(delta, "v2.json"),
+        await writeDoc(delta),
       );
       expect(result.status).toBe("Ok");
       const read = await service.readDesignDoc("dd-4");
@@ -236,7 +240,7 @@ describe("DesignDocsService", () => {
       );
     });
 
-    test("rejects modify of user-edited element without confirmed_edits", async () => {
+    test("rejects modify of user-edited element across rename without confirmed_edits", async () => {
       const initial = {
         id: "dd-edit-1",
         name: "edit-flow",
@@ -247,22 +251,22 @@ describe("DesignDocsService", () => {
           ],
         },
       };
-      await service.saveDesignDocFromFile(await writeDoc(initial, "edit-1.json"));
+      await service.saveDesignDocFromFile(await writeDoc(initial));
 
       const delta = {
         id: "dd-edit-1",
-        name: "edit-flow",
+        name: "edit-flow-renamed",
         description: "v2",
         boundedContexts: {
           modified: [{ name: "Billing", description: "agent override" }],
         },
       };
       await expect(
-        service.saveDesignDocFromFile(await writeDoc(delta, "edit-1-delta.json")),
+        service.saveDesignDocFromFile(await writeDoc(delta)),
       ).rejects.toThrow(/edited element/);
     });
 
-    test("accepts modify of user-edited element when path is confirmed", async () => {
+    test("accepts modify of user-edited element across rename when path is confirmed", async () => {
       const initial = {
         id: "dd-edit-2",
         name: "edit-flow-2",
@@ -273,23 +277,35 @@ describe("DesignDocsService", () => {
           ],
         },
       };
-      await service.saveDesignDocFromFile(await writeDoc(initial, "edit-2.json"));
+      await service.saveDesignDocFromFile(await writeDoc(initial));
 
       const delta = {
         id: "dd-edit-2",
-        name: "edit-flow-2",
+        name: "edit-flow-2-renamed",
         description: "v2",
         boundedContexts: {
           modified: [{ name: "Billing", description: "agent override" }],
         },
       };
       const result = await service.saveDesignDocFromFile(
-        await writeDoc(delta, "edit-2-delta.json"),
+        await writeDoc(delta),
         ["boundedContexts/Billing"],
       );
       expect(result.status).toBe("Ok");
       const read = await service.readDesignDoc("dd-edit-2");
       expect(read?.boundedContexts?.added[0].description).toBe("agent override");
+    });
+
+    test("rejects non-canonical filename", async () => {
+      const path = join(workDir, "non-canonical-name.json");
+      await writeFile(
+        path,
+        JSON.stringify({ id: "dd-stray", name: "stray", description: "x" }),
+        "utf-8",
+      );
+      await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
+        /must be the canonical filename/,
+      );
     });
 
     test("rejects path outside noesis/design-docs/", async () => {
@@ -301,7 +317,7 @@ describe("DesignDocsService", () => {
         "utf-8",
       );
       await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
-        /must be under/,
+        /must be the canonical filename/,
       );
       rmSync(stray, { recursive: true, force: true });
     });
@@ -337,7 +353,7 @@ describe("DesignDocsService", () => {
         },
       };
       await service.saveDesignDocFromFile(
-        await writeDoc(doc, "roundtrip.json"),
+        await writeDoc(doc),
       );
       const read = await service.readDesignDoc("dd-roundtrip");
       expect(read).not.toBeNull();
@@ -388,7 +404,7 @@ describe("DesignDocsService", () => {
           ],
         },
       };
-      const path = await writeDoc(doc, "implements.json");
+      const path = await writeDoc(doc);
       const result = await service.saveDesignDocFromFile(path);
       expect(result.status).toBe("Ok");
       const read = await service.readDesignDoc("dd-implements");
@@ -414,7 +430,6 @@ describe("DesignDocsService", () => {
           description: "should reject null",
           actors: null,
         },
-        "nullcs.json",
       );
       await expect(service.saveDesignDocFromFile(path)).rejects.toThrow();
     });
@@ -432,7 +447,7 @@ describe("DesignDocsService", () => {
         },
       };
       await service.saveDesignDocFromFile(
-        await writeDoc(initial, "v1.json"),
+        await writeDoc(initial),
       );
       expect(await countNodes("DesignedActor")).toBe(2);
 
@@ -443,7 +458,7 @@ describe("DesignDocsService", () => {
         actors: { removed: ["Alpha"] },
       };
       await service.saveDesignDocFromFile(
-        await writeDoc(delta, "v2.json"),
+        await writeDoc(delta),
       );
       expect(await countNodes("DesignedActor")).toBe(1);
     });
@@ -473,7 +488,6 @@ describe("DesignDocsService", () => {
             ],
           },
         },
-        "r.json",
       );
       await service.saveDesignDocFromFile(path);
       const doc = await service.readDesignDoc("dd-r");
@@ -496,13 +510,11 @@ describe("DesignDocsService", () => {
             description: "first",
             actors: { added: [{ name: "X" }] },
           },
-          "a.json",
         ),
       );
       await service.saveDesignDocFromFile(
         await writeDoc(
           { id: "dd-b", name: "beta", description: "second" },
-          "b.json",
         ),
       );
       const docs = await service.listDesignDocs();
@@ -531,7 +543,6 @@ describe("DesignDocsService", () => {
               ],
             },
           },
-          "map-a.json",
         ),
       );
       await service.saveDesignDocFromFile(
@@ -544,7 +555,6 @@ describe("DesignDocsService", () => {
               added: [{ name: "Billing" }],
             },
           },
-          "map-b.json",
         ),
       );
 
@@ -590,7 +600,6 @@ describe("DesignDocsService", () => {
               ],
             },
           },
-          "target.json",
         ),
       );
 
@@ -630,7 +639,6 @@ describe("DesignDocsService", () => {
               ],
             },
           },
-          "multi.json",
         ),
       );
 
@@ -685,7 +693,6 @@ describe("DesignDocsService", () => {
             ],
           },
         },
-        "rule-empty.json",
       );
       await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
         /Rule .*MissingDescRule.* missing description/,
@@ -721,7 +728,6 @@ describe("DesignDocsService", () => {
             ],
           },
         },
-        "rule-short.json",
       );
       await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
         /Rule .*ShortRule.* description is \d+ chars/,
@@ -759,7 +765,6 @@ describe("DesignDocsService", () => {
             ],
           },
         },
-        "bh-short.json",
       );
       await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
         /Behaviour .*ShortBehaviour.* description is \d+ chars/,
@@ -798,7 +803,6 @@ describe("DesignDocsService", () => {
             ],
           },
         },
-        "rule-taut.json",
       );
       await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
         /tautology/,
@@ -819,7 +823,6 @@ describe("DesignDocsService", () => {
             added: [{ name: "Big", buildingBlocks: { added: blocks } }],
           },
         },
-        "flat-bc.json",
       );
       const result = await service.saveDesignDocFromFile(path);
       expect(result.warnings.some((w) => w.includes("'Big'"))).toBe(true);
@@ -859,7 +862,6 @@ describe("DesignDocsService", () => {
             ],
           },
         },
-        "mermaid.json",
       );
       const result = await service.saveDesignDocFromFile(path);
       expect(
@@ -888,7 +890,6 @@ describe("DesignDocsService", () => {
               ],
             },
           },
-          "del.json",
         ),
       );
       await service.deleteDesignDoc("dd-del");

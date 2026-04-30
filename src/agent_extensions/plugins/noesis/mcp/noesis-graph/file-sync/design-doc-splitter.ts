@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, unlinkSync } from "fs";
-import { resolve as resolvePath } from "path";
 import {
   DesignDocSchema,
   type DesignDoc,
@@ -18,13 +17,12 @@ import {
   writeSidecar,
 } from "../../../shared-contracts/source-files.js";
 
-export interface SplitDesignDocOptions {
+export interface CommitDesignDocOptions {
   projectDir: string;
   confirmedEdits?: ReadonlySet<string>;
-  inputPath?: string;
 }
 
-export interface SplitDesignDocResult {
+export interface CommitDesignDocResult {
   canonical_path: string;
 }
 
@@ -37,25 +35,25 @@ export class UserEditConflictError extends Error {
   }
 }
 
-export function splitDesignDoc(
+export function commitDesignDoc(
   designDoc: DesignDoc,
-  options: SplitDesignDocOptions,
-): SplitDesignDocResult {
+  options: CommitDesignDocOptions,
+): CommitDesignDocResult {
   ensureNoesisLayout(options.projectDir);
   const target = designDocCanonicalPath(
     options.projectDir,
     designDoc.id,
     designDoc.name,
   );
-  const inputPath =
-    options.inputPath !== undefined ? resolvePath(options.inputPath) : null;
-  const prevPath = findDesignDocFileById(
+  const renamedFromPath = findDesignDocFileById(
     options.projectDir,
     designDoc.id,
-    inputPath !== null ? new Set([inputPath]) : undefined,
+    new Set([target]),
   );
   const prev =
-    prevPath !== null && existsSync(prevPath) ? loadIfExists(prevPath) : null;
+    renamedFromPath !== null && existsSync(renamedFromPath)
+      ? loadIfExists(renamedFromPath)
+      : null;
 
   const confirmed = options.confirmedEdits ?? new Set<string>();
   const blocked = collectBlockedEdits(prev, designDoc, confirmed);
@@ -66,21 +64,9 @@ export function splitDesignDoc(
   const merged = mergeWithUserEdits(prev, designDoc, confirmed);
   writeSidecar(target, merged, DesignDocSchema);
 
-  if (prevPath !== null && prevPath !== target && existsSync(prevPath)) {
+  if (renamedFromPath !== null && existsSync(renamedFromPath)) {
     try {
-      unlinkSync(prevPath);
-    } catch {
-      // best-effort
-    }
-  }
-  if (
-    inputPath !== null &&
-    inputPath !== target &&
-    inputPath !== prevPath &&
-    existsSync(inputPath)
-  ) {
-    try {
-      unlinkSync(inputPath);
+      unlinkSync(renamedFromPath);
     } catch {
       // best-effort
     }

@@ -63,12 +63,17 @@ const StringArrayRow = z
   .nullable()
   .transform((v) => v ?? []);
 
+const NullableStringRow = z
+  .string()
+  .nullable()
+  .transform((v) => v ?? "");
+
 const DesignDocRowSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  source_json: z.string(),
-  date: z.string(),
+  source_json: NullableStringRow,
+  date: NullableStringRow,
   edited_by_user: z.boolean().nullable().optional(),
 });
 type DesignDocRow = z.infer<typeof DesignDocRowSchema>;

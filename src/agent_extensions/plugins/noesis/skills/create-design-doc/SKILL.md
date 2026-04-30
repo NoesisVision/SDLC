@@ -24,7 +24,7 @@ Before Setup, load these reference files in a **single parallel `Read` batch** a
 
 These references are knowledge inputs — they are exempt from the **Minimum reload principle**, which applies only to scratch analysis files.
 
-**MCP tool preload.** In a deferred-tool harness, the workflow needs the following tools — load them in **one** `ToolSearch` call up front: `mcp__plugin_noesis_noesis-graph__list_design_docs`, `…__read_bounded_context_map`, `…__list_topic_summaries_for_sources`, `…__list_decisions_for_sources`, `…__read_design_doc`, `…__read_model_for_modules`, `…__list_topic_items_since`, `…__save_design_doc`, plus `AskUserQuestion`.
+**MCP tool preload.** In a deferred-tool harness, the workflow needs the following tools — load them in **one** `ToolSearch` call up front: `mcp__plugin_noesis_noesis-graph__list_design_docs`, `…__read_bounded_context_map`, `…__list_topic_summaries_for_sources`, `…__list_decisions_for_sources`, `…__read_design_doc`, `…__read_model_for_modules`, `…__list_topic_items_since`, `…__prepare_design_doc_path`, `…__save_design_doc`, plus `AskUserQuestion`.
 
 ## Setup
 
@@ -49,10 +49,10 @@ Required after parsing:
 
 - **Design Doc target** — exactly one of `design_doc_id` (iterate on existing) or `design_doc_title` (create new). If both are supplied, ask via `AskUserQuestion` which mode the user wants. **Title fallback:** when neither `design_doc_id` nor `design_doc_title` is supplied, derive `design_doc_title` from the dominant heading (`H1`) of the first `file_paths` entry, falling back to the kebab-case slug of the file basename. Confirm via `AskUserQuestion` only when no `file_paths` entry exists or the derived title collides with an existing doc.
 - **conversation_ids**, **document_ids**, **file_paths** — at least one of the three lists must be non-empty. If all three are empty, ask via `AskUserQuestion` for at least one source before continuing.
-- **design_doc_path** — absolute path for the JSON artifact under the canonical layout. Default: `<projectDir>/noesis/design-docs/<id-prefix>-<slug>.json`, where:
-    - `<id-prefix>` is the first 8 chars of the design-doc UUIDv7 (extend the prefix only if it collides with another doc's id).
-    - `<slug>` is the kebab-case slug of `design_doc_title` (or of the existing doc's name when iterating), truncated to 15 chars.
-    - When iterating, the id is known from `read_design_doc`. When creating new, omit the `id` field in the JSON and `save_design_doc` will fill in a UUIDv7; the agent may pick any temporary filename under `noesis/design-docs/` and the splitter will rename to the canonical filename on save. **Paths outside `noesis/design-docs/` are rejected.**
+- **design_doc_path** — absolute path for the JSON artifact under `<projectDir>/noesis/design-docs/`. **Compute it via `noesis-graph:prepare_design_doc_path`** — never construct the filename manually. The tool returns `{ id, canonical_path }`:
+    - When creating new, call with `{ name: <design_doc_title> }` (omit `id`). The tool mints a UUIDv7 and returns the canonical path. Put the returned `id` into the JSON's `id` field and write to `canonical_path`.
+    - When iterating, call with `{ name, id }` (id from §1.0). The tool returns the canonical path for that id+name (the slug may differ from the previous filename if the doc was renamed).
+    - Filename format is `<slug-up-to-20>-<id-suffix>.json` (id-suffix is the last 8 hex chars of the dash-stripped UUID, extended on collision). **Paths that don't match the canonical filename returned by `prepare_design_doc_path` are rejected by `save_design_doc`.**
 
 When `design_doc_title` is supplied, call `noesis-graph:list_design_docs` and confirm the title does not collide with an existing doc's name. If it does, ask via `AskUserQuestion` whether to iterate on the existing doc, or pick a new title.
 
@@ -235,11 +235,11 @@ Build a `DesignDoc` payload using the schema rules already loaded in **Pre-fligh
 
 #### Step 4.1 — Save
 
-Write the JSON to `<design_doc_path>` under `noesis/design-docs/` (this is the version-controlled artefact). Then call `noesis-graph:save_design_doc` with `path: <design_doc_path>` and `confirmed_edits: <approved-paths>` (empty array when no user-edited element was overwritten — see the **Respect user edits** Rule).
+Call `noesis-graph:prepare_design_doc_path` with `{ name, id? }` (id when iterating, omit when creating). It returns `{ id, canonical_path }`. Set the JSON's `id` field to the returned `id`, write the JSON to `canonical_path`, then call `noesis-graph:save_design_doc` with `path: canonical_path` and `confirmed_edits: <approved-paths>` (empty array when no user-edited element was overwritten — see the **Respect user edits** Rule).
 
 **Save is the ultimate validation.** Do not run a pre-save validation script or a manual self-check pass. Schema constraints (description length minimums, reference resolution, `removed`-vs-referenced contradictions, `implements` targets, etc.) are enforced by `save_design_doc` and returned as structured errors; the round-trip is fast.
 
-The save tool resolves the canonical filename from the JSON's `id` and `name`. When the title changed (and thus the canonical filename), the splitter writes the new file and removes the old one — leave that to the splitter; never rename manually.
+When the title changed (rename), `prepare_design_doc_path` returns a new canonical filename for the same id. Write the JSON to the new path; `save_design_doc` writes the new file and removes the old one. Never rename manually.
 
 **Fix-and-retry loop.** If `save_design_doc` returns errors:
 
@@ -261,6 +261,6 @@ Report the returned `design_doc_id` and the totals (`added` / `modified` / `remo
 - **Minimum reload principle.** Each analysis sub-step lives in its own file. After writing it, do not keep its content in active context unless a later step needs it; reload from disk on demand. (Pre-flight references are exempt — keep them resident.)
 - **Rule terminology.** The schema entity is `Rule` (`DesignedRule`). Detection cues in source material may say "Invariant" or "Constraint", but in this skill's output and prose use **Rule** consistently.
 - **Use existing references unmodified.** The `references/` directory is curated input; do not edit it as part of this skill's run.
-- **Persist via `save_design_doc`.** Write the design doc JSON to `<design_doc_path>` under `<projectDir>/noesis/design-docs/`, then call `noesis-graph:save_design_doc` with that path. Always pair the file write with the save call.
+- **Persist via `save_design_doc`.** Always compute the path with `noesis-graph:prepare_design_doc_path` first, write the design doc JSON to that exact `canonical_path`, then call `noesis-graph:save_design_doc` with that path. Never construct the filename manually.
 - **English-only output.** The Design Doc — and every scratch analysis file produced under `<working_dir>` — must be written in **English**, regardless of the language of the source material (conversations, topics, documents, decisions, user-supplied files, or the invocation prompt). Translate prose, headings, names, descriptions, and BDD scenarios to English while authoring; do not defer translation to a later pass. Preserve ubiquitous-language tokens (proper nouns, established domain terms with no clean English equivalent) verbatim and, on first use, gloss them in English in parentheses.
 - **Respect user edits.** The Step 1.0 `read_design_doc` rendering tags every user-edited element with ` _[edited_by_user]_`. Before producing a `modified` or `removed` entry against any such element (Bounded Context, Module, Building Block, Behaviour, Rule, Scenario, Quality Attribute, Actor), ask for explicit user acceptance via `AskUserQuestion`. For each path the user approves, add the element-path string (e.g. `boundedContexts/Billing/buildingBlocks/Invoice/behaviours/IssueInvoice`) to the `confirmed_edits` array and pass it to `save_design_doc` alongside the JSON path. `save_design_doc` rejects the save when any user-edited target is missing from `confirmed_edits`. If the user declines, drop the change from the ChangeSet and proceed with the rest of the diff. **Never include a path in `confirmed_edits` without an explicit user approval for that path** — the array is the user's authorisation receipt, not the agent's intent log.

@@ -3,8 +3,8 @@ import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import { resolve } from "path";
 import {
+  designDocCanonicalPath,
   findDesignDocFileById,
-  noesisSubdirPath,
   readSidecar,
 } from "../../../../shared-contracts/source-files.js";
 import {
@@ -20,9 +20,10 @@ import {
   type DesignedRule,
   type DesignedScenario,
 } from "../../../../shared-contracts/design-doc.js";
+import { newUuid } from "../../../../shared-contracts/uuid.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import {
-  splitDesignDoc,
+  commitDesignDoc,
   UserEditConflictError,
 } from "../../file-sync/design-doc-splitter.js";
 import { FileLoaderService } from "../../file-sync/file-loader.service.js";
@@ -161,22 +162,34 @@ export class DesignDocsService implements OnModuleInit {
     return { ok: true };
   }
 
+  async prepareDesignDocPath(
+    name: string,
+    id: string | null,
+  ): Promise<{ id: string; canonical_path: string }> {
+    const finalId = id ?? newUuid();
+    return {
+      id: finalId,
+      canonical_path: designDocCanonicalPath(this.projectDir, finalId, name),
+    };
+  }
+
   async saveDesignDocFromFile(
     path: string,
     confirmedEdits: string[] = [],
   ): Promise<SaveDesignDocResult> {
-    this.assertCanonicalPath(path);
     const doc = await this.readDesignDocFile(path);
-    return this.persist(doc, confirmedEdits, path);
+    this.assertCanonicalPath(path, doc);
+    return this.persist(doc, confirmedEdits);
   }
 
-  private assertCanonicalPath(path: string): void {
-    const canonicalDir = noesisSubdirPath(this.projectDir, "design_doc");
+  private assertCanonicalPath(path: string, doc: DesignDoc): void {
+    const expected = designDocCanonicalPath(this.projectDir, doc.id, doc.name);
     const resolved = resolve(path);
-    if (!resolved.startsWith(`${canonicalDir}/`)) {
+    if (resolved !== expected) {
       throw new Error(
-        `DesignDoc path must be under ${canonicalDir} (got ${resolved}). ` +
-          `Use designDocCanonicalPath helper or write to noesis/design-docs/<id-prefix>-<slug>.json directly.`,
+        `DesignDoc path must be the canonical filename for this id+name. ` +
+          `Expected: ${expected}, got: ${resolved}. ` +
+          `Call prepare_design_doc_path to compute the canonical path before writing.`,
       );
     }
   }
@@ -186,25 +199,23 @@ export class DesignDocsService implements OnModuleInit {
     date: string,
     confirmedEdits: string[] = [],
   ): Promise<SaveDesignDocResult> {
-    return this.persist(doc, confirmedEdits, null, date);
+    return this.persist(doc, confirmedEdits, date);
   }
 
   private async persist(
     doc: DesignDoc,
     confirmedEdits: string[],
-    sourcePath: string | null,
     date: string = todayDate(),
   ): Promise<SaveDesignDocResult> {
     const { errors, warnings } = validateDesignDocQuality(doc);
     if (errors.length > 0) {
       throw new Error(formatQualityErrors(errors));
     }
-    let split;
+    let commit;
     try {
-      split = splitDesignDoc(doc, {
+      commit = commitDesignDoc(doc, {
         projectDir: this.projectDir,
         confirmedEdits: new Set(confirmedEdits),
-        inputPath: sourcePath ?? undefined,
       });
     } catch (err) {
       if (err instanceof UserEditConflictError) {
@@ -215,20 +226,14 @@ export class DesignDocsService implements OnModuleInit {
       throw err;
     }
     await this.repository.applyDesignDoc(doc, date);
-    await this.fileLoader.registerWritten(split.canonical_path);
-    if (sourcePath !== null && sourcePath !== split.canonical_path) {
-      this.logger.log(
-        `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${split.canonical_path} (input was ${sourcePath})`,
-      );
-    } else {
-      this.logger.log(
-        `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${split.canonical_path}`,
-      );
-    }
+    await this.fileLoader.registerWritten(commit.canonical_path);
+    this.logger.log(
+      `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${commit.canonical_path}`,
+    );
     return {
       status: "Ok",
       design_doc_id: doc.id,
-      canonical_path: split.canonical_path,
+      canonical_path: commit.canonical_path,
       warnings,
     };
   }

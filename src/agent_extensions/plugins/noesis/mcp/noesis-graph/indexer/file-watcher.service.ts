@@ -33,7 +33,6 @@ export class FileWatcherService
   async onApplicationBootstrap(): Promise<void> {
     if (!this.autoStart) return;
     await this.indexer.runFullIndex();
-    this.start();
   }
 
   disableAutoStart(): void {

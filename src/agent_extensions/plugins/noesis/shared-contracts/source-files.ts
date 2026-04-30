@@ -65,8 +65,8 @@ export function decisionJsonPath(projectDir: string, id: string): string {
   return resolve(noesisSubdirPath(projectDir, "decision"), `${id}.json`);
 }
 
-const DESIGN_DOC_SLUG_MAX = 15;
-const DESIGN_DOC_ID_PREFIX_MIN = 8;
+const DESIGN_DOC_SLUG_MAX = 20;
+const DESIGN_DOC_ID_SUFFIX_MIN = 8;
 
 export function designDocCanonicalFilename(
   projectDir: string,
@@ -74,8 +74,8 @@ export function designDocCanonicalFilename(
   name: string,
 ): string {
   const slug = slugifyForFilename(name).slice(0, DESIGN_DOC_SLUG_MAX);
-  const idPrefix = pickUniqueIdPrefix(projectDir, id);
-  return slug === "" ? `${idPrefix}.json` : `${idPrefix}-${slug}.json`;
+  const idSuffix = pickUniqueIdSuffix(projectDir, id);
+  return slug === "" ? `${idSuffix}.json` : `${slug}-${idSuffix}.json`;
 }
 
 export function designDocCanonicalPath(
@@ -131,28 +131,30 @@ function slugifyForFilename(input: string): string {
     .replace(/-{2,}/g, "-");
 }
 
-function pickUniqueIdPrefix(projectDir: string, id: string): string {
+function pickUniqueIdSuffix(projectDir: string, id: string): string {
   const dir = noesisSubdirPath(projectDir, "design_doc");
-  const others: string[] = [];
+  const otherHexIds: string[] = [];
   if (existsSync(dir)) {
     for (const entry of readdirSync(dir)) {
       if (!entry.endsWith(".json")) continue;
-      const stem = entry.slice(0, -".json".length);
-      const dashIdx = stem.lastIndexOf("-");
-      const idPart = dashIdx === -1 ? stem : stem.slice(0, dashIdx);
-      if (idPart !== "" && !id.startsWith(idPart) && !idPart.startsWith(id)) {
-        const fullId = readIdFromDesignDocFile(resolve(dir, entry)) ?? idPart;
-        if (fullId !== id) others.push(fullId);
+      const fullId = readIdFromDesignDocFile(resolve(dir, entry));
+      if (fullId !== null && fullId !== id) {
+        otherHexIds.push(stripDashes(fullId));
       }
     }
   }
-  for (let len = DESIGN_DOC_ID_PREFIX_MIN; len <= id.length; len++) {
-    const candidate = id.slice(0, len);
-    if (others.every((other) => !other.startsWith(candidate))) {
+  const idHex = stripDashes(id);
+  for (let len = DESIGN_DOC_ID_SUFFIX_MIN; len <= idHex.length; len++) {
+    const candidate = idHex.slice(-len);
+    if (otherHexIds.every((other) => !other.endsWith(candidate))) {
       return candidate;
     }
   }
-  return id;
+  return idHex;
+}
+
+function stripDashes(s: string): string {
+  return s.replace(/-/g, "");
 }
 
 export function idLineComment(kind: SourceFileKind, id: string): string {

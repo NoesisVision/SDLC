@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
 import { extname, sep } from "path";
 import { DatabaseService } from "../database/database.service.js";
 import { PROJECT_DIR } from "../config/config.module.js";
@@ -17,6 +17,7 @@ import {
   type TopicFileItem,
 } from "../../../shared-contracts/source-file-schemas.js";
 import { DesignDocSchema } from "../../../shared-contracts/design-doc.js";
+import { DesignDocsRepository } from "../knowledge/design-docs/design-docs.repository.js";
 import {
   SourceFilesRepository,
   type SourceFileRow,
@@ -50,6 +51,7 @@ export class FileLoaderService {
   constructor(
     private readonly db: DatabaseService,
     private readonly sourceFiles: SourceFilesRepository,
+    private readonly designDocs: DesignDocsRepository,
     @Inject(PROJECT_DIR) private readonly projectDir: string,
   ) {}
 
@@ -67,7 +69,7 @@ export class FileLoaderService {
     if (ext !== ".md" && ext !== ".json") return null;
     const id =
       kind === "design_doc" && ext === ".json"
-        ? readDesignDocId(absPath, filename)
+        ? readDesignDocId(absPath)
         : filename.slice(0, -ext.length);
     if (id === null) return null;
     return { kind, id, ext };
@@ -326,17 +328,16 @@ export class FileLoaderService {
   ): Promise<void> {
     const doc = loadIfExists(absPath, DesignDocSchema);
     if (doc === null) return;
+    await this.designDocs.applyDesignDoc(doc, fileMtimeDate(absPath));
     await this.db.query(
-      "MERGE (dd:DesignDoc {id: $id}) SET dd.name = $name, dd.description = $description, dd.source_sha = $sha, dd.edited_by_user = $edited",
-      {
-        id,
-        name: doc.name,
-        description: doc.description,
-        sha,
-        edited: editedByUser,
-      },
+      "MATCH (dd:DesignDoc) WHERE dd.id = $id SET dd.source_sha = $sha, dd.edited_by_user = $edited",
+      { id, sha, edited: editedByUser },
     );
   }
+}
+
+function fileMtimeDate(absPath: string): string {
+  return statSync(absPath).mtime.toISOString().slice(0, 10);
 }
 
 function loadIfExists<T>(
@@ -365,23 +366,17 @@ async function readEditedByUserFlag(
   }
 }
 
-function readDesignDocId(absPath: string, filename: string): string | null {
-  if (!existsSync(absPath)) {
-    const stem = filename.slice(0, -".json".length);
-    const dashIdx = stem.lastIndexOf("-");
-    return dashIdx === -1 ? stem : stem.slice(0, dashIdx);
-  }
+function readDesignDocId(absPath: string): string | null {
+  if (!existsSync(absPath)) return null;
   try {
     const parsed = JSON.parse(readFileSync(absPath, "utf-8")) as {
       id?: unknown;
     };
     if (typeof parsed.id === "string" && parsed.id !== "") return parsed.id;
   } catch {
-    // fall through to filename fallback
+    // fall through
   }
-  const stem = filename.slice(0, -".json".length);
-  const dashIdx = stem.lastIndexOf("-");
-  return dashIdx === -1 ? stem : stem.slice(0, dashIdx);
+  return null;
 }
 
 function buildShaIndex(files: SourceFileRow[]): Map<string, string> {

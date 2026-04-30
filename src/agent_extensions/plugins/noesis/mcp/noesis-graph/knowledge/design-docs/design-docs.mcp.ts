@@ -29,12 +29,43 @@ export function registerDesignDocsTools(
   service: DesignDocsService,
   indexState: IndexStateService,
 ): void {
+  registerPrepareDesignDocPath(mcp, service);
   registerSaveDesignDoc(mcp, service, indexState);
   registerReadDesignDoc(mcp, service);
   registerListDesignDocs(mcp, service);
   registerDeleteDesignDoc(mcp, service, indexState);
   registerReadBoundedContextMap(mcp, service);
   registerReadModelForModules(mcp, service);
+}
+
+function registerPrepareDesignDocPath(
+  mcp: McpServer,
+  service: DesignDocsService,
+): void {
+  mcp.registerTool(
+    "prepare_design_doc_path",
+    {
+      description:
+        "Mint (or accept) a DesignDoc id and return the canonical file path the agent must write to. " +
+        "Filename is `<slug-up-to-20>-<id-suffix>.json` under `<projectDir>/noesis/design-docs/` " +
+        "(id-suffix is the last 8 hex chars of the dash-stripped UUID, extended on collision). " +
+        "Call BEFORE writing the JSON file: put the returned `id` into the JSON's `id` field and write to `canonical_path`. " +
+        "When iterating an existing doc, pass its known `id` (the slug may change for renames).",
+      inputSchema: {
+        name: z
+          .string()
+          .describe("The DesignDoc's `name` field (drives the filename slug)."),
+        id: z
+          .string()
+          .optional()
+          .describe(
+            "Existing DesignDoc id (omit for a new doc — a UUIDv7 will be minted).",
+          ),
+      },
+    },
+    async ({ name, id }) =>
+      runInlineJsonTool(() => service.prepareDesignDocPath(name, id ?? null)),
+  );
 }
 
 function registerSaveDesignDoc(
@@ -47,20 +78,20 @@ function registerSaveDesignDoc(
     {
       description:
         "Persist a DesignDoc into the knowledge graph from a JSON file matching DesignDocSchema. " +
-        "Path must be the canonical `<projectDir>/noesis/design-docs/<id-prefix>-<slug>.json`. " +
+        "Path MUST be the canonical path returned by `prepare_design_doc_path` for the doc's id+name. " +
         "Tool reads it, validates, and applies ChangeSets recursively (added → upsert, " +
         "modified → partial update, removed → delete by name). " +
         "Quality gate (rejects on save): every `added` Rule needs description ≥80 chars (Trigger / Pre / Algorithm / Post / Edge cases — no tautologies); " +
         "every `added` Behaviour needs description ≥400 chars (Input / Validation / numbered Steps / Output). " +
         "Warnings (non-blocking): a Bounded Context with >20 building blocks and 0 modules; an application_service or ≥3-block-using behaviour without an embedded ```mermaid sequence diagram. " +
-        "User-edit gate: any element in the on-disk previous state with `edited_by_user: true` rejects the save when targeted by `modified` or `removed` unless its element-path appears in `confirmed_edits`. " +
+        "User-edit gate (fires only when this save renames the doc — different slug than the prior canonical filename): any element in the prior on-disk state with `edited_by_user: true` rejects the save when targeted by `modified` or `removed` unless its element-path appears in `confirmed_edits`. " +
         "Returns { status: \"Ok\", design_doc_id, warnings: string[] } on success; " +
         "validation, conflict, or storage failures surface as a tool error.",
       inputSchema: {
         path: z
           .string()
           .describe(
-            "Absolute path to the canonical DesignDoc JSON under noesis/design-docs/.",
+            "Absolute canonical path returned by `prepare_design_doc_path`.",
           ),
         confirmed_edits: z
           .array(z.string())
