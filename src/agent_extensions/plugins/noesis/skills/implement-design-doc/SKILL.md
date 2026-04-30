@@ -1,6 +1,6 @@
 ---
 name: noesis:implement-design-doc
-description: Turn a Design Doc (diff of added / modified / removed items, retrieved from the noesis-graph MCP server by id or name) into running C# code in the current solution repository. Lays out Bounded Context and Module projects, schedules Building Block implementation in dependency-ordered batches dispatched to subagent groups (default per-type, merged when BBs are tightly coupled), plugs in adapters for domain ports, and verifies the result by build + test.
+description: Turn a Design Doc (diff of added / modified / removed items, retrieved from the noesis-graph MCP server by id or name) into running C# code in the current solution repository. Lays out Bounded Context and Module projects, schedules Building Block implementation in dependency-ordered batches dispatched to subagent groups (default per-type, merged when BBs are tightly coupled), plugs in adapters for domain ports, verifies the result by build + test, and finally compares a pre/post-implementation scan against the Design Doc (Bounded Contexts, Modules, Building Blocks, Behaviors) via a deterministic MCP tool, looping fixes until the implemented diff matches the doc exactly.
 ---
 
 # Implement Design Doc
@@ -148,9 +148,23 @@ Run `dotnet build` from the solution root (the current working directory). If it
 
 Then run `dotnet test`. Apply the same triage: mechanical fixes inline, design-level questions to the user.
 
+### Step 7: Verify the implementation against the Design Doc
+
+The Design Doc is a diff. After Step 6, verify that the *actual* diff between pre-implementation and post-implementation state matches the doc — no missing changes, no extra changes — at the Bounded Context, Module, Building Block and Behavior levels. Rules, Scenarios and Properties are out of scope here (they are not deterministically detectable from a structural scan).
+
+The two MCP tools that drive this step are deterministic and produce/consume tmp artefacts only — they never write to the knowledge graph DB or to source files.
+
+1. **Pre-implementation scan.** Before Step 4 starts, take a baseline snapshot. Call `scan_to_tmp` and store the returned path as `<working_dir>/before-scan.json` (copy the file into `<working_dir>` so it survives the tool-output GC). If `<working_dir>/before-scan.json` already exists from earlier in the *same* skill run and no source files have changed since, reuse it instead of rescanning. Otherwise rescan. **The pre-implementation scan must be taken before any code is written or deleted in Step 4.**
+2. **Post-implementation scan.** After Step 6 succeeds, call `scan_to_tmp` again and copy the result to `<working_dir>/after-scan.json`. Do not skip this even if the build is green — a green build does not prove the diff matches the doc.
+3. **Compare.** Call `compare_implementation_to_design` with `design_doc_id`, `before_scan_path = <working_dir>/before-scan.json`, `after_scan_path = <working_dir>/after-scan.json`. The tool returns either:
+   - `{ status: "Ok", problems: [] }` — implementation matches the doc; the skill is finished.
+   - `{ status: "Mismatch", problems: string[] }` — every entry is either a missing change (something the doc says should be there but isn't) or an unexpected change (something present in the implementation that the doc never declared).
+4. **Fix-loop.** When `Mismatch` is returned, fix the listed problems directly in source (add the missing items, revert the unexpected ones). Do not edit the `before-scan.json` — the baseline must stay frozen. After fixes, re-run the build (Step 6), take a fresh post-implementation scan, and call `compare_implementation_to_design` again. Repeat until the comparator returns `Ok`. If a problem cannot be reconciled with the doc as written, stop and `AskUserQuestion`.
+
 Report to the user:
 - Counts of BCs / Modules / Building Blocks `added` / `modified` / `removed`.
 - Build status, test status (pass / fail / total).
+- Comparator status (`Ok` after the fix-loop converged) and the number of fix iterations.
 - Anything from `<working_dir>` that warrants follow-up (e.g. items the user resolved with deviations from the doc).
 
 ## Rules
@@ -161,4 +175,5 @@ Report to the user:
 - **Coordinator never loads type-specific references.** Only `modules.md` lives in the coordinator. Every other file in `references/` is loaded by subagents at Step 4 / Step 5.
 - **Subagent groups, not strict per-type splits.** Step 3 chooses the grouping. The default is one type per subagent group; tightly coupled BBs across types may share a group when that minimises coordination. A subagent loads one reference per BB type its group contains.
 - **Rules are tested by business scenarios.** Every `Rule` in the diff produces at least one business-scenario test at the level the doc specifies (Behaviour or Building Block). A Rule with no scenario coverage after Step 4 is a bug — the responsible subagent must be re-dispatched, or the user consulted.
-- **Scratch files only in `<working_dir>`.** Coordinator-side artefacts (`batches.md`, subagent reports) never leave `<working_dir>`. Do not commit them.
+- **Scratch files only in `<working_dir>`.** Coordinator-side artefacts (`batches.md`, subagent reports, `before-scan.json`, `after-scan.json`) never leave `<working_dir>`. Do not commit them.
+- **Verification gate is mandatory.** Step 7 (`compare_implementation_to_design`) must converge to `Ok` before the skill reports completion. A green build is necessary but not sufficient — the comparator catches missing or unintended structural changes the build cannot see. The comparator is restricted to Bounded Contexts, Modules, Building Blocks and Behaviors; Rules, Scenarios and Properties are not verified deterministically and remain the responsibility of Step 4 subagents.

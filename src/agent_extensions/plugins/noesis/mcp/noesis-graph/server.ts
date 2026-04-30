@@ -26,6 +26,8 @@ import { registerDocumentsTools } from "./knowledge/documents/documents.mcp.js";
 import { IndexStateService } from "./indexer/index-state.service.js";
 import { TopicsService } from "./knowledge/topics/topics.service.js";
 import { registerTopicsTools } from "./knowledge/topics/topics.mcp.js";
+import { ImplementationCheckService } from "./implementation-check/implementation-check.service.js";
+import { registerImplementationCheckTools } from "./implementation-check/implementation-check.mcp.js";
 
 export async function startServer(): Promise<void> {
   const [argDataDir, argProjectDir] = process.argv.slice(2);
@@ -77,6 +79,7 @@ export async function startServer(): Promise<void> {
     registerConversationsTools(mcp, app.get(ConversationsService), indexState);
     registerDocumentsTools(mcp, app.get(DocumentsService), indexState);
     registerDesignDocsTools(mcp, app.get(DesignDocsService), indexState);
+    registerImplementationCheckTools(mcp, app.get(ImplementationCheckService));
     logger.log("MCP tools registered", "Bootstrap");
 
     const url = await app.getUrl();

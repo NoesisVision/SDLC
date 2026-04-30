@@ -12,14 +12,16 @@ import {
   type DddAnnotation,
 } from "./ddd-annotations.js";
 import type { NoesisConfig } from "./scanner-config.js";
-import type {
-  Behavior,
-  BoundedContext,
-  BoundedContextBranch,
-  BuildingBlock,
-  DomainModelTree,
-  Module,
-  ModuleBranch,
+import {
+  parentPathOf,
+  type Behavior,
+  type BoundedContext,
+  type BoundedContextBranch,
+  type BuildingBlock,
+  type BuildingBlockBranch,
+  type DomainModelTree,
+  type Module,
+  type ModuleBranch,
 } from "./domain-model/domain-model.js";
 import type { CSharpNamespace, CSharpType } from "./csharp/csharp-code.js";
 
@@ -134,6 +136,12 @@ export class ScannerService implements OnModuleInit {
     return tree;
   }
 
+  async scanInMemory(): Promise<DomainModelTree> {
+    const { keptFiles, boundedContexts, modules, allContainerPaths } =
+      await this.collectScannedModel();
+    return assembleDomainTree(boundedContexts, modules, keptFiles, allContainerPaths);
+  }
+
   async scan(): Promise<DomainModelTree> {
     this.logger.log("Starting model scan");
     const config = await loadNoesisConfig(this.projectDir);
@@ -241,6 +249,39 @@ export class ScannerService implements OnModuleInit {
     return tree;
   }
 
+  private async collectScannedModel(): Promise<{
+    keptFiles: KeptFile[];
+    boundedContexts: BoundedContext[];
+    modules: Module[];
+    allContainerPaths: string[];
+  }> {
+    const config = await loadNoesisConfig(this.projectDir);
+    const scannedFiles = await this.scanCsFiles();
+
+    const notExcluded = scannedFiles.filter(
+      (f) => f.namespace !== "" && !isExcluded(f.namespace, config.namespacesToExclude),
+    );
+
+    const keptFiles: KeptFile[] = notExcluded
+      .map((f) => ({
+        relativePath: f.relativePath,
+        rawNamespace: f.namespace,
+        namespace: removeSkippedParts(f.namespace, config.namespacePartsToSkip),
+        matches: f.matches,
+        content: f.content,
+      }))
+      .filter((f) => f.namespace !== "");
+
+    const effectiveNamespaces = [...new Set(keptFiles.map((f) => f.namespace))];
+    const { boundedContexts, modules } = buildModuleHierarchy(effectiveNamespaces);
+    const allContainerPaths = [
+      ...boundedContexts.map((bc) => bc.name),
+      ...modules.map((m) => m.fullPath),
+    ].sort((a, b) => b.length - a.length);
+
+    return { keptFiles, boundedContexts, modules, allContainerPaths };
+  }
+
   private async scanCsFiles(): Promise<ScannedFile[]> {
     const csFiles = await findCsFiles(this.projectDir);
     const results: ScannedFile[] = [];
@@ -261,6 +302,66 @@ export class ScannerService implements OnModuleInit {
 
     return results;
   }
+}
+
+export function assembleDomainTree(
+  boundedContexts: BoundedContext[],
+  modules: Module[],
+  keptFiles: KeptFile[],
+  allContainerPaths: string[],
+): DomainModelTree {
+  const sortedBCs = [...boundedContexts].sort((a, b) => a.name.localeCompare(b.name));
+  const modulesByParent = new Map<string, Module[]>();
+  const sortedModules = [...modules].sort((a, b) => a.name.localeCompare(b.name));
+  for (const mod of sortedModules) {
+    const parent = parentPathOf(mod);
+    const list = modulesByParent.get(parent) ?? [];
+    list.push(mod);
+    modulesByParent.set(parent, list);
+  }
+
+  const bbByContainer = new Map<string, BuildingBlockBranch[]>();
+  for (const file of keptFiles) {
+    const containerPath = findContainer(file.namespace, allContainerPaths);
+    if (containerPath === "") continue;
+    for (const match of file.matches) {
+      const blockName = match.nameOverride ?? match.typeName;
+      const bbId = `${file.relativePath}:${blockName}`;
+      const behaviors: Behavior[] = match.behaviors.map((b) => ({
+        id: `${bbId}:${b.methodName}`,
+        name: b.nameOverride ?? b.methodName,
+      }));
+      const bb: BuildingBlockBranch = {
+        id: bbId,
+        name: blockName,
+        type: annotationToBlockType(match.annotation),
+        behaviors: behaviors.sort((a, b) => a.name.localeCompare(b.name)),
+      };
+      const list = bbByContainer.get(containerPath) ?? [];
+      list.push(bb);
+      bbByContainer.set(containerPath, list);
+    }
+  }
+  for (const list of bbByContainer.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function buildModuleSubtree(parentPath: string): ModuleBranch<BuildingBlockBranch>[] {
+    const children = modulesByParent.get(parentPath) ?? [];
+    return children.map((m) => ({
+      name: m.name,
+      fullPath: m.fullPath,
+      modules: buildModuleSubtree(m.fullPath),
+      buildingBlocks: bbByContainer.get(m.fullPath) ?? [],
+    }));
+  }
+
+  const tree: BoundedContextBranch<BuildingBlockBranch>[] = sortedBCs.map((bc) => ({
+    name: bc.name,
+    modules: buildModuleSubtree(bc.name),
+    buildingBlocks: bbByContainer.get(bc.name) ?? [],
+  }));
+  return { boundedContexts: tree };
 }
 
 export function buildModuleHierarchy(

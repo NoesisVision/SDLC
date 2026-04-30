@@ -7,6 +7,7 @@ import { IndexerModule } from "./indexer/indexer.module.js";
 import { SerenaModule } from "./serena/serena.module.js";
 import { ScannerModule } from "./scanner/scanner.module.js";
 import { KnowledgeModule } from "./knowledge/knowledge.module.js";
+import { ImplementationCheckModule } from "./implementation-check/implementation-check.module.js";
 import { HealthController } from "./health/health.controller.js";
 
 @Module({})
@@ -25,6 +26,7 @@ export class AppModule {
         SerenaModule,
         ScannerModule,
         KnowledgeModule,
+        ImplementationCheckModule,
       ],
       controllers: [HealthController],
     };
