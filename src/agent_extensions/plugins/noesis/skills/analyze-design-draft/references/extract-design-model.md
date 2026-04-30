@@ -2,15 +2,15 @@
 
 Used by `noesis:analyze-design-draft` Step 6.
 
-Read this together with `design-doc-schema.md` (lexicon, full JSON schema, ChangeSet rules, validation checklist).
+Read this together with `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` (lexicon, full JSON schema, ChangeSet rules, validation checklist).
 
 ## Decide whether the document describes a model
 
-Walk the fragments grouped by `section_path`. Detect model-bearing sections using the lexicon in `design-doc-schema.md` Section 1. If no section matches the lexicon, the document does not describe a model — skip the rest of this step. Do NOT produce a `design_doc.json`, and do NOT call `save_design_doc`.
+Walk the fragments grouped by `section_path`. Detect model-bearing sections using the lexicon in `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` Section 1. If no section matches the lexicon, the document does not describe a model — skip the rest of this step. Do NOT produce a `design_doc.json`, and do NOT call `save_design_doc`.
 
 ## Build the DesignDoc
 
-Following the schema in `design-doc-schema.md` Section 2 and the rules in Section 3:
+Following the schema in `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` Section 2 and the rules in Section 3:
 
 1. **Actors** — user roles, external services mentioned in the draft.
 2. **Bounded Contexts** — top-level domain partitions.

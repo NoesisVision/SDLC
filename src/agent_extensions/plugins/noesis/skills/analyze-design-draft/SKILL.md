@@ -141,7 +141,7 @@ In both modes: each topic's `reviewed: true` and `decisions_extracted: true` fla
 
 Skip if the user replied `skip` in Setup.
 
-Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/extract-design-model.md` AND `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/design-doc-schema.md` (only at this step — these files are large).
+Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/extract-design-model.md` AND `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` (only at this step — these files are large).
 
 Decide whether the document genuinely describes a domain model (Bounded Contexts / Modules / Building Blocks / Behaviours / Quality Attributes / Actors). If it does not, skip the rest of this step.
 
@@ -159,7 +159,7 @@ Report `topics_added`, `topics_updated`, `decisions_added`, and `decision_attach
 
 - Read tool is fine for `<document_path>` (the source), `<output_path>`, `<section_tree_path>`, `<design_doc_path>`, and any path returned by an MCP tool. Do not browse the working dir for other files.
 - Persist graph state only via `noesis-graph` MCP tools. Edit `output.json` / write the design doc JSON to `<design_doc_path>` with Edit/Write.
-- Do NOT load `references/design-doc-schema.md` unless Step 6 is actually entered — it is large.
+- Do NOT load `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` unless Step 6 is actually entered — it is large.
 - Generate all titles, summaries, and free-text fields in the same language as the source document.
 - Reuse before promote: prefer an existing topic over a new one, an existing decision over a new one, whenever the fit is reasonable.
 - **Respect user edits.** Before changing any existing topic, decision, or design-doc element whose on-disk record is marked `edited_by_user: true`, ask for explicit user acceptance via `AskUserQuestion`. For design-doc elements, pass each approved element-path in the `confirmed_edits` array of `save_design_doc`; the save rejects user-edited overrides that are not in that list. **Never include a path in `confirmed_edits` without explicit user approval.** For topics/decisions, the splitter still skips files flagged `edited_by_user: true` at the file level. If the user declines, leave the entity unchanged and route the new evidence elsewhere (different topic, new topic, item-only attachment, or skip the design-doc update).

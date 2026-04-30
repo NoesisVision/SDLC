@@ -20,7 +20,7 @@ Before Setup, load these reference files in a **single parallel `Read` batch** a
 - `${CLAUDE_PLUGIN_ROOT}/skills/create-design-doc/references/business_rules.md` (governs §3.3)
 - `${CLAUDE_PLUGIN_ROOT}/skills/create-design-doc/references/bdd_examples.md` (governs §3.4)
 - `${CLAUDE_PLUGIN_ROOT}/skills/create-design-doc/references/tactical-ddd.md` (governs §3.5)
-- `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/design-doc-schema.md` (governs §3.3 / §3.4 / §3.5 outputs and §4 serialisation — its length minimums, mermaid requirements, naming conventions and `input` / `output` / `usedBuildingBlocks` BB-name-only constraint must be respected during analysis, not just at JSON build time)
+- `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` (governs §3.3 / §3.4 / §3.5 outputs and §4 serialisation — its length minimums, mermaid requirements, naming conventions and `input` / `output` / `usedBuildingBlocks` BB-name-only constraint must be respected during analysis, not just at JSON build time)
 
 These references are knowledge inputs — they are exempt from the **Minimum reload principle**, which applies only to scratch analysis files.
 
@@ -233,48 +233,20 @@ Build a `DesignDoc` payload using the schema rules already loaded in **Pre-fligh
 
 **Renames** (post-implementation only). When renaming a Building Block, Behaviour, Property or Rule that already exists in code, emit `removed: ["<old>"]` and `added: [<full new spec>]`. Then **double-check** that the old name does not appear elsewhere in the JSON (any `input`, `output`, `usedBuildingBlocks`, `properties[].type`, behaviour-host reference, or `implements` entry). If it does, those references must point at the new name. In green-field status renames don't exist as remove+add — the old name was never in code, so just emit the new name in `added`.
 
-#### Step 4.0 — Pre-save validation pass
+#### Step 4.1 — Save
 
-Before invoking `save_design_doc`, run a programmatic pre-check on `<design_doc_path>` to catch problems locally rather than via a save round-trip:
+Write the JSON to `<design_doc_path>` under `noesis/design-docs/` (this is the version-controlled artefact). Then call `noesis-graph:save_design_doc` with `path: <design_doc_path>` and `confirmed_edits: <approved-paths>` (empty array when no user-edited element was overwritten — see the **Respect user edits** Rule).
 
-```bash
-python3 - <<'PY'
-import json, sys, pathlib
-path = pathlib.Path("<design_doc_path>")
-doc = json.loads(path.read_text())
-errs = []
-def walk_changeset(cs, kind, path):
-    for item in cs.get("added", []) or []:
-        if kind == "rule" and len((item.get("description") or "")) < 80:
-            errs.append(f"Rule {path}/{item['name']} description {len(item.get('description') or '')} chars (<80)")
-        if kind == "behaviour" and len((item.get("description") or "")) < 400:
-            errs.append(f"Behaviour {path}/{item['name']} description {len(item.get('description') or '')} chars (<400)")
-# walk the doc; minimal traversal — adapt to the produced shape
-for bc in (doc.get("boundedContexts") or {}).get("added", []) or []:
-    for bb in (bc.get("buildingBlocks") or {}).get("added", []) or []:
-        walk_changeset(bb.get("rules") or {}, "rule", f"{bc['name']}/{bb['name']}")
-        walk_changeset(bb.get("behaviours") or {}, "behaviour", f"{bc['name']}/{bb['name']}")
-    for m in (bc.get("modules") or {}).get("added", []) or []:
-        for bb in (m.get("buildingBlocks") or {}).get("added", []) or []:
-            walk_changeset(bb.get("rules") or {}, "rule", f"{bc['name']}/{m['name']}/{bb['name']}")
-            walk_changeset(bb.get("behaviours") or {}, "behaviour", f"{bc['name']}/{m['name']}/{bb['name']}")
-print(json.dumps({"errors": errs}))
-PY
-```
-
-If `errors` is non-empty, fix in place and re-run. Do not rely on the validator to bounce the save just for length. The `python3 -c "import json; json.load(open('<path>'))"` syntax check is implicit in the snippet above (the `json.loads` call fails fast on a malformed JSON).
-
-#### Step 4.1 — Self-check
-
-Every reference in `usedBuildingBlocks`, `input`, `output`, every `properties[].type`, and every entry in `implements` must resolve to a Building Block declared in the produced doc, in the prior model loaded in §1.5 (for iteration), to a primitive, or to a primitive enum literal. A name listed in `removed` of any nested ChangeSet must **not** appear as `input`, `output`, `usedBuildingBlocks`, `properties[].type`, or `implements` anywhere in the same JSON — `removed` and `referenced` are mutually exclusive sets within one save.
-
-#### Step 4.2 — Save
-
-Write the validated JSON to `<design_doc_path>` under `noesis/design-docs/` (this is the version-controlled artefact). Then call `noesis-graph:save_design_doc` with `path: <design_doc_path>` and `confirmed_edits: <approved-paths>` (empty array when no user-edited element was overwritten — see the **Respect user edits** Rule).
+**Save is the ultimate validation.** Do not run a pre-save validation script or a manual self-check pass. Schema constraints (description length minimums, reference resolution, `removed`-vs-referenced contradictions, `implements` targets, etc.) are enforced by `save_design_doc` and returned as structured errors; the round-trip is fast.
 
 The save tool resolves the canonical filename from the JSON's `id` and `name`. When the title changed (and thus the canonical filename), the splitter writes the new file and removes the old one — leave that to the splitter; never rename manually.
 
-If `save_design_doc` fails after the JSON file write succeeded, the file is the source of truth — fix the offending fields in place and re-call `save_design_doc` until it succeeds. Do not delete the file on failure.
+**Fix-and-retry loop.** If `save_design_doc` returns errors:
+
+1. Read the error messages — they identify the failing fields and constraints.
+2. Fix the offending fields directly in `<design_doc_path>`. The JSON file is the source of truth — never delete it on failure.
+3. Re-call `save_design_doc` with the same `path` and `confirmed_edits`.
+4. Repeat until the save succeeds.
 
 If `save_design_doc` returns warnings, address every warning (re-edit the JSON, re-save) until the warning list is empty or the user has explicitly accepted a remaining warning via `AskUserQuestion`. **Mermaid warnings:** when the input files already contain compatible sequence/class diagrams that can be adapted, embed without prompting (Step §3.5 should already have done this); only escalate via `AskUserQuestion` when no source diagram exists and authoring one from scratch would be speculative.
 
@@ -289,6 +261,6 @@ Report the returned `design_doc_id` and the totals (`added` / `modified` / `remo
 - **Minimum reload principle.** Each analysis sub-step lives in its own file. After writing it, do not keep its content in active context unless a later step needs it; reload from disk on demand. (Pre-flight references are exempt — keep them resident.)
 - **Rule terminology.** The schema entity is `Rule` (`DesignedRule`). Detection cues in source material may say "Invariant" or "Constraint", but in this skill's output and prose use **Rule** consistently.
 - **Use existing references unmodified.** The `references/` directory is curated input; do not edit it as part of this skill's run.
-- **Persist via MCP only.** Edit the design doc JSON locally, then hand the path to `noesis-graph:save_design_doc` — do not call lower-level graph mutations.
+- **Persist via `save_design_doc`.** Write the design doc JSON to `<design_doc_path>` under `<projectDir>/noesis/design-docs/`, then call `noesis-graph:save_design_doc` with that path. Always pair the file write with the save call.
 - **English-only output.** The Design Doc — and every scratch analysis file produced under `<working_dir>` — must be written in **English**, regardless of the language of the source material (conversations, topics, documents, decisions, user-supplied files, or the invocation prompt). Translate prose, headings, names, descriptions, and BDD scenarios to English while authoring; do not defer translation to a later pass. Preserve ubiquitous-language tokens (proper nouns, established domain terms with no clean English equivalent) verbatim and, on first use, gloss them in English in parentheses.
 - **Respect user edits.** The Step 1.0 `read_design_doc` rendering tags every user-edited element with ` _[edited_by_user]_`. Before producing a `modified` or `removed` entry against any such element (Bounded Context, Module, Building Block, Behaviour, Rule, Scenario, Quality Attribute, Actor), ask for explicit user acceptance via `AskUserQuestion`. For each path the user approves, add the element-path string (e.g. `boundedContexts/Billing/buildingBlocks/Invoice/behaviours/IssueInvoice`) to the `confirmed_edits` array and pass it to `save_design_doc` alongside the JSON path. `save_design_doc` rejects the save when any user-edited target is missing from `confirmed_edits`. If the user declines, drop the change from the ChangeSet and proceed with the rest of the diff. **Never include a path in `confirmed_edits` without an explicit user approval for that path** — the array is the user's authorisation receipt, not the agent's intent log.
