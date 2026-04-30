@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { z } from "zod";
 
@@ -65,8 +65,94 @@ export function decisionJsonPath(projectDir: string, id: string): string {
   return resolve(noesisSubdirPath(projectDir, "decision"), `${id}.json`);
 }
 
+const DESIGN_DOC_SLUG_MAX = 15;
+const DESIGN_DOC_ID_PREFIX_MIN = 8;
+
+export function designDocCanonicalFilename(
+  projectDir: string,
+  id: string,
+  name: string,
+): string {
+  const slug = slugifyForFilename(name).slice(0, DESIGN_DOC_SLUG_MAX);
+  const idPrefix = pickUniqueIdPrefix(projectDir, id);
+  return slug === "" ? `${idPrefix}.json` : `${idPrefix}-${slug}.json`;
+}
+
+export function designDocCanonicalPath(
+  projectDir: string,
+  id: string,
+  name: string,
+): string {
+  return resolve(
+    noesisSubdirPath(projectDir, "design_doc"),
+    designDocCanonicalFilename(projectDir, id, name),
+  );
+}
+
+export function findDesignDocFileById(
+  projectDir: string,
+  id: string,
+  exclude?: ReadonlySet<string>,
+): string | null {
+  const dir = noesisSubdirPath(projectDir, "design_doc");
+  if (!existsSync(dir)) return null;
+  for (const entry of readdirSync(dir)) {
+    if (!entry.endsWith(".json")) continue;
+    const abs = resolve(dir, entry);
+    if (exclude !== undefined && exclude.has(abs)) continue;
+    const fileId = readIdFromDesignDocFile(abs);
+    if (fileId === id) return abs;
+  }
+  return null;
+}
+
+export function readIdFromDesignDocFile(absPath: string): string | null {
+  if (!existsSync(absPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(absPath, "utf-8")) as {
+      id?: unknown;
+    };
+    return typeof parsed.id === "string" ? parsed.id : null;
+  } catch {
+    return null;
+  }
+}
+
 export function designDocJsonPath(projectDir: string, id: string): string {
   return resolve(noesisSubdirPath(projectDir, "design_doc"), `${id}.json`);
+}
+
+function slugifyForFilename(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function pickUniqueIdPrefix(projectDir: string, id: string): string {
+  const dir = noesisSubdirPath(projectDir, "design_doc");
+  const others: string[] = [];
+  if (existsSync(dir)) {
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith(".json")) continue;
+      const stem = entry.slice(0, -".json".length);
+      const dashIdx = stem.lastIndexOf("-");
+      const idPart = dashIdx === -1 ? stem : stem.slice(0, dashIdx);
+      if (idPart !== "" && !id.startsWith(idPart) && !idPart.startsWith(id)) {
+        const fullId = readIdFromDesignDocFile(resolve(dir, entry)) ?? idPart;
+        if (fullId !== id) others.push(fullId);
+      }
+    }
+  }
+  for (let len = DESIGN_DOC_ID_PREFIX_MIN; len <= id.length; len++) {
+    const candidate = id.slice(0, len);
+    if (others.every((other) => !other.startsWith(candidate))) {
+      return candidate;
+    }
+  }
+  return id;
 }
 
 export function idLineComment(kind: SourceFileKind, id: string): string {

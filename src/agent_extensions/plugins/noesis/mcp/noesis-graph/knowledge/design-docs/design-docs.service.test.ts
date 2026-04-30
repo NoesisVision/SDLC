@@ -9,10 +9,11 @@ import {
 } from "bun:test";
 import { Test } from "@nestjs/testing";
 import type { TestingModule } from "@nestjs/testing";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync } from "fs";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+import { noesisSubdirPath } from "../../../../shared-contracts/source-files.js";
 import { DatabaseService } from "../../database/database.service.js";
 import { DATA_DIR, PROJECT_DIR } from "../../config/config.module.js";
 import { FileLoaderService } from "../../file-sync/file-loader.service.js";
@@ -71,13 +72,13 @@ describe("DesignDocsService", () => {
     await module.init();
     db = module.get(DatabaseService);
     service = module.get(DesignDocsService);
-    workDir = mkdtempSync(join(tmpdir(), "noesis-dd-work-"));
+    workDir = noesisSubdirPath(tmpDir, "design_doc");
+    mkdirSync(workDir, { recursive: true });
   });
 
   afterAll(async () => {
     await module.close();
     rmSync(tmpDir, { recursive: true, force: true });
-    rmSync(workDir, { recursive: true, force: true });
   });
 
   beforeEach(async () => {
@@ -233,6 +234,76 @@ describe("DesignDocsService", () => {
       expect(read?.boundedContexts?.added[0].description).toBe(
         "second version",
       );
+    });
+
+    test("rejects modify of user-edited element without confirmed_edits", async () => {
+      const initial = {
+        id: "dd-edit-1",
+        name: "edit-flow",
+        description: "v1",
+        boundedContexts: {
+          added: [
+            { name: "Billing", description: "v1", edited_by_user: true },
+          ],
+        },
+      };
+      await service.saveDesignDocFromFile(await writeDoc(initial, "edit-1.json"));
+
+      const delta = {
+        id: "dd-edit-1",
+        name: "edit-flow",
+        description: "v2",
+        boundedContexts: {
+          modified: [{ name: "Billing", description: "agent override" }],
+        },
+      };
+      await expect(
+        service.saveDesignDocFromFile(await writeDoc(delta, "edit-1-delta.json")),
+      ).rejects.toThrow(/edited element/);
+    });
+
+    test("accepts modify of user-edited element when path is confirmed", async () => {
+      const initial = {
+        id: "dd-edit-2",
+        name: "edit-flow-2",
+        description: "v1",
+        boundedContexts: {
+          added: [
+            { name: "Billing", description: "v1", edited_by_user: true },
+          ],
+        },
+      };
+      await service.saveDesignDocFromFile(await writeDoc(initial, "edit-2.json"));
+
+      const delta = {
+        id: "dd-edit-2",
+        name: "edit-flow-2",
+        description: "v2",
+        boundedContexts: {
+          modified: [{ name: "Billing", description: "agent override" }],
+        },
+      };
+      const result = await service.saveDesignDocFromFile(
+        await writeDoc(delta, "edit-2-delta.json"),
+        ["boundedContexts/Billing"],
+      );
+      expect(result.status).toBe("Ok");
+      const read = await service.readDesignDoc("dd-edit-2");
+      expect(read?.boundedContexts?.added[0].description).toBe("agent override");
+    });
+
+    test("rejects path outside noesis/design-docs/", async () => {
+      const stray = mkdtempSync(join(tmpdir(), "noesis-stray-"));
+      const path = join(stray, "stray.json");
+      await writeFile(
+        path,
+        JSON.stringify({ id: "dd-stray", name: "stray", description: "x" }),
+        "utf-8",
+      );
+      await expect(service.saveDesignDocFromFile(path)).rejects.toThrow(
+        /must be under/,
+      );
+      rmSync(stray, { recursive: true, force: true });
     });
 
     test("round-trips a behaviour with omitted input/output/usedBuildingBlocks", async () => {

@@ -65,7 +65,11 @@ export class FileLoaderService {
     if (kind === undefined) return null;
     const ext = extname(filename);
     if (ext !== ".md" && ext !== ".json") return null;
-    const id = filename.slice(0, -ext.length);
+    const id =
+      kind === "design_doc" && ext === ".json"
+        ? readDesignDocId(absPath, filename)
+        : filename.slice(0, -ext.length);
+    if (id === null) return null;
     return { kind, id, ext };
   }
 
@@ -359,6 +363,25 @@ async function readEditedByUserFlag(
   } catch {
     return false;
   }
+}
+
+function readDesignDocId(absPath: string, filename: string): string | null {
+  if (!existsSync(absPath)) {
+    const stem = filename.slice(0, -".json".length);
+    const dashIdx = stem.lastIndexOf("-");
+    return dashIdx === -1 ? stem : stem.slice(0, dashIdx);
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(absPath, "utf-8")) as {
+      id?: unknown;
+    };
+    if (typeof parsed.id === "string" && parsed.id !== "") return parsed.id;
+  } catch {
+    // fall through to filename fallback
+  }
+  const stem = filename.slice(0, -".json".length);
+  const dashIdx = stem.lastIndexOf("-");
+  return dashIdx === -1 ? stem : stem.slice(0, dashIdx);
 }
 
 function buildShaIndex(files: SourceFileRow[]): Map<string, string> {

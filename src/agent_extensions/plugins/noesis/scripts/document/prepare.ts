@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
-import { randomUUID } from "crypto";
+import { newUuid } from "../../shared-contracts/uuid.js";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
 import { fragmentMarkdown } from "./fragment-markdown.js";
 import {
@@ -130,7 +130,7 @@ function resolveDocumentId(sourceContent: string): string {
   const firstLine = sourceContent.split("\n", 1)[0];
   const match = DOCUMENT_ID_PATTERN.exec(firstLine);
   if (match !== null) return match[1];
-  return randomUUID();
+  return newUuid();
 }
 
 function resolveProjectDir(explicit: string | undefined): string {

@@ -47,25 +47,36 @@ function registerSaveDesignDoc(
     {
       description:
         "Persist a DesignDoc into the knowledge graph from a JSON file matching DesignDocSchema. " +
-        "The path points at the version-controlled DesignDoc JSON in the repository — the agent writes/updates this file " +
-        "directly, then this tool reads it, validates, and applies ChangeSets recursively (added → upsert, " +
+        "Path must be the canonical `<projectDir>/noesis/design-docs/<id-prefix>-<slug>.json`. " +
+        "Tool reads it, validates, and applies ChangeSets recursively (added → upsert, " +
         "modified → partial update, removed → delete by name). " +
         "Quality gate (rejects on save): every `added` Rule needs description ≥80 chars (Trigger / Pre / Algorithm / Post / Edge cases — no tautologies); " +
         "every `added` Behaviour needs description ≥400 chars (Input / Validation / numbered Steps / Output). " +
         "Warnings (non-blocking): a Bounded Context with >20 building blocks and 0 modules; an application_service or ≥3-block-using behaviour without an embedded ```mermaid sequence diagram. " +
+        "User-edit gate: any element in the on-disk previous state with `edited_by_user: true` rejects the save when targeted by `modified` or `removed` unless its element-path appears in `confirmed_edits`. " +
         "Returns { status: \"Ok\", design_doc_id, warnings: string[] } on success; " +
-        "validation or storage failures surface as a tool error with the failure message.",
+        "validation, conflict, or storage failures surface as a tool error.",
       inputSchema: {
         path: z
           .string()
           .describe(
-            "Absolute path to the persisted DesignDoc JSON file in the repository.",
+            "Absolute path to the canonical DesignDoc JSON under noesis/design-docs/.",
+          ),
+        confirmed_edits: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Element paths the user has explicitly approved overwriting. " +
+              "Format: 'boundedContexts/<bc>/buildingBlocks/<bb>/behaviours/<bh>' (or '/rules/<r>', '/scenarios/<s>'). " +
+              "Required for any user-edited element targeted by `modified` or `removed`. Agent must NEVER include a path here without explicit user confirmation.",
           ),
       },
     },
-    async ({ path }) =>
+    async ({ path, confirmed_edits }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, () => service.saveDesignDocFromFile(path)),
+        gateWriteTool(indexState, () =>
+          service.saveDesignDocFromFile(path, confirmed_edits ?? []),
+        ),
       ),
   );
 }
@@ -306,9 +317,13 @@ function appendActors(lines: string[], actors: DesignedActor[]): void {
     return;
   }
   for (const a of actors) {
-    lines.push(`- **${a.name}** — ${a.description ?? ""}`);
+    lines.push(`- **${a.name}**${editedSuffix(a)} — ${a.description ?? ""}`);
   }
   lines.push("");
+}
+
+function editedSuffix(item: { edited_by_user?: boolean }): string {
+  return item.edited_by_user === true ? " _[edited_by_user]_" : "";
 }
 
 function appendQualityAttributes(
@@ -324,7 +339,7 @@ function appendQualityAttributes(
   }
   for (const q of attrs) {
     const type = q.type ? ` _(${q.type})_` : "";
-    lines.push(`- **${q.name}**${type} — ${q.description ?? ""}`);
+    lines.push(`- **${q.name}**${type}${editedSuffix(q)} — ${q.description ?? ""}`);
   }
   lines.push("");
 }
@@ -340,7 +355,7 @@ function appendBoundedContexts(
     return;
   }
   for (const bc of contexts) {
-    lines.push(`### ${bc.name}`);
+    lines.push(`### ${bc.name}${editedSuffix(bc)}`);
     if (bc.description) lines.push(bc.description);
     lines.push("");
     for (const m of bc.modules?.added ?? []) {
@@ -357,7 +372,7 @@ function appendModule(
   mod: DesignedDomainModule,
   headingLevel: number,
 ): void {
-  lines.push(`${"#".repeat(headingLevel)} Module: ${mod.name}`);
+  lines.push(`${"#".repeat(headingLevel)} Module: ${mod.name}${editedSuffix(mod)}`);
   if (mod.description) lines.push(mod.description);
   lines.push("");
   for (const bb of mod.buildingBlocks?.added ?? []) {
@@ -371,7 +386,7 @@ function appendBuildingBlock(
   headingLevel: number,
 ): void {
   const type = bb.type ? ` _(${bb.type})_` : "";
-  lines.push(`${"#".repeat(headingLevel)} ${bb.name}${type}`);
+  lines.push(`${"#".repeat(headingLevel)} ${bb.name}${type}${editedSuffix(bb)}`);
   if (bb.description) lines.push(bb.description);
   const properties = bb.properties?.added ?? [];
   if (properties.length > 0) {
@@ -400,7 +415,9 @@ function appendBehaviour(
 ): void {
   const tag = bh.type ? ` _[${bh.type}]_` : "";
   const visibility = bh.isPublic ? " · public" : "";
-  lines.push(`${"#".repeat(headingLevel)} ${bh.name}${tag}${visibility}`);
+  lines.push(
+    `${"#".repeat(headingLevel)} ${bh.name}${tag}${visibility}${editedSuffix(bh)}`,
+  );
   if (bh.description) lines.push(bh.description);
   if (bh.actor) lines.push(`- **Actor:** ${bh.actor}`);
   const inputs = bh.input?.added ?? [];
@@ -416,11 +433,15 @@ function appendBehaviour(
 
 function appendRule(lines: string[], rule: DesignedRule): void {
   const type = rule.ruleType ? ` _(${rule.ruleType})_` : "";
-  lines.push(`- **Rule:** ${rule.name}${type}${rule.description ? ` — ${rule.description}` : ""}`);
+  lines.push(
+    `- **Rule:** ${rule.name}${type}${editedSuffix(rule)}${rule.description ? ` — ${rule.description}` : ""}`,
+  );
 }
 
 function appendScenario(lines: string[], scenario: DesignedScenario): void {
-  lines.push(`- **Scenario:** ${scenario.name} — ${scenario.description}`);
+  lines.push(
+    `- **Scenario:** ${scenario.name}${editedSuffix(scenario)} — ${scenario.description}`,
+  );
   lines.push(`  - Given: ${scenario.given}`);
   lines.push(`  - When: ${scenario.when}`);
   lines.push(`  - Then: ${scenario.then}`);

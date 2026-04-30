@@ -5,16 +5,16 @@ description: Produce or iterate a Design Doc that meets new requirements. Pulls 
 
 # Create Design Doc
 
-The main agent does the reasoning. Pull evidence from the knowledge graph via `noesis-graph` MCP tools, analyse it as an experienced architect and analyst would, and emit a `DesignDoc` JSON expressed as a diff (added / modified / removed) from the **currently implemented codebase**.
-Persistence happens via `noesis-graph:save_design_doc`; never write graph data directly.
+## Core Principles
 
-Use **progressive disclosure** for analysis files: every analysis sub-step writes its findings to a separate Markdown file under `<working_dir>` and is then offloaded from the agent's context. Reload only when later steps need it.
-
-For long runs, optionally use `TaskCreate` to track Steps 1–4; mark each completed before progressing.
+- The main agent does the reasoning. Pull evidence from the knowledge graph via `noesis-graph` MCP tools, analyze it as an experienced architect and analyst would, and emit a `DesignDoc` JSON expressed as a diff (added / modified / removed) from the **currently implemented codebase**.
+- Persistence happens via `noesis-graph:save_design_doc`; never write graph data directly.
+- Use **progressive disclosure** for analysis files: every analysis sub-step writes its findings to a separate Markdown file under `<working_dir>` and is then offloaded from the agent's context. Reload only when later steps need it.
+- For long runs, optionally use `TaskCreate` to track Steps 1–4; mark each completed before progressing.
 
 ## Pre-flight reads
 
-Before Setup, load these reference files in a **single parallel `Read` batch** and keep them in active context for the rest of the run — their constraints govern Step 3 outputs and Step 4 serialisation:
+Before Setup, load these reference files in a **single parallel `Read` batch** and keep them in active context for the rest of the run — their constraints govern Step 3 outputs and Step 4 serialization:
 
 - `${CLAUDE_PLUGIN_ROOT}/skills/create-design-doc/references/modularization.md` (governs §3.1)
 - `${CLAUDE_PLUGIN_ROOT}/skills/create-design-doc/references/business_rules.md` (governs §3.3)
@@ -49,7 +49,10 @@ Required after parsing:
 
 - **Design Doc target** — exactly one of `design_doc_id` (iterate on existing) or `design_doc_title` (create new). If both are supplied, ask via `AskUserQuestion` which mode the user wants. **Title fallback:** when neither `design_doc_id` nor `design_doc_title` is supplied, derive `design_doc_title` from the dominant heading (`H1`) of the first `file_paths` entry, falling back to the kebab-case slug of the file basename. Confirm via `AskUserQuestion` only when no `file_paths` entry exists or the derived title collides with an existing doc.
 - **conversation_ids**, **document_ids**, **file_paths** — at least one of the three lists must be non-empty. If all three are empty, ask via `AskUserQuestion` for at least one source before continuing.
-- **design_doc_path** — absolute path for the JSON artefact. Default: `<repo_root>/work_items/<slug>.json`, where `<slug>` is the kebab-case slug of `design_doc_title` (or of the existing doc's name when iterating).
+- **design_doc_path** — absolute path for the JSON artifact under the canonical layout. Default: `<projectDir>/noesis/design-docs/<id-prefix>-<slug>.json`, where:
+    - `<id-prefix>` is the first 8 chars of the design-doc UUIDv7 (extend the prefix only if it collides with another doc's id).
+    - `<slug>` is the kebab-case slug of `design_doc_title` (or of the existing doc's name when iterating), truncated to 15 chars.
+    - When iterating, the id is known from `read_design_doc`. When creating new, omit the `id` field in the JSON and `save_design_doc` will fill in a UUIDv7; the agent may pick any temporary filename under `noesis/design-docs/` and the splitter will rename to the canonical filename on save. **Paths outside `noesis/design-docs/` are rejected.**
 
 When `design_doc_title` is supplied, call `noesis-graph:list_design_docs` and confirm the title does not collide with an existing doc's name. If it does, ask via `AskUserQuestion` whether to iterate on the existing doc, or pick a new title.
 
@@ -61,7 +64,7 @@ Resolve a `<working_dir>` for analysis scratch files by running:
 bun run ${CLAUDE_PLUGIN_ROOT}/scripts/resolve-working-dir.ts noesis:create-design-doc <execution_id>
 ```
 
-Use the file basename of `design_doc_path` *without* the `.json` extension as `<execution_id>`. When iterating on an existing design doc and a JSON file already exists at the canonical path, **prefer that file's basename** to the slug of the title — they may differ. The script returns JSON `{ "status": "Ok", "working_dir": "...", "skill_name": "...", "execution_id": "..." }`. Treat `working_dir` as an opaque absolute path and use it verbatim for every scratch file produced by Steps 1–3. **Lifetime:** kept across runs for debugging; the skill never deletes it. The directory lives under the plugin's per-project tmp area outside the repository, so no `.gitignore` entry is required.
+Use the `design_doc_id` (UUIDv7, full 36 chars) as `<execution_id>` whenever it is known — that keeps the working dir stable across iterations even if the title (and thus the canonical filename) changes. For a brand-new doc whose id has not yet been generated, use the kebab-case slug of `design_doc_title`; on the next run (when the id exists), switch to the id. The script returns JSON `{ "status": "Ok", "working_dir": "...", "skill_name": "...", "execution_id": "..." }`. Treat `working_dir` as an opaque absolute path and use it verbatim for every scratch file produced by Steps 1–3. **Lifetime:** kept across runs for debugging; the skill never deletes it. The directory lives under the plugin's per-project tmp area outside the repository, so no `.gitignore` entry is required.
 
 ## Workflow
 
@@ -267,7 +270,9 @@ Every reference in `usedBuildingBlocks`, `input`, `output`, every `properties[].
 
 #### Step 4.2 — Save
 
-Write the validated JSON to `<design_doc_path>` (this is the version-controlled artefact). Then call `noesis-graph:save_design_doc` with `path: <design_doc_path>`.
+Write the validated JSON to `<design_doc_path>` under `noesis/design-docs/` (this is the version-controlled artefact). Then call `noesis-graph:save_design_doc` with `path: <design_doc_path>` and `confirmed_edits: <approved-paths>` (empty array when no user-edited element was overwritten — see the **Respect user edits** Rule).
+
+The save tool resolves the canonical filename from the JSON's `id` and `name`. When the title changed (and thus the canonical filename), the splitter writes the new file and removes the old one — leave that to the splitter; never rename manually.
 
 If `save_design_doc` fails after the JSON file write succeeded, the file is the source of truth — fix the offending fields in place and re-call `save_design_doc` until it succeeds. Do not delete the file on failure.
 
@@ -286,4 +291,4 @@ Report the returned `design_doc_id` and the totals (`added` / `modified` / `remo
 - **Use existing references unmodified.** The `references/` directory is curated input; do not edit it as part of this skill's run.
 - **Persist via MCP only.** Edit the design doc JSON locally, then hand the path to `noesis-graph:save_design_doc` — do not call lower-level graph mutations.
 - **English-only output.** The Design Doc — and every scratch analysis file produced under `<working_dir>` — must be written in **English**, regardless of the language of the source material (conversations, topics, documents, decisions, user-supplied files, or the invocation prompt). Translate prose, headings, names, descriptions, and BDD scenarios to English while authoring; do not defer translation to a later pass. Preserve ubiquitous-language tokens (proper nouns, established domain terms with no clean English equivalent) verbatim and, on first use, gloss them in English in parentheses.
-- **Respect user edits.** Before producing a `modified` or `removed` entry against any existing design-doc element (Bounded Context, Module, Building Block, Behaviour, Rule, Scenario, Quality Attribute, Actor) whose on-disk record is marked `edited_by_user: true`, ask for explicit user acceptance via `AskUserQuestion`. `save_design_doc` will reject overwrites of user-edited content regardless; this rule additionally surfaces the intended change so the user can keep their version, accept the new one, or merge manually. If the user declines, drop the change from the ChangeSet and proceed with the rest of the diff.
+- **Respect user edits.** The Step 1.0 `read_design_doc` rendering tags every user-edited element with ` _[edited_by_user]_`. Before producing a `modified` or `removed` entry against any such element (Bounded Context, Module, Building Block, Behaviour, Rule, Scenario, Quality Attribute, Actor), ask for explicit user acceptance via `AskUserQuestion`. For each path the user approves, add the element-path string (e.g. `boundedContexts/Billing/buildingBlocks/Invoice/behaviours/IssueInvoice`) to the `confirmed_edits` array and pass it to `save_design_doc` alongside the JSON path. `save_design_doc` rejects the save when any user-edited target is missing from `confirmed_edits`. If the user declines, drop the change from the ChangeSet and proceed with the rest of the diff. **Never include a path in `confirmed_edits` without an explicit user approval for that path** — the array is the user's authorisation receipt, not the agent's intent log.

@@ -24,7 +24,7 @@ Get from `$ARGUMENTS`, ask if missing:
 
   If none provided, ask: *"Should I attach the extracted model to an existing Design Doc (provide id) or create a new one (provide title)? Reply `id=<uuid>`, `title=<name>`, or `skip`."*
 
-- **design_doc_path** — required when not `skip`. Absolute path in the repository where the design doc JSON should be persisted. Ask if missing — suggest `work_items/<name>.json` or similar.
+- **design_doc_path** — required when not `skip`. Absolute path under `<projectDir>/noesis/design-docs/` where the design doc JSON should be persisted. Default: `<projectDir>/noesis/design-docs/<id-prefix>-<slug>.json` where `<id-prefix>` is the first 8 chars of the design-doc UUIDv7 and `<slug>` is the kebab-case title truncated to 15 chars. The save tool rejects paths outside `noesis/design-docs/`.
 
 ## Workflow
 
@@ -147,7 +147,7 @@ Decide whether the document genuinely describes a domain model (Bounded Contexts
 
 If `<design_doc_id>` is provided, call `noesis-graph:read_design_doc` with that id, read the returned file, and produce a ChangeSet diff against the cached state. Otherwise produce a first-iteration design with everything in `added`.
 
-Write the validated `DesignDoc` payload directly to `<design_doc_path>` (the user-provided repository location — this file is version-controlled, not transient). Then call MCP tool `noesis-graph:save_design_doc` with `path: <design_doc_path>`. The tool returns `{ status: "Ok", design_doc_id }` on success; validation or storage failures surface as a tool error — fix the input and call the tool again. Once the save succeeds, set `<output_path>`'s `design_doc_extracted: true`.
+Write the validated `DesignDoc` payload directly to `<design_doc_path>` (canonical, under `noesis/design-docs/`). Then call MCP tool `noesis-graph:save_design_doc` with `path: <design_doc_path>` and `confirmed_edits: []` (or the approved paths when overriding user-edited elements — see the **Respect user edits** Rule). The tool returns `{ status: "Ok", design_doc_id, canonical_path }` on success; on rename, `canonical_path` may differ from the input path and the input is removed. Validation or storage failures surface as a tool error — fix the input and call the tool again. Once the save succeeds, set `<output_path>`'s `design_doc_extracted: true`.
 
 ### Step 7: Merge into the knowledge graph
 
@@ -162,4 +162,4 @@ Report `topics_added`, `topics_updated`, `decisions_added`, and `decision_attach
 - Do NOT load `references/design-doc-schema.md` unless Step 6 is actually entered — it is large.
 - Generate all titles, summaries, and free-text fields in the same language as the source document.
 - Reuse before promote: prefer an existing topic over a new one, an existing decision over a new one, whenever the fit is reasonable.
-- **Respect user edits.** Before changing any existing topic, decision, or design-doc whose on-disk file is marked `edited_by_user: true`, ask for explicit user acceptance via `AskUserQuestion`. The splitter / `save_design_doc` will skip user-edited files at merge time regardless; this rule additionally surfaces the intended overwrite so the user can keep their version, accept the new one, or merge manually. If the user declines, leave the entity unchanged and route the new evidence elsewhere (different topic, new topic, item-only attachment, or skip the design-doc update).
+- **Respect user edits.** Before changing any existing topic, decision, or design-doc element whose on-disk record is marked `edited_by_user: true`, ask for explicit user acceptance via `AskUserQuestion`. For design-doc elements, pass each approved element-path in the `confirmed_edits` array of `save_design_doc`; the save rejects user-edited overrides that are not in that list. **Never include a path in `confirmed_edits` without explicit user approval.** For topics/decisions, the splitter still skips files flagged `edited_by_user: true` at the file level. If the user declines, leave the entity unchanged and route the new evidence elsewhere (different topic, new topic, item-only attachment, or skip the design-doc update).

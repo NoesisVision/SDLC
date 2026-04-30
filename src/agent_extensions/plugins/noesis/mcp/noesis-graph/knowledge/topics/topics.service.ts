@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { randomUUID } from "crypto";
+import { newUuid } from "../../../../shared-contracts/uuid.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
 import type { TopicItem } from "../../../../shared-contracts/topics.js";
 import type {
@@ -103,7 +103,7 @@ export class TopicsService {
       );
     }
     const ids: string[] = [];
-    for (let i = 0; i < count; i++) ids.push(randomUUID());
+    for (let i = 0; i < count; i++) ids.push(newUuid());
     return { ids };
   }
 
@@ -371,7 +371,7 @@ function sortForestByTitle(nodes: TopicNode[]): void {
 
 function toNewTopic(input: AddTopicInput): NewTopicInput {
   return {
-    id: input.id ?? randomUUID(),
+    id: input.id ?? newUuid(),
     title: input.title,
     short_summary: input.short_summary,
     long_summary: input.long_summary ?? "",

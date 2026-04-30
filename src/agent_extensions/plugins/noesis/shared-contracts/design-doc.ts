@@ -1,5 +1,5 @@
-import { randomUUID } from "crypto";
 import { z } from "zod";
+import { newUuid } from "./uuid.js";
 
 export const DesignedBuildingBlockTypeSchema = z.enum([
   "aggregate",
@@ -79,6 +79,13 @@ export const DesignedRuleSchema = z.object({
         "Structure: Trigger / Pre-conditions / Algorithm / Post-conditions / Edge cases. " +
         "Tautologies that paraphrase `name` and pure rationale without algorithm are rejected by the quality gate.",
     ),
+  edited_by_user: z
+    .boolean()
+    .optional()
+    .describe(
+      "True when this element was edited by the user (UI or manual JSON). " +
+        "Skill must request explicit confirmation before overwriting.",
+    ),
 });
 export type DesignedRule = z.infer<typeof DesignedRuleSchema>;
 
@@ -88,6 +95,7 @@ export const DesignedScenarioSchema = z.object({
   given: z.string().describe("Precondition or initial context"),
   when: z.string().describe("Action or event that triggers the scenario"),
   then: z.string().describe("Expected outcome or postcondition"),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignedScenario = z.infer<typeof DesignedScenarioSchema>;
 
@@ -154,6 +162,7 @@ export const DesignedBehaviourSchema = z.object({
     .nullable()
     .default(null)
     .describe("Name of the actor who initiates this behaviour"),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignedBehaviour = z.infer<typeof DesignedBehaviourSchema>;
 
@@ -167,6 +176,7 @@ export type DesignedBehaviourChangeSet = z.infer<
 export const DesignedActorSchema = z.object({
   name: z.string(),
   description: z.string().nullable().default(null),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignedActor = z.infer<typeof DesignedActorSchema>;
 
@@ -178,6 +188,7 @@ export const DesignedQualityAttributeSchema = z.object({
     .nullable()
     .default(null)
     .describe("Measurable quality expectation"),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignedQualityAttribute = z.infer<
   typeof DesignedQualityAttributeSchema
@@ -199,6 +210,7 @@ export const DesignedBuildingBlockSchema = z.object({
   behaviours: DesignedBehaviourChangeSetSchema.optional(),
   rules: DesignedRuleChangeSetSchema.optional(),
   scenarios: DesignedScenarioChangeSetSchema.optional(),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignedBuildingBlock = z.infer<typeof DesignedBuildingBlockSchema>;
 
@@ -213,6 +225,7 @@ export const DesignedDomainModuleSchema = z.object({
   name: z.string(),
   description: z.string().nullable().default(null),
   buildingBlocks: DesignedBuildingBlockChangeSetSchema.optional(),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignedDomainModule = z.infer<typeof DesignedDomainModuleSchema>;
 
@@ -234,6 +247,7 @@ export const DesignedBoundedContextSchema = z.object({
   buildingBlocks: DesignedBuildingBlockChangeSetSchema.optional().describe(
     "Building blocks not belonging to any module",
   ),
+  edited_by_user: z.boolean().optional(),
 });
 export type DesignedBoundedContext = z.infer<
   typeof DesignedBoundedContextSchema
@@ -261,7 +275,7 @@ export type DesignedQualityAttributeChangeSet = z.infer<
 export const DesignDocSchema = z.object({
   id: z
     .string()
-    .default(() => randomUUID())
+    .default(() => newUuid())
     .describe("Unique design id. If omitted, a UUID is generated."),
   name: z
     .string()

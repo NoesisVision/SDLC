@@ -1,5 +1,12 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { existsSync } from "fs";
 import { readFile } from "fs/promises";
+import { resolve } from "path";
+import {
+  findDesignDocFileById,
+  noesisSubdirPath,
+  readSidecar,
+} from "../../../../shared-contracts/source-files.js";
 import {
   DesignDocSchema,
   type DesignDoc,
@@ -14,7 +21,10 @@ import {
   type DesignedScenario,
 } from "../../../../shared-contracts/design-doc.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
-import { splitDesignDoc } from "../../file-sync/design-doc-splitter.js";
+import {
+  splitDesignDoc,
+  UserEditConflictError,
+} from "../../file-sync/design-doc-splitter.js";
 import { FileLoaderService } from "../../file-sync/file-loader.service.js";
 import type {
   DesignDocDetailData,
@@ -95,7 +105,11 @@ export class DesignDocsService implements OnModuleInit {
   }
 
   async readDesignDoc(designDocId: string): Promise<DesignDoc | null> {
-    return this.repository.readDesignDoc(designDocId);
+    const fromDb = await this.repository.readDesignDoc(designDocId);
+    if (fromDb === null) return null;
+    const onDisk = readDesignDocFromDisk(this.projectDir, designDocId);
+    if (onDisk !== null) overlayEditedFlags(fromDb, onDisk);
+    return fromDb;
   }
 
   async readBoundedContextMap(): Promise<BoundedContextMapEntry[]> {
@@ -147,40 +161,70 @@ export class DesignDocsService implements OnModuleInit {
     return { ok: true };
   }
 
-  async saveDesignDocFromFile(path: string): Promise<SaveDesignDocResult> {
+  async saveDesignDocFromFile(
+    path: string,
+    confirmedEdits: string[] = [],
+  ): Promise<SaveDesignDocResult> {
+    this.assertCanonicalPath(path);
     const doc = await this.readDesignDocFile(path);
-    const { errors, warnings } = validateDesignDocQuality(doc);
-    if (errors.length > 0) {
-      throw new Error(formatQualityErrors(errors));
-    }
-    await this.repository.applyDesignDoc(doc, todayDate());
-    const split = splitDesignDoc(doc, {
-      projectDir: this.projectDir,
-      sourcePath: path,
-    });
-    await this.fileLoader.registerWritten(split.canonical_path);
-    this.logger.log(
-      `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${split.canonical_path}`
-    );
-    return {
-      status: "Ok",
-      design_doc_id: doc.id,
-      canonical_path: split.canonical_path,
-      warnings,
-    };
+    return this.persist(doc, confirmedEdits, path);
   }
 
-  async saveDesignDoc(doc: DesignDoc, date: string): Promise<SaveDesignDocResult> {
+  private assertCanonicalPath(path: string): void {
+    const canonicalDir = noesisSubdirPath(this.projectDir, "design_doc");
+    const resolved = resolve(path);
+    if (!resolved.startsWith(`${canonicalDir}/`)) {
+      throw new Error(
+        `DesignDoc path must be under ${canonicalDir} (got ${resolved}). ` +
+          `Use designDocCanonicalPath helper or write to noesis/design-docs/<id-prefix>-<slug>.json directly.`,
+      );
+    }
+  }
+
+  async saveDesignDoc(
+    doc: DesignDoc,
+    date: string,
+    confirmedEdits: string[] = [],
+  ): Promise<SaveDesignDocResult> {
+    return this.persist(doc, confirmedEdits, null, date);
+  }
+
+  private async persist(
+    doc: DesignDoc,
+    confirmedEdits: string[],
+    sourcePath: string | null,
+    date: string = todayDate(),
+  ): Promise<SaveDesignDocResult> {
     const { errors, warnings } = validateDesignDocQuality(doc);
     if (errors.length > 0) {
       throw new Error(formatQualityErrors(errors));
     }
+    let split;
+    try {
+      split = splitDesignDoc(doc, {
+        projectDir: this.projectDir,
+        confirmedEdits: new Set(confirmedEdits),
+        inputPath: sourcePath ?? undefined,
+      });
+    } catch (err) {
+      if (err instanceof UserEditConflictError) {
+        throw new Error(
+          `${err.message}\nPass these paths in 'confirmed_edits' after explicit user approval, or drop the changes.`,
+        );
+      }
+      throw err;
+    }
     await this.repository.applyDesignDoc(doc, date);
-    const split = splitDesignDoc(doc, { projectDir: this.projectDir });
     await this.fileLoader.registerWritten(split.canonical_path);
-    this.logger.log(
-      `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${split.canonical_path}`
-    );
+    if (sourcePath !== null && sourcePath !== split.canonical_path) {
+      this.logger.log(
+        `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${split.canonical_path} (input was ${sourcePath})`,
+      );
+    } else {
+      this.logger.log(
+        `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${split.canonical_path}`,
+      );
+    }
     return {
       status: "Ok",
       design_doc_id: doc.id,
@@ -210,6 +254,104 @@ function byDateDesc(a: { date: string }, b: { date: string }): number {
 
 function todayDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function readDesignDocFromDisk(
+  projectDir: string,
+  designDocId: string,
+): DesignDoc | null {
+  const path = findDesignDocFileById(projectDir, designDocId);
+  if (path === null || !existsSync(path)) return null;
+  try {
+    return readSidecar(path, DesignDocSchema);
+  } catch {
+    return null;
+  }
+}
+
+function overlayEditedFlags(target: DesignDoc, source: DesignDoc): void {
+  overlayFlatList(target.actors?.added ?? [], source.actors?.added ?? []);
+  overlayFlatList(
+    target.qualityAttributes?.added ?? [],
+    source.qualityAttributes?.added ?? [],
+  );
+  overlayBoundedContexts(
+    target.boundedContexts?.added ?? [],
+    source.boundedContexts?.added ?? [],
+  );
+}
+
+function overlayFlatList<T extends { name: string; edited_by_user?: boolean }>(
+  target: T[],
+  source: T[],
+): void {
+  const sourceByName = new Map(source.map((s) => [s.name, s]));
+  for (const t of target) {
+    const s = sourceByName.get(t.name);
+    if (s?.edited_by_user === true) t.edited_by_user = true;
+  }
+}
+
+function overlayBoundedContexts(
+  target: DesignedBoundedContext[],
+  source: DesignedBoundedContext[],
+): void {
+  const sourceByName = new Map(source.map((s) => [s.name, s]));
+  for (const t of target) {
+    const s = sourceByName.get(t.name);
+    if (s === undefined) continue;
+    if (s.edited_by_user === true) t.edited_by_user = true;
+    overlayModules(t.modules?.added ?? [], s.modules?.added ?? []);
+    overlayBuildingBlocks(
+      t.buildingBlocks?.added ?? [],
+      s.buildingBlocks?.added ?? [],
+    );
+  }
+}
+
+function overlayModules(
+  target: DesignedDomainModule[],
+  source: DesignedDomainModule[],
+): void {
+  const sourceByName = new Map(source.map((s) => [s.name, s]));
+  for (const t of target) {
+    const s = sourceByName.get(t.name);
+    if (s === undefined) continue;
+    if (s.edited_by_user === true) t.edited_by_user = true;
+    overlayBuildingBlocks(
+      t.buildingBlocks?.added ?? [],
+      s.buildingBlocks?.added ?? [],
+    );
+  }
+}
+
+function overlayBuildingBlocks(
+  target: DesignedBuildingBlock[],
+  source: DesignedBuildingBlock[],
+): void {
+  const sourceByName = new Map(source.map((s) => [s.name, s]));
+  for (const t of target) {
+    const s = sourceByName.get(t.name);
+    if (s === undefined) continue;
+    if (s.edited_by_user === true) t.edited_by_user = true;
+    overlayBehaviours(t.behaviours?.added ?? [], s.behaviours?.added ?? []);
+    overlayFlatList(t.rules?.added ?? [], s.rules?.added ?? []);
+    overlayFlatList(t.scenarios?.added ?? [], s.scenarios?.added ?? []);
+  }
+}
+
+function overlayBehaviours(
+  target: DesignedBehaviour[],
+  source: DesignedBehaviour[],
+): void {
+  const sourceByName = new Map(source.map((s) => [s.name, s]));
+  for (const t of target) {
+    const s = sourceByName.get(t.name);
+    if (s === undefined) continue;
+    if (s.edited_by_user === true) t.edited_by_user = true;
+    overlayFlatList(t.rules?.added ?? [], s.rules?.added ?? []);
+    overlayFlatList(t.scenarios?.added ?? [], s.scenarios?.added ?? []);
+  }
 }
 
 interface QualityReport {
