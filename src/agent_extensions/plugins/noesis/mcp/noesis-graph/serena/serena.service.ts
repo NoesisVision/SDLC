@@ -1,8 +1,6 @@
 import {
   Injectable,
   Inject,
-  Logger,
-  OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -22,22 +20,11 @@ export interface SerenaState {
 }
 
 @Injectable()
-export class SerenaService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(SerenaService.name);
+export class SerenaService implements OnModuleDestroy {
   private client: Client | null = null;
   private state: SerenaState = { status: "disconnected" };
 
   constructor(@Inject(PROJECT_DIR) private readonly projectDir: string) {}
-
-  async onModuleInit(): Promise<void> {
-    try {
-      await this.connect();
-      this.logger.log("Serena connected");
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Serena connection failed: ${message}`);
-    }
-  }
 
   async onModuleDestroy(): Promise<void> {
     if (this.client) {
@@ -51,7 +38,10 @@ export class SerenaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
-    if (this.client === null || this.state.status !== "connected") {
+    if (this.state.status !== "connected") {
+      await this.connect();
+    }
+    if (this.client === null) {
       throw new Error("Serena is not connected");
     }
     const result = await this.client.callTool({ name, arguments: args });
