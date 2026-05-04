@@ -289,6 +289,13 @@ export const DesignDocSchema = z.object({
   boundedContexts: DesignedBoundedContextChangeSetSchema.optional(),
   qualityAttributes: DesignedQualityAttributeChangeSetSchema.optional(),
   edited_by_user: z.boolean().optional(),
+  implemented: z
+    .boolean()
+    .optional()
+    .describe(
+      "True once `implement-design-doc` has run successfully against this doc. " +
+        "Implemented docs are read-only — `save_design_doc` and the UI editor reject mutations until a fresh doc is created.",
+    ),
 });
 export type DesignDoc = z.infer<typeof DesignDocSchema>;
 
@@ -301,5 +308,6 @@ export const DesignDocOverviewSchema = z.object({
   bounded_context_count: z.int(),
   quality_attribute_count: z.int(),
   edited_by_user: z.boolean().optional(),
+  implemented: z.boolean().optional(),
 });
 export type DesignDocOverview = z.infer<typeof DesignDocOverviewSchema>;

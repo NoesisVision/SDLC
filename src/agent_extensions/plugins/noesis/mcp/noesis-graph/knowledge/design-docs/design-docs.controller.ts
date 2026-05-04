@@ -1,9 +1,17 @@
-import { Body, Controller, Get, Param, Patch } from "@nestjs/common";
+import {
+  Body,
+  ConflictException,
+  Controller,
+  Get,
+  Param,
+  Patch,
+} from "@nestjs/common";
 import type {
   DesignDocDetailData,
   DesignDocsPageData,
 } from "../../ui-contracts/design-docs/design-docs-data.js";
 import {
+  DesignDocImplementedError,
   DesignDocsService,
   type ElementPathSegment,
 } from "./design-docs.service.js";
@@ -37,6 +45,22 @@ export class DesignDocsController {
     if (!Array.isArray(body.path) || body.path.length === 0) {
       throw new Error("Element path must not be empty");
     }
-    return this.service.updateDesignDocElement(designDocId, body.path, body.fields ?? {});
+    try {
+      return await this.service.updateDesignDocElement(
+        designDocId,
+        body.path,
+        body.fields ?? {},
+      );
+    } catch (err) {
+      if (err instanceof DesignDocImplementedError) {
+        throw new ConflictException({
+          code: "DESIGN_DOC_IMPLEMENTED",
+          design_doc_id: err.designDocId,
+          name: err.designDocName,
+          message: err.message,
+        });
+      }
+      throw err;
+    }
   }
 }

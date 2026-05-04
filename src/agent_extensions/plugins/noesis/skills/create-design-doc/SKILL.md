@@ -49,7 +49,11 @@ Required after parsing:
 
 - **Design Doc target** — exactly one of `design_doc_id` (iterate on existing) or `design_doc_title` (create new). If both are supplied, ask via `AskUserQuestion` which mode the user wants. **Title fallback:** when neither `design_doc_id` nor `design_doc_title` is supplied, derive `design_doc_title` from the dominant heading (`H1`) of the first `file_paths` entry, falling back to the kebab-case slug of the file basename. Confirm via `AskUserQuestion` only when no `file_paths` entry exists or the derived title collides with an existing doc.
 - **conversation_ids**, **document_ids**, **file_paths** — at least one of the three lists must be non-empty. If all three are empty, ask via `AskUserQuestion` for at least one source before continuing.
-- **design_doc_path** — absolute path for the JSON artifact under `<projectDir>/noesis/design-docs/`. **Compute it via `noesis-graph:prepare_design_doc_path`** — never construct the filename manually. The tool returns `{ id, canonical_path }`:
+- **design_doc_path** — absolute path for the JSON artifact under `<projectDir>/noesis/design-docs/`. **Compute it via `noesis-graph:prepare_design_doc_path`** — never construct the filename manually. The tool returns one of:
+    - `{ status: "Ok", id, canonical_path }` — proceed normally.
+    - `{ status: "AlreadyImplemented", design_doc_id, name }` — the doc whose id was supplied has been sealed by `implement-design-doc` and is now read-only. **Stop the normal flow** and ask the user via `AskUserQuestion` whether to (a) create a brand new design doc instead (drop the supplied id, re-call `prepare_design_doc_path` with only `{ name: <design_doc_title> }` to mint a fresh UUIDv7), or (b) break execution. Never proceed to write JSON or call `save_design_doc` against an implemented doc.
+
+    Calling conventions:
     - When creating new, call with `{ name: <design_doc_title> }` (omit `id`). The tool mints a UUIDv7 and returns the canonical path. Put the returned `id` into the JSON's `id` field and write to `canonical_path`.
     - When iterating, call with `{ name, id }` (id from §1.0). The tool returns the canonical path for that id+name (the slug may differ from the previous filename if the doc was renamed).
     - Filename format is `<slug-up-to-20>-<id-suffix>.json` (id-suffix is the last 8 hex chars of the dash-stripped UUID, extended on collision). **Paths that don't match the canonical filename returned by `prepare_design_doc_path` are rejected by `save_design_doc`.**
@@ -235,7 +239,12 @@ Build a `DesignDoc` payload using the schema rules already loaded in **Pre-fligh
 
 #### Step 4.1 — Save
 
-Call `noesis-graph:prepare_design_doc_path` with `{ name, id? }` (id when iterating, omit when creating). It returns `{ id, canonical_path }`. Set the JSON's `id` field to the returned `id`, write the JSON to `canonical_path`, then call `noesis-graph:save_design_doc` with `path: canonical_path` and `confirmed_edits: <approved-paths>` (empty array when no user-edited element was overwritten — see the **Respect user edits** Rule).
+Call `noesis-graph:prepare_design_doc_path` with `{ name, id? }` (id when iterating, omit when creating). It returns either:
+
+- `{ status: "Ok", id, canonical_path }` — set the JSON's `id` field to the returned `id`, write the JSON to `canonical_path`, then call `noesis-graph:save_design_doc` with `path: canonical_path` and `confirmed_edits: <approved-paths>` (empty array when no user-edited element was overwritten — see the **Respect user edits** Rule).
+- `{ status: "AlreadyImplemented", design_doc_id, name }` — handle exactly as in Setup: ask the user via `AskUserQuestion` whether to (a) create a new design doc (drop the supplied id, re-call `prepare_design_doc_path` with only `{ name }`) or (b) break execution. Never write the JSON or call `save_design_doc` against an implemented doc.
+
+`save_design_doc` itself can also return `{ status: "AlreadyImplemented", design_doc_id, name }` if the doc was sealed between Setup and Step 4.1 (e.g. another agent ran `implement-design-doc` concurrently). Treat that response the same way.
 
 **Save is the ultimate validation.** Do not run a pre-save validation script or a manual self-check pass. Schema constraints (description length minimums, reference resolution, `removed`-vs-referenced contradictions, `implements` targets, etc.) are enforced by `save_design_doc` and returned as structured errors; the round-trip is fast.
 

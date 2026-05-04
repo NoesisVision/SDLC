@@ -6,6 +6,7 @@ import {
   designDocCanonicalPath,
   findDesignDocFileById,
   readSidecar,
+  writeSidecar,
 } from "../../../../shared-contracts/source-files.js";
 import {
   DesignDocSchema,
@@ -50,6 +51,23 @@ export interface SaveDesignDocResult {
   warnings: string[];
 }
 
+export type PrepareDesignDocPathResult =
+  | { status: "Ok"; id: string; canonical_path: string }
+  | { status: "AlreadyImplemented"; design_doc_id: string; name: string };
+
+export class DesignDocImplementedError extends Error {
+  constructor(
+    public readonly designDocId: string,
+    public readonly designDocName: string,
+  ) {
+    super(
+      `Design doc '${designDocName}' (${designDocId}) is marked as implemented and is read-only. ` +
+        `Create a new design doc to capture further changes.`,
+    );
+    this.name = "DesignDocImplementedError";
+  }
+}
+
 @Injectable()
 export class DesignDocsService implements OnModuleInit {
   private readonly logger = new Logger(DesignDocsService.name);
@@ -83,6 +101,7 @@ export class DesignDocsService implements OnModuleInit {
       name: overview.name,
       description: overview.description,
       date: overview.date,
+      implemented: overview.implemented ?? false,
       source: source as unknown as DesignDocSourceData,
     };
   }
@@ -96,6 +115,7 @@ export class DesignDocsService implements OnModuleInit {
         title: o.name,
         description: o.description,
         edited_by_user: o.edited_by_user ?? false,
+        implemented: o.implemented ?? false,
       }))
       .sort(byDateDesc);
     return { docs };
@@ -129,6 +149,7 @@ export class DesignDocsService implements OnModuleInit {
     if (path.length === 0) {
       throw new Error("Element path must not be empty");
     }
+    await this.assertNotImplemented(designDocId);
     const source = await this.repository.readDesignDocSource(designDocId);
     if (source === null) {
       throw new Error(`DesignDoc not found or has no source: ${designDocId}`);
@@ -165,9 +186,20 @@ export class DesignDocsService implements OnModuleInit {
   async prepareDesignDocPath(
     name: string,
     id: string | null,
-  ): Promise<{ id: string; canonical_path: string }> {
+  ): Promise<PrepareDesignDocPathResult> {
+    if (id !== null) {
+      const overview = await this.findOverview(id);
+      if (overview !== null && overview.implemented === true) {
+        return {
+          status: "AlreadyImplemented",
+          design_doc_id: id,
+          name: overview.name,
+        };
+      }
+    }
     const finalId = id ?? newUuid();
     return {
+      status: "Ok",
       id: finalId,
       canonical_path: designDocCanonicalPath(this.projectDir, finalId, name),
     };
@@ -179,7 +211,46 @@ export class DesignDocsService implements OnModuleInit {
   ): Promise<SaveDesignDocResult> {
     const doc = await this.readDesignDocFile(path);
     this.assertCanonicalPath(path, doc);
+    await this.assertNotImplemented(doc.id);
     return this.persist(doc, confirmedEdits);
+  }
+
+  async markDesignDocImplemented(
+    designDocId: string,
+  ): Promise<{ status: "Ok"; design_doc_id: string; implemented: true }> {
+    const overview = await this.findOverview(designDocId);
+    if (overview === null) {
+      throw new Error(`DesignDoc not found: ${designDocId}`);
+    }
+    if (overview.implemented === true) {
+      return { status: "Ok", design_doc_id: designDocId, implemented: true };
+    }
+    const path = findDesignDocFileById(this.projectDir, designDocId);
+    if (path !== null && existsSync(path)) {
+      const onDisk = readSidecar(path, DesignDocSchema);
+      if (onDisk.implemented !== true) {
+        writeSidecar(path, { ...onDisk, implemented: true }, DesignDocSchema);
+      }
+      await this.fileLoader.registerWritten(path);
+    }
+    await this.repository.markDesignDocImplemented(designDocId);
+    this.logger.log(
+      `Marked DesignDoc ${designDocId} (${overview.name}) as implemented`,
+    );
+    return { status: "Ok", design_doc_id: designDocId, implemented: true };
+  }
+
+  async isDesignDocImplemented(designDocId: string): Promise<boolean> {
+    const overview = await this.findOverview(designDocId);
+    return overview !== null && overview.implemented === true;
+  }
+
+  private async assertNotImplemented(designDocId: string): Promise<void> {
+    const overview = await this.findOverview(designDocId);
+    if (overview === null) return;
+    if (overview.implemented === true) {
+      throw new DesignDocImplementedError(designDocId, overview.name);
+    }
   }
 
   private assertCanonicalPath(path: string, doc: DesignDoc): void {
@@ -199,6 +270,7 @@ export class DesignDocsService implements OnModuleInit {
     date: string,
     confirmedEdits: string[] = [],
   ): Promise<SaveDesignDocResult> {
+    await this.assertNotImplemented(doc.id);
     return this.persist(doc, confirmedEdits, date);
   }
 

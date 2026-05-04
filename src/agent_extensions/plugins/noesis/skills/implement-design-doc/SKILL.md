@@ -161,10 +161,17 @@ The two MCP tools that drive this step are deterministic and produce/consume tmp
    - `{ status: "Mismatch", problems: string[] }` — every entry is either a missing change (something the doc says should be there but isn't) or an unexpected change (something present in the implementation that the doc never declared).
 4. **Fix-loop.** When `Mismatch` is returned, fix the listed problems directly in source (add the missing items, revert the unexpected ones). Do not edit the `before-scan.json` — the baseline must stay frozen. After fixes, re-run the build (Step 6), take a fresh post-implementation scan, and call `compare_implementation_to_design` again. Repeat until the comparator returns `Ok`. If a problem cannot be reconciled with the doc as written, stop and `AskUserQuestion`.
 
+### Step 8: Seal the Design Doc as implemented
+
+Once `compare_implementation_to_design` returned `{ status: "Ok" }` in Step 7 — and only then — call `noesis-graph:mark_design_doc_implemented` with the resolved `design_doc_id`. The tool flips `implemented: true` on the canonical JSON and the graph node, and from this point `save_design_doc`, `prepare_design_doc_path` (with this id), and the UI editor refuse to mutate the doc. If further changes are needed later, a new design doc must be created.
+
+Do **not** mark the doc implemented if the comparator never reached `Ok`, or if the run was aborted via `AskUserQuestion` (unresolved deviations). The sealed flag means "the code under this solution matches this diff exactly"; mark only when that contract holds.
+
 Report to the user:
 - Counts of BCs / Modules / Building Blocks `added` / `modified` / `removed`.
 - Build status, test status (pass / fail / total).
 - Comparator status (`Ok` after the fix-loop converged) and the number of fix iterations.
+- Confirmation that the design doc is now sealed as implemented.
 - Anything from `<working_dir>` that warrants follow-up (e.g. items the user resolved with deviations from the doc).
 
 ## Rules

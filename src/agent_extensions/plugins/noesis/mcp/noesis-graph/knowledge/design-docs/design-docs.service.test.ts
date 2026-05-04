@@ -872,6 +872,104 @@ describe("DesignDocsService", () => {
     });
   });
 
+  describe("markDesignDocImplemented", () => {
+    test("flips the implemented flag on disk and graph", async () => {
+      const path = await writeDoc(
+        { id: "dd-impl-1", name: "ship", description: "d" },
+      );
+      await service.saveDesignDocFromFile(path);
+
+      const before = await service.isDesignDocImplemented("dd-impl-1");
+      expect(before).toBe(false);
+
+      const result = await service.markDesignDocImplemented("dd-impl-1");
+      expect(result.implemented).toBe(true);
+
+      const after = await service.isDesignDocImplemented("dd-impl-1");
+      expect(after).toBe(true);
+
+      const detail = await service.getDesignDocDetail("dd-impl-1");
+      expect(detail.implemented).toBe(true);
+    });
+
+    test("is idempotent when called twice", async () => {
+      const path = await writeDoc(
+        { id: "dd-impl-idem", name: "idem", description: "d" },
+      );
+      await service.saveDesignDocFromFile(path);
+      await service.markDesignDocImplemented("dd-impl-idem");
+      const second = await service.markDesignDocImplemented("dd-impl-idem");
+      expect(second.implemented).toBe(true);
+    });
+
+    test("rejects save against an implemented doc", async () => {
+      const path = await writeDoc(
+        { id: "dd-impl-save", name: "sealed", description: "d" },
+      );
+      await service.saveDesignDocFromFile(path);
+      await service.markDesignDocImplemented("dd-impl-save");
+
+      const next = await writeDoc(
+        { id: "dd-impl-save", name: "sealed", description: "v2" },
+      );
+      await expect(service.saveDesignDocFromFile(next)).rejects.toThrow(
+        /implemented/,
+      );
+    });
+
+    test("rejects updateDesignDocElement against an implemented doc", async () => {
+      const path = await writeDoc(
+        {
+          id: "dd-impl-update",
+          name: "sealed-edit",
+          description: "d",
+          actors: { added: [{ name: "Alpha", description: "first" }] },
+        },
+      );
+      await service.saveDesignDocFromFile(path);
+      await service.markDesignDocImplemented("dd-impl-update");
+
+      await expect(
+        service.updateDesignDocElement(
+          "dd-impl-update",
+          [{ kind: "actor", name: "Alpha" }],
+          { description: "edited" },
+        ),
+      ).rejects.toThrow(/implemented/);
+    });
+
+    test("prepareDesignDocPath surfaces AlreadyImplemented for an implemented id", async () => {
+      const path = await writeDoc(
+        { id: "dd-impl-prepare", name: "sealed-prep", description: "d" },
+      );
+      await service.saveDesignDocFromFile(path);
+      await service.markDesignDocImplemented("dd-impl-prepare");
+
+      const result = await service.prepareDesignDocPath(
+        "sealed-prep",
+        "dd-impl-prepare",
+      );
+      expect(result.status).toBe("AlreadyImplemented");
+      if (result.status === "AlreadyImplemented") {
+        expect(result.design_doc_id).toBe("dd-impl-prepare");
+        expect(result.name).toBe("sealed-prep");
+      }
+    });
+
+    test("prepareDesignDocPath returns Ok for a non-implemented id", async () => {
+      const path = await writeDoc(
+        { id: "dd-impl-active", name: "active", description: "d" },
+      );
+      await service.saveDesignDocFromFile(path);
+
+      const result = await service.prepareDesignDocPath(
+        "active",
+        "dd-impl-active",
+      );
+      expect(result.status).toBe("Ok");
+    });
+  });
+
   describe("deleteDesignDoc", () => {
     test("removes a DesignDoc and all descendants", async () => {
       await service.saveDesignDocFromFile(

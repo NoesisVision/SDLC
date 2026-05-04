@@ -26,7 +26,7 @@ import {
 } from "./node-ids.js";
 
 const SCHEMA_STATEMENTS = [
-  "CREATE NODE TABLE IF NOT EXISTS DesignDoc(id STRING, name STRING, description STRING, source_json STRING, date STRING, source_sha STRING, edited_by_user BOOLEAN, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS DesignDoc(id STRING, name STRING, description STRING, source_json STRING, date STRING, source_sha STRING, edited_by_user BOOLEAN, implemented BOOLEAN DEFAULT false, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedActor(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedBoundedContext(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedDomainModule(id STRING, name STRING, full_path STRING, description STRING, PRIMARY KEY(id))",
@@ -75,6 +75,7 @@ const DesignDocRowSchema = z.object({
   source_json: NullableStringRow,
   date: NullableStringRow,
   edited_by_user: z.boolean().nullable().optional(),
+  implemented: z.boolean().nullable().optional(),
 });
 type DesignDocRow = z.infer<typeof DesignDocRowSchema>;
 
@@ -206,7 +207,7 @@ export class DesignDocsRepository {
 
   async listDesignDocs(): Promise<DesignDocOverview[]> {
     const rawRows = await this.db.query<DesignDocRow>(
-      "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date, d.edited_by_user AS edited_by_user ORDER BY d.name",
+      "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date, d.edited_by_user AS edited_by_user, d.implemented AS implemented ORDER BY d.name",
     );
     const rows = z.array(DesignDocRowSchema).parse(rawRows);
     const out: DesignDocOverview[] = [];
@@ -217,6 +218,7 @@ export class DesignDocsRepository {
         description: row.description,
         date: row.date,
         edited_by_user: row.edited_by_user ?? false,
+        implemented: row.implemented ?? false,
         actor_count: await this.countChildren(row.id, "DD_HAS_ACTOR", "DesignedActor"),
         bounded_context_count: await this.countChildren(
           row.id,
@@ -324,6 +326,7 @@ export class DesignDocsRepository {
       id: docRow.id,
       name: docRow.name,
       description: docRow.description,
+      implemented: docRow.implemented ?? false,
       actors: { added: actors, removed: [], modified: [] },
       boundedContexts: { added: boundedContexts, removed: [], modified: [] },
       qualityAttributes: {
@@ -332,6 +335,16 @@ export class DesignDocsRepository {
         modified: [],
       },
     };
+  }
+
+  async markDesignDocImplemented(designDocId: string): Promise<void> {
+    if (!(await this.nodeExists("DesignDoc", designDocId))) {
+      throw new Error(`DesignDoc not found: ${designDocId}`);
+    }
+    await this.db.query(
+      "MATCH (d:DesignDoc) WHERE d.id = $id SET d.implemented = true",
+      { id: designDocId },
+    );
   }
 
   async deleteDesignDoc(designDocId: string): Promise<void> {
@@ -416,22 +429,27 @@ export class DesignDocsRepository {
   ): Promise<void> {
     const sourceJson = JSON.stringify(doc);
     if (await this.nodeExists("DesignDoc", doc.id)) {
-      await this.updateNodeFields("DesignDoc", doc.id, {
+      const fields: Record<string, unknown> = {
         name: doc.name,
         description: doc.description,
         source_json: sourceJson,
         date,
-      });
+      };
+      if (doc.implemented === true) {
+        fields.implemented = true;
+      }
+      await this.updateNodeFields("DesignDoc", doc.id, fields);
       return;
     }
     await this.db.query(
-      "CREATE (d:DesignDoc {id: $id, name: $name, description: $description, source_json: $source_json, date: $date})",
+      "CREATE (d:DesignDoc {id: $id, name: $name, description: $description, source_json: $source_json, date: $date, implemented: $implemented})",
       {
         id: doc.id,
         name: doc.name,
         description: doc.description,
         source_json: sourceJson,
         date,
+        implemented: doc.implemented === true,
       },
     );
   }
@@ -979,7 +997,7 @@ export class DesignDocsRepository {
     designDocId: string,
   ): Promise<DesignDocRow | null> {
     const rawRows = await this.db.query<DesignDocRow>(
-      "MATCH (d:DesignDoc) WHERE d.id = $id RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date LIMIT 1",
+      "MATCH (d:DesignDoc) WHERE d.id = $id RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date, d.edited_by_user AS edited_by_user, d.implemented AS implemented LIMIT 1",
       { id: designDocId },
     );
     if (rawRows.length === 0) return null;

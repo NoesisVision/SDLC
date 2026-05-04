@@ -6,6 +6,7 @@ export interface DesignDocListItem {
   title: string;
   description: string;
   edited_by_user?: boolean;
+  implemented: boolean;
 }
 
 export interface DesignDocsPageData {
@@ -102,5 +103,6 @@ export interface DesignDocDetailData {
   name: string;
   description: string;
   date: string;
+  implemented: boolean;
   source: DesignDocSourceData;
 }

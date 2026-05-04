@@ -287,6 +287,7 @@ function mergeWithUserEdits(
   if (prev === null) return next;
   return {
     ...next,
+    implemented: prev.implemented === true ? true : next.implemented,
     actors: mergeFlatChangeSet(prev.actors, next.actors, "actors", confirmed),
     qualityAttributes: mergeFlatChangeSet(
       prev.qualityAttributes,

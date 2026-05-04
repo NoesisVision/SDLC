@@ -12,7 +12,7 @@ import type {
   DesignedRule,
   DesignedScenario,
 } from "../../../../shared-contracts/design-doc.js";
-import { DesignDocsService } from "./design-docs.service.js";
+import { DesignDocImplementedError, DesignDocsService } from "./design-docs.service.js";
 import type {
   BoundedContextMapEntry,
   ModelTarget,
@@ -36,6 +36,7 @@ export function registerDesignDocsTools(
   registerDeleteDesignDoc(mcp, service, indexState);
   registerReadBoundedContextMap(mcp, service);
   registerReadModelForModules(mcp, service);
+  registerMarkDesignDocImplemented(mcp, service, indexState);
 }
 
 function registerPrepareDesignDocPath(
@@ -50,7 +51,10 @@ function registerPrepareDesignDocPath(
         "Filename is `<slug-up-to-20>-<id-suffix>.json` under `<projectDir>/noesis/design-docs/` " +
         "(id-suffix is the last 8 hex chars of the dash-stripped UUID, extended on collision). " +
         "Call BEFORE writing the JSON file: put the returned `id` into the JSON's `id` field and write to `canonical_path`. " +
-        "When iterating an existing doc, pass its known `id` (the slug may change for renames).",
+        "When iterating an existing doc, pass its known `id` (the slug may change for renames). " +
+        "Returns `{ status: \"Ok\", id, canonical_path }` for active docs, or " +
+        "`{ status: \"AlreadyImplemented\", design_doc_id, name }` when the supplied `id` belongs to a doc that has already been " +
+        "marked implemented (the agent must ask the user whether to start a new doc or stop, and never proceed to write JSON).",
       inputSchema: {
         name: z
           .string()
@@ -85,6 +89,7 @@ function registerSaveDesignDoc(
         "every `added` Behaviour needs description ≥400 chars (Input / Validation / numbered Steps / Output). " +
         "Warnings (non-blocking): a Bounded Context with >20 building blocks and 0 modules; an application_service or ≥3-block-using behaviour without an embedded ```mermaid sequence diagram. " +
         "User-edit gate (fires only when this save renames the doc — different slug than the prior canonical filename): any element in the prior on-disk state with `edited_by_user: true` rejects the save when targeted by `modified` or `removed` unless its element-path appears in `confirmed_edits`. " +
+        "Implemented-doc gate: when the targeted doc has already been marked implemented (via `mark_design_doc_implemented`), the tool returns `{ status: \"AlreadyImplemented\", design_doc_id, name }` instead of saving — the agent must stop and ask the user whether to create a new doc. " +
         "Returns { status: \"Ok\", design_doc_id, warnings: string[] } on success; " +
         "validation, conflict, or storage failures surface as a tool error.",
       inputSchema: {
@@ -105,8 +110,49 @@ function registerSaveDesignDoc(
     },
     async ({ path, confirmed_edits }) =>
       runInlineJsonTool(() =>
+        gateWriteTool(indexState, async () => {
+          try {
+            return await service.saveDesignDocFromFile(path, confirmed_edits ?? []);
+          } catch (err) {
+            if (err instanceof DesignDocImplementedError) {
+              return {
+                status: "AlreadyImplemented" as const,
+                design_doc_id: err.designDocId,
+                name: err.designDocName,
+              };
+            }
+            throw err;
+          }
+        }),
+      ),
+  );
+}
+
+function registerMarkDesignDocImplemented(
+  mcp: McpServer,
+  service: DesignDocsService,
+  indexState: IndexStateService,
+): void {
+  mcp.registerTool(
+    "mark_design_doc_implemented",
+    {
+      description:
+        "Seal a DesignDoc as implemented. Call this only after `implement-design-doc` has produced code that matches the doc " +
+        "(the verification step `compare_implementation_to_design` returned `Ok`). " +
+        "Sets `implemented: true` on the canonical JSON and the graph node. " +
+        "From this point `save_design_doc`, `prepare_design_doc_path` (with this id), and the UI editor refuse to mutate the doc — " +
+        "agents must create a new design doc to capture further changes. " +
+        "Idempotent: a no-op when the doc is already implemented.",
+      inputSchema: {
+        design_doc_id: z
+          .string()
+          .describe("Id of the DesignDoc to mark as implemented."),
+      },
+    },
+    async ({ design_doc_id }) =>
+      runInlineJsonTool(() =>
         gateWriteTool(indexState, () =>
-          service.saveDesignDocFromFile(path, confirmed_edits ?? []),
+          service.markDesignDocImplemented(design_doc_id),
         ),
       ),
   );
@@ -330,6 +376,7 @@ function formatDesignDoc(
   lines.push(`# ${doc.name}`);
   lines.push(`- **ID:** ${doc.id}`);
   lines.push(`- **Description:** ${doc.description}`);
+  lines.push(`- **Implemented:** ${doc.implemented === true ? "yes" : "no"}`);
   lines.push("");
 
   appendActors(lines, doc.actors?.added ?? []);
@@ -487,6 +534,7 @@ function formatDesignDocList(docs: DesignDocOverview[]): string {
     parts.push(`## ${d.name}`);
     parts.push(`- **ID:** ${d.id}`);
     parts.push(`- **Description:** ${d.description}`);
+    parts.push(`- **Implemented:** ${d.implemented === true ? "yes" : "no"}`);
     parts.push(
       `- **Counts:** ${d.actor_count} actors, ${d.bounded_context_count} bounded contexts, ${d.quality_attribute_count} quality attributes`,
     );

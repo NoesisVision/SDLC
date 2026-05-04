@@ -62,6 +62,13 @@ interface ElementPathSegment {
   name: string;
 }
 
+export class DesignDocImplementedClientError extends Error {
+  constructor(public readonly designDocId: string, public readonly name: string) {
+    super(`Design doc '${name}' is implemented and read-only.`);
+    this.name = "DesignDocImplementedClientError";
+  }
+}
+
 async function patchDesignDocElement(
   designDocId: string,
   path: ElementPathSegment[],
@@ -75,7 +82,19 @@ async function patchDesignDocElement(
       body: JSON.stringify({ path, fields }),
     },
   );
-  if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+  if (res.ok) return;
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => null)) as
+      | { code?: string; design_doc_id?: string; name?: string }
+      | null;
+    if (body !== null && body.code === "DESIGN_DOC_IMPLEMENTED") {
+      throw new DesignDocImplementedClientError(
+        body.design_doc_id ?? designDocId,
+        body.name ?? "",
+      );
+    }
+  }
+  throw new Error(`Failed to save (${res.status})`);
 }
 
 function treeIdMarker(kind: ElementKind): string {
@@ -209,7 +228,21 @@ export function DesignDocsPage() {
       if (activeDocId === null) {
         throw new Error("No active design doc");
       }
-      await patchDesignDocElement(activeDocId, path, fields);
+      try {
+        await patchDesignDocElement(activeDocId, path, fields);
+      } catch (err) {
+        if (err instanceof DesignDocImplementedClientError) {
+          setDetailError(err.message);
+          const refreshed = await fetch(
+            `/api/ui/design-docs/${encodeURIComponent(activeDocId)}`,
+          );
+          if (refreshed.ok) {
+            setDetail((await refreshed.json()) as DesignDocDetailData);
+          }
+          throw err;
+        }
+        throw err;
+      }
       const refreshed = await fetch(
         `/api/ui/design-docs/${encodeURIComponent(activeDocId)}`,
       );
@@ -320,8 +353,13 @@ export function DesignDocsPage() {
               </Box>
             ) : (
               <Box className={classes.detailsShell}>
+                {detail?.implemented === true && <ImplementedBanner />}
                 <Box className={classes.detailsBody}>
-                  <NodeDetailsView node={selectedNode} onEdit={handleEdit} />
+                  <NodeDetailsView
+                    node={selectedNode}
+                    onEdit={handleEdit}
+                    docImplemented={detail?.implemented === true}
+                  />
                 </Box>
               </Box>
             )}
@@ -400,13 +438,24 @@ function DocListRow({
           <Text size="xs" c="dimmed">
             {item.date === "" ? "—" : item.date}
           </Text>
-          <SyncBadges edited_by_user={item.edited_by_user} />
+          <Group gap={4}>
+            {item.implemented && <ImplementedBadge />}
+            <SyncBadges edited_by_user={item.edited_by_user} />
+          </Group>
         </Group>
         <Text size="sm" fw={600} c="gray.1" lineClamp={2}>
           {item.title}
         </Text>
       </Stack>
     </button>
+  );
+}
+
+function ImplementedBadge() {
+  return (
+    <Badge size="xs" variant="light" color="noesisGreen" radius="xl">
+      implemented
+    </Badge>
   );
 }
 
@@ -570,12 +619,29 @@ type EditFn = (
   fields: { name?: string; description?: string },
 ) => Promise<void>;
 
+function ImplementedBanner() {
+  return (
+    <Box px="lg" py="xs" bg="dark.6" style={{ borderBottom: "1px solid var(--mantine-color-dark-4)" }}>
+      <Group gap="xs">
+        <Badge size="sm" variant="light" color="noesisGreen" radius="xl">
+          implemented
+        </Badge>
+        <Text size="xs" c="dimmed">
+          This design doc has been implemented and is read-only. Create a new design doc to capture further changes.
+        </Text>
+      </Group>
+    </Box>
+  );
+}
+
 function NodeDetailsView({
   node,
   onEdit,
+  docImplemented,
 }: {
   node: TreeNode;
   onEdit: EditFn;
+  docImplemented: boolean;
 }) {
   if (node.payload === null) {
     return (
@@ -608,7 +674,7 @@ function NodeDetailsView({
   }
 
   const payload = node.payload;
-  const editable = node.status !== "removed";
+  const editable = !docImplemented && node.status !== "removed";
   switch (payload.kind) {
     case "actor":
       return (
