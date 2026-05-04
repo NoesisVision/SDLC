@@ -10,6 +10,7 @@
     "clean": "rm -rf dist",
     "dev": "tsx",
     "dev:backend": "cd src/agent_extensions/plugins/noesis && bun run mcp/noesis-graph/dev/dev-server.ts",
+    "dev:all": "bun run src/agent_extensions/plugins/noesis/scripts/dev-all.ts",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
