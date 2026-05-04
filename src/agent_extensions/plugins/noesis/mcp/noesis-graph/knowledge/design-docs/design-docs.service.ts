@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { existsSync } from "fs";
+import { existsSync, unlinkSync } from "fs";
 import { readFile } from "fs/promises";
 import { resolve } from "path";
 import {
@@ -220,43 +220,49 @@ export class DesignDocsService implements OnModuleInit {
   async updateDesignDocElement(
     designDocId: string,
     path: ElementPathSegment[],
-    fields: { name?: string; description?: string }
+    fields: ElementUpdateFields,
   ): Promise<{ ok: true }> {
     if (path.length === 0) {
       throw new Error("Element path must not be empty");
     }
     await this.assertNotImplemented(designDocId);
-    const source = await this.repository.readDesignDocSource(designDocId);
-    if (source === null) {
-      throw new Error(`DesignDoc not found or has no source: ${designDocId}`);
-    }
-    const target = locateElement(source, path);
+    const diskPath = findDesignDocFileById(this.projectDir, designDocId);
+    const doc = await this.loadDesignDocForEdit(designDocId, diskPath);
+    const target = locateElement(doc, path);
     if (target === null) {
       throw new Error(`Element not found at path: ${describePath(path)}`);
     }
-    const oldName = target.element.name;
-    let renamed = false;
-    if (fields.name !== undefined) {
-      const trimmed = fields.name.trim();
-      if (trimmed === "") throw new Error("Element name must not be empty");
-      if (trimmed !== oldName) {
-        target.element.name = trimmed;
-        renamed = true;
-      }
-    }
-    if (fields.description !== undefined && "description" in target.element) {
-      (target.element as Record<string, unknown>).description = fields.description;
-    }
-    const overview = await this.findOverview(designDocId);
-    const date = overview === null || overview.date === "" ? todayDate() : overview.date;
+    const renamed = applyElementFieldEdits(target.element, fields, path);
+    markEdited(target.element);
+    const writePath = designDocCanonicalPath(this.projectDir, doc.id, doc.name);
     if (renamed) {
       await this.repository.deleteDesignDoc(designDocId);
-      await this.repository.applyDesignDoc(source, date);
-    } else {
-      await this.repository.applyDesignDoc(source, date);
     }
+    writeSidecar(writePath, doc, DesignDocSchema);
+    if (diskPath !== null && resolve(writePath) !== resolve(diskPath)) {
+      try {
+        unlinkSync(diskPath);
+      } catch {
+        // best-effort
+      }
+    }
+    await this.fileLoader.registerWritten(writePath);
     this.logger.log(`Updated DesignDoc ${designDocId} element ${describePath(path)}`);
     return { ok: true };
+  }
+
+  private async loadDesignDocForEdit(
+    designDocId: string,
+    diskPath: string | null,
+  ): Promise<DesignDoc> {
+    if (diskPath !== null && existsSync(diskPath)) {
+      return readSidecar(diskPath, DesignDocSchema);
+    }
+    const fromDb = await this.repository.readDesignDocSource(designDocId);
+    if (fromDb === null) {
+      throw new Error(`DesignDoc not found: ${designDocId}`);
+    }
+    return DesignDocSchema.parse(fromDb);
   }
 
   async upsertActor(actor: DesignedActor): Promise<{ status: "Ok"; name: string }> {
@@ -924,19 +930,66 @@ export interface ElementPathSegment {
   name: string;
 }
 
+export interface ElementUpdateFields {
+  name?: string;
+  description?: string;
+  given?: string;
+  when?: string;
+  then?: string;
+}
+
+type EditableElement =
+  | DesignedQualityAttribute
+  | DesignedBoundedContext
+  | DesignedDomainModule
+  | DesignedBuildingBlock
+  | DesignedBehaviour
+  | DesignedRule
+  | DesignedScenario;
+
 interface LocatedElement {
-  element:
-    | DesignedQualityAttribute
-    | DesignedBoundedContext
-    | DesignedDomainModule
-    | DesignedBuildingBlock
-    | DesignedBehaviour
-    | DesignedRule
-    | DesignedScenario;
+  element: EditableElement;
 }
 
 function describePath(path: ElementPathSegment[]): string {
   return path.map((p) => `${p.kind}:${p.name}`).join(" / ");
+}
+
+function applyElementFieldEdits(
+  element: EditableElement,
+  fields: ElementUpdateFields,
+  path: ElementPathSegment[],
+): boolean {
+  let renamed = false;
+  if (fields.name !== undefined) {
+    const trimmed = fields.name.trim();
+    if (trimmed === "") throw new Error("Element name must not be empty");
+    if (trimmed !== element.name) {
+      element.name = trimmed;
+      renamed = true;
+    }
+  }
+  if (fields.description !== undefined && "description" in element) {
+    (element as Record<string, unknown>).description = fields.description;
+  }
+  const isScenario = path[path.length - 1]?.kind === "scenario";
+  if (fields.given !== undefined) {
+    if (!isScenario) throw new Error("'given' is only valid for scenario elements");
+    (element as DesignedScenario).given = fields.given;
+  }
+  if (fields.when !== undefined) {
+    if (!isScenario) throw new Error("'when' is only valid for scenario elements");
+    (element as DesignedScenario).when = fields.when;
+  }
+  if (fields.then !== undefined) {
+    if (!isScenario) throw new Error("'then' is only valid for scenario elements");
+    (element as DesignedScenario).then = fields.then;
+  }
+  return renamed;
+}
+
+function markEdited(element: EditableElement): void {
+  (element as { edited_by_user?: boolean }).edited_by_user = true;
 }
 
 function locateElement(source: DesignDoc, path: ElementPathSegment[]): LocatedElement | null {

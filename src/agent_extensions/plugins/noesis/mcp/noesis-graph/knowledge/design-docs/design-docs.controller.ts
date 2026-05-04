@@ -16,11 +16,12 @@ import {
   DesignDocImplementedError,
   DesignDocsService,
   type ElementPathSegment,
+  type ElementUpdateFields,
 } from "./design-docs.service.js";
 
 interface DesignDocElementUpdateBody {
   path: ElementPathSegment[];
-  fields: { name?: string; description?: string };
+  fields: ElementUpdateFields;
 }
 
 interface ActorUpsertBody {

@@ -66,10 +66,18 @@ export class DesignDocImplementedClientError extends Error {
   }
 }
 
+interface ElementUpdateFields {
+  name?: string;
+  description?: string;
+  given?: string;
+  when?: string;
+  then?: string;
+}
+
 async function patchDesignDocElement(
   designDocId: string,
   path: ElementPathSegment[],
-  fields: { name?: string; description?: string },
+  fields: ElementUpdateFields,
 ): Promise<void> {
   const res = await fetch(
     `/api/ui/design-docs/${encodeURIComponent(designDocId)}/elements`,
@@ -216,7 +224,7 @@ export function DesignDocsPage() {
   const handleEdit = useCallback(
     async (
       path: ElementPathSegment[],
-      fields: { name?: string; description?: string },
+      fields: ElementUpdateFields,
     ): Promise<void> => {
       if (activeDocId === null) {
         throw new Error("No active design doc");
@@ -607,7 +615,7 @@ function nodeIcon(kind: TreeNodeKind): React.ReactNode {
 
 type EditFn = (
   path: ElementPathSegment[],
-  fields: { name?: string; description?: string },
+  fields: ElementUpdateFields,
 ) => Promise<void>;
 
 function ImplementedBanner() {
@@ -792,14 +800,18 @@ function DetailsHeader({
   );
 }
 
-function DescriptionEditor({
+function MarkdownFieldEditor({
   value,
   path,
   onEdit,
+  fieldKey,
+  ariaLabel,
 }: {
   value: string;
   path: ElementPathSegment[];
   onEdit: EditFn | null;
+  fieldKey: keyof ElementUpdateFields;
+  ariaLabel: string;
 }) {
   const display =
     value === "" || value === "—" ? (
@@ -813,8 +825,8 @@ function DescriptionEditor({
       value={value === "—" ? "" : value}
       mode="textarea"
       block
-      ariaLabel="Edit description"
-      onSave={(next) => onEdit(path, { description: next })}
+      ariaLabel={ariaLabel}
+      onSave={(next) => onEdit(path, { [fieldKey]: next })}
       display={display}
     />
   );
@@ -841,8 +853,43 @@ function DescriptionSection({
     <Box className={classes.section}>
       <Box className={classes.kvRow}>
         <Text className={classes.kvKey}>Description</Text>
-        <DescriptionEditor value={value ?? ""} path={path} onEdit={onEdit} />
+        <MarkdownFieldEditor
+          value={value ?? ""}
+          path={path}
+          onEdit={onEdit}
+          fieldKey="description"
+          ariaLabel="Edit description"
+        />
       </Box>
+    </Box>
+  );
+}
+
+function EditableKvRow({
+  label,
+  value,
+  path,
+  onEdit,
+  fieldKey,
+  ariaLabel,
+}: {
+  label: string;
+  value: string;
+  path: ElementPathSegment[];
+  onEdit: EditFn | null;
+  fieldKey: keyof ElementUpdateFields;
+  ariaLabel: string;
+}) {
+  return (
+    <Box className={classes.kvRow}>
+      <Text className={classes.kvKey}>{label}</Text>
+      <MarkdownFieldEditor
+        value={value}
+        path={path}
+        onEdit={onEdit}
+        fieldKey={fieldKey}
+        ariaLabel={ariaLabel}
+      />
     </Box>
   );
 }
@@ -1078,9 +1125,30 @@ function ScenarioDetails({
       {data !== null && (
         <Box className={classes.section}>
           <Stack gap="md">
-            <KvRow label="Given" value={data.given} />
-            <KvRow label="When" value={data.when} />
-            <KvRow label="Then" value={data.then} />
+            <EditableKvRow
+              label="Given"
+              value={data.given}
+              path={path}
+              onEdit={onEdit}
+              fieldKey="given"
+              ariaLabel="Edit given"
+            />
+            <EditableKvRow
+              label="When"
+              value={data.when}
+              path={path}
+              onEdit={onEdit}
+              fieldKey="when"
+              ariaLabel="Edit when"
+            />
+            <EditableKvRow
+              label="Then"
+              value={data.then}
+              path={path}
+              onEdit={onEdit}
+              fieldKey="then"
+              ariaLabel="Edit then"
+            />
           </Stack>
         </Box>
       )}

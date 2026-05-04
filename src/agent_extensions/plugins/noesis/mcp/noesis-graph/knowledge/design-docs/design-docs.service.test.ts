@@ -16,7 +16,9 @@ import { tmpdir } from "os";
 import {
   designDocCanonicalPath,
   noesisSubdirPath,
+  readSidecar,
 } from "../../../../shared-contracts/source-files.js";
+import { DesignDocSchema } from "../../../../shared-contracts/design-doc.js";
 import { DatabaseService } from "../../database/database.service.js";
 import { DATA_DIR, PROJECT_DIR } from "../../config/config.module.js";
 import { FileLoaderService } from "../../file-sync/file-loader.service.js";
@@ -1082,6 +1084,184 @@ describe("DesignDocsService", () => {
         "active",
         "dd-impl-active",
       );
+      expect(result.status).toBe("Ok");
+    });
+  });
+
+  describe("updateDesignDocElement", () => {
+    const scenarioPath = (
+      bcName: string,
+      bbName: string,
+      scenarioName: string,
+    ): Array<{ kind: "boundedContext" | "buildingBlock" | "scenario"; name: string }> => [
+      { kind: "boundedContext", name: bcName },
+      { kind: "buildingBlock", name: bbName },
+      { kind: "scenario", name: scenarioName },
+    ];
+
+    const agentScenarioOverride = (
+      id: string,
+      name: string,
+    ): { id: string; name: string } & Record<string, unknown> => ({
+      id,
+      name,
+      description: "agent override",
+      boundedContexts: {
+        modified: [
+          {
+            name: "Sales",
+            buildingBlocks: {
+              modified: [
+                {
+                  name: "Order",
+                  scenarios: {
+                    modified: [
+                      {
+                        name: "Happy path",
+                        description: "agent rewrite",
+                        given: "x",
+                        when: "y",
+                        then: "agent override",
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    async function seedScenarioDoc(id: string, name: string): Promise<string> {
+      const path = await writeDoc({
+        id,
+        name,
+        description: "scenario edit fixture",
+        boundedContexts: {
+          added: [
+            {
+              name: "Sales",
+              buildingBlocks: {
+                added: [
+                  {
+                    name: "Order",
+                    scenarios: {
+                      added: [
+                        {
+                          name: "Happy path",
+                          description: "place an order",
+                          given: "an empty cart",
+                          when: "user submits checkout",
+                          then: "order is created",
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      });
+      await service.saveDesignDocFromFile(path);
+      return path;
+    }
+
+    test("updates given/when/then on a scenario and flags edited_by_user", async () => {
+      const path = await seedScenarioDoc("dd-scenario-edit", "scenario-edit");
+
+      await service.updateDesignDocElement(
+        "dd-scenario-edit",
+        scenarioPath("Sales", "Order", "Happy path"),
+        { given: "a cart with one item", when: "user pays", then: "order ships" },
+      );
+
+      const onDisk = readSidecar(path, DesignDocSchema);
+      const scenario =
+        onDisk.boundedContexts?.added[0].buildingBlocks?.added[0].scenarios
+          ?.added[0];
+      expect(scenario?.given).toBe("a cart with one item");
+      expect(scenario?.when).toBe("user pays");
+      expect(scenario?.then).toBe("order ships");
+      expect(scenario?.edited_by_user).toBe(true);
+    });
+
+    test("updates only the supplied scenario field and leaves the rest intact", async () => {
+      const path = await seedScenarioDoc(
+        "dd-scenario-partial",
+        "scenario-partial",
+      );
+
+      await service.updateDesignDocElement(
+        "dd-scenario-partial",
+        scenarioPath("Sales", "Order", "Happy path"),
+        { given: "a cart with three items" },
+      );
+
+      const onDisk = readSidecar(path, DesignDocSchema);
+      const scenario =
+        onDisk.boundedContexts?.added[0].buildingBlocks?.added[0].scenarios
+          ?.added[0];
+      expect(scenario?.given).toBe("a cart with three items");
+      expect(scenario?.when).toBe("user submits checkout");
+      expect(scenario?.then).toBe("order is created");
+      expect(scenario?.edited_by_user).toBe(true);
+    });
+
+    test("rejects given/when/then on non-scenario elements", async () => {
+      const path = await writeDoc({
+        id: "dd-nonscenario-edit",
+        name: "nonscenario-edit",
+        description: "fixture",
+        boundedContexts: { added: [{ name: "Sales", description: "init" }] },
+      });
+      await service.saveDesignDocFromFile(path);
+
+      await expect(
+        service.updateDesignDocElement(
+          "dd-nonscenario-edit",
+          [{ kind: "boundedContext", name: "Sales" }],
+          { given: "nope" },
+        ),
+      ).rejects.toThrow(/only valid for scenario/);
+    });
+
+    test("editing a scenario blocks a subsequent renamed agent save without confirmation", async () => {
+      await seedScenarioDoc("dd-gate", "scenario-gate");
+      await service.updateDesignDocElement(
+        "dd-gate",
+        scenarioPath("Sales", "Order", "Happy path"),
+        { then: "user-edited outcome" },
+      );
+
+      const renamedPath = await writeDoc(
+        agentScenarioOverride("dd-gate", "scenario-gate-renamed"),
+      );
+
+      await expect(service.saveDesignDocFromFile(renamedPath)).rejects.toThrow(
+        /edited element/,
+      );
+    });
+
+    test("renamed agent save proceeds when the edited scenario path is confirmed", async () => {
+      await seedScenarioDoc("dd-gate-confirm", "scenario-gate-confirm");
+      await service.updateDesignDocElement(
+        "dd-gate-confirm",
+        scenarioPath("Sales", "Order", "Happy path"),
+        { then: "user-edited outcome" },
+      );
+
+      const renamedPath = await writeDoc(
+        agentScenarioOverride(
+          "dd-gate-confirm",
+          "scenario-gate-confirm-renamed",
+        ),
+      );
+
+      const result = await service.saveDesignDocFromFile(renamedPath, [
+        "boundedContexts/Sales/buildingBlocks/Order/scenarios/Happy path",
+      ]);
       expect(result.status).toBe("Ok");
     });
   });
