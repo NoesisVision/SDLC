@@ -47,32 +47,38 @@ const HEADER_HEIGHT = 50;
 
 interface HistoryState {
   selectionId: string | null;
+  pageState: unknown | null;
 }
 
 export interface CrossNav {
-  initialSelectionId: string | null;
+  selectionId: string | null;
+  pageState: unknown | null;
   pushTo: (
     targetPath: string,
     targetId: string,
     sourceId: string | null,
   ) => void;
+  pushPageState: (state: unknown) => void;
+  replacePageState: (state: unknown) => void;
 }
 
-function readHistorySelection(): string | null {
-  const state = window.history.state as HistoryState | null;
-  return state?.selectionId ?? null;
+function readHistoryState(): HistoryState {
+  const state = window.history.state as Partial<HistoryState> | null;
+  return {
+    selectionId: state?.selectionId ?? null,
+    pageState: state?.pageState ?? null,
+  };
 }
 
 export function App() {
   const [activePath, setActivePath] = useState(window.location.pathname);
-  const [pendingSelection, setPendingSelection] = useState<string | null>(
-    readHistorySelection,
-  );
+  const [historyState, setHistoryState] =
+    useState<HistoryState>(readHistoryState);
   const [navExpanded, setNavExpanded] = useState(false);
 
   useEffect(() => {
     const handlePopState = () => {
-      setPendingSelection(readHistorySelection());
+      setHistoryState(readHistoryState());
       setActivePath(window.location.pathname);
     };
     window.addEventListener("popstate", handlePopState);
@@ -80,32 +86,61 @@ export function App() {
   }, []);
 
   const navigate = useCallback((path: string) => {
+    const next: HistoryState = { selectionId: null, pageState: null };
     if (path !== window.location.pathname) {
-      window.history.pushState({ selectionId: null }, "", path);
+      window.history.pushState(next, "", path);
     } else {
-      window.history.replaceState({ selectionId: null }, "", path);
+      window.history.replaceState(next, "", path);
     }
-    setPendingSelection(null);
+    setHistoryState(next);
     setActivePath(path);
   }, []);
 
   const pushTo = useCallback(
     (targetPath: string, targetId: string, sourceId: string | null) => {
+      const sourceState = readHistoryState();
       window.history.replaceState(
-        { selectionId: sourceId },
+        { selectionId: sourceId, pageState: sourceState.pageState },
         "",
         window.location.pathname,
       );
-      window.history.pushState({ selectionId: targetId }, "", targetPath);
-      setPendingSelection(targetId);
+      const next: HistoryState = {
+        selectionId: targetId,
+        pageState: null,
+      };
+      window.history.pushState(next, "", targetPath);
+      setHistoryState(next);
       setActivePath(targetPath);
     },
     [],
   );
 
+  const pushPageState = useCallback((pageState: unknown) => {
+    const current = readHistoryState();
+    const next: HistoryState = {
+      selectionId: current.selectionId,
+      pageState,
+    };
+    window.history.pushState(next, "", window.location.pathname);
+    setHistoryState(next);
+  }, []);
+
+  const replacePageState = useCallback((pageState: unknown) => {
+    const current = readHistoryState();
+    const next: HistoryState = {
+      selectionId: current.selectionId,
+      pageState,
+    };
+    window.history.replaceState(next, "", window.location.pathname);
+    setHistoryState(next);
+  }, []);
+
   const crossNav: CrossNav = {
-    initialSelectionId: pendingSelection,
+    selectionId: historyState.selectionId,
+    pageState: historyState.pageState,
     pushTo,
+    pushPageState,
+    replacePageState,
   };
 
   const navbarWidth = navExpanded ? NAVBAR_WIDTH_EXPANDED : NAVBAR_WIDTH_COLLAPSED;

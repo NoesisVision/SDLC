@@ -38,19 +38,35 @@ import type {
   TopicsPageData,
 } from "../../../ui-contracts/topics/topics-data.js";
 
+type PageState =
+  | { kind: "topic"; topicId: string }
+  | {
+      kind: "conversation";
+      topicId: string;
+      conversationId: string;
+      conversationTitle: string;
+    }
+  | {
+      kind: "document";
+      topicId: string;
+      documentId: string;
+      documentTitle: string;
+    };
+
 type View =
   | { kind: "topic"; topic: TopicNode }
   | {
       kind: "conversation";
       topic: TopicNode;
-      conversation: TopicConversationRef;
+      conversationId: string;
+      conversationTitle: string;
     }
-  | { kind: "document"; topic: TopicNode; document: TopicDocumentRef };
-
-interface NavState {
-  current: View | null;
-  stack: View[];
-}
+  | {
+      kind: "document";
+      topic: TopicNode;
+      documentId: string;
+      documentTitle: string;
+    };
 
 type TopicEditableFields = Partial<{
   title: string;
@@ -91,7 +107,8 @@ function applyTopicUpdate(
 export function TopicsPage({ crossNav }: { crossNav: CrossNav }) {
   const [data, setData] = useState<TopicsPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [nav, setNav] = useState<NavState>({ current: null, stack: [] });
+  const pageState = crossNav.pageState as PageState | null;
+  const { replacePageState, pushPageState } = crossNav;
 
   useEffect(() => {
     fetch("/api/ui/topics")
@@ -105,11 +122,12 @@ export function TopicsPage({ crossNav }: { crossNav: CrossNav }) {
 
   useEffect(() => {
     if (data === null) return;
-    if (crossNav.initialSelectionId === null) return;
-    const target = findTopicById(data.topics, crossNav.initialSelectionId);
+    if (pageState !== null) return;
+    if (crossNav.selectionId === null) return;
+    const target = findTopicById(data.topics, crossNav.selectionId);
     if (target === null) return;
-    setNav({ current: { kind: "topic", topic: target }, stack: [] });
-  }, [data, crossNav.initialSelectionId]);
+    replacePageState({ kind: "topic", topicId: target.id } satisfies PageState);
+  }, [data, pageState, crossNav.selectionId, replacePageState]);
 
   const updateTopic = useCallback(
     async (topicId: string, fields: TopicEditableFields): Promise<void> => {
@@ -117,44 +135,46 @@ export function TopicsPage({ crossNav }: { crossNav: CrossNav }) {
       setData((prev) =>
         prev === null ? prev : { topics: applyTopicUpdate(prev.topics, topicId, fields) },
       );
-      setNav((prev) => {
-        if (prev.current === null) return prev;
-        const updateView = (view: View): View => {
-          if (view.topic.id !== topicId) return view;
-          return { ...view, topic: { ...view.topic, ...fields } };
-        };
-        return {
-          current: updateView(prev.current),
-          stack: prev.stack.map(updateView),
-        };
-      });
     },
     [],
   );
 
-  const pushView = useCallback((view: View) => {
-    setNav((prev) => {
-      if (prev.current === null) return { current: view, stack: [] };
-      if (isSameView(prev.current, view)) return prev;
-      return { current: view, stack: [...prev.stack, prev.current] };
-    });
-  }, []);
-
-  const goBack = useCallback(() => {
-    setNav((prev) => {
-      if (prev.stack.length === 0) return prev;
-      const next = prev.stack[prev.stack.length - 1];
-      return { current: next, stack: prev.stack.slice(0, -1) };
-    });
-  }, []);
-
   const selectTopic = useCallback(
     (topic: TopicNode) =>
-      setNav({ current: { kind: "topic", topic }, stack: [] }),
-    [],
+      replacePageState({
+        kind: "topic",
+        topicId: topic.id,
+      } satisfies PageState),
+    [replacePageState],
   );
 
+  const selectConversation = useCallback(
+    (topic: TopicNode, conversation: TopicConversationRef) =>
+      pushPageState({
+        kind: "conversation",
+        topicId: topic.id,
+        conversationId: conversation.conversation_id,
+        conversationTitle: conversation.title,
+      } satisfies PageState),
+    [pushPageState],
+  );
+
+  const selectDocument = useCallback(
+    (topic: TopicNode, document: TopicDocumentRef) =>
+      pushPageState({
+        kind: "document",
+        topicId: topic.id,
+        documentId: document.document_id,
+        documentTitle: document.title,
+      } satisfies PageState),
+    [pushPageState],
+  );
+
+  const goBack = useCallback(() => window.history.back(), []);
+
+  const view = data === null ? null : resolveView(data.topics, pageState);
   const hasTopics = data !== null && data.topics.length > 0;
+  const canGoBack = view !== null && view.kind !== "topic";
 
   return (
     <Box className={classes.page}>
@@ -197,7 +217,7 @@ export function TopicsPage({ crossNav }: { crossNav: CrossNav }) {
             <Box className={classes.scrollArea}>
               <TopicsTree
                 topics={data.topics}
-                current={nav.current}
+                current={view}
                 onSelect={selectTopic}
               />
             </Box>
@@ -205,15 +225,11 @@ export function TopicsPage({ crossNav }: { crossNav: CrossNav }) {
 
           <Box className={classes.detailsColumn}>
             <DetailsPanel
-              current={nav.current}
-              canGoBack={nav.stack.length > 0}
+              current={view}
+              canGoBack={canGoBack}
               onBack={goBack}
-              onSelectConversation={(topic, conversation) =>
-                pushView({ kind: "conversation", topic, conversation })
-              }
-              onSelectDocument={(topic, document) =>
-                pushView({ kind: "document", topic, document })
-              }
+              onSelectConversation={selectConversation}
+              onSelectDocument={selectDocument}
               onUpdateTopic={updateTopic}
             />
           </Box>
@@ -225,6 +241,30 @@ export function TopicsPage({ crossNav }: { crossNav: CrossNav }) {
   );
 }
 
+function resolveView(topics: TopicNode[], state: PageState | null): View | null {
+  if (state === null) return null;
+  const topic = findTopicById(topics, state.topicId);
+  if (topic === null) return null;
+  switch (state.kind) {
+    case "topic":
+      return { kind: "topic", topic };
+    case "conversation":
+      return {
+        kind: "conversation",
+        topic,
+        conversationId: state.conversationId,
+        conversationTitle: state.conversationTitle,
+      };
+    case "document":
+      return {
+        kind: "document",
+        topic,
+        documentId: state.documentId,
+        documentTitle: state.documentTitle,
+      };
+  }
+}
+
 function findTopicById(topics: TopicNode[], id: string): TopicNode | null {
   for (const t of topics) {
     if (t.id === id) return t;
@@ -232,22 +272,6 @@ function findTopicById(topics: TopicNode[], id: string): TopicNode | null {
     if (sub !== null) return sub;
   }
   return null;
-}
-
-function isSameView(a: View, b: View): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === "topic" && b.kind === "topic") return a.topic.id === b.topic.id;
-  if (a.kind === "conversation" && b.kind === "conversation")
-    return (
-      a.topic.id === b.topic.id &&
-      a.conversation.conversation_id === b.conversation.conversation_id
-    );
-  if (a.kind === "document" && b.kind === "document")
-    return (
-      a.topic.id === b.topic.id &&
-      a.document.document_id === b.document.document_id
-    );
-  return false;
 }
 
 function TopicsTree({
@@ -507,15 +531,15 @@ function DetailsPanel({
         {current.kind === "conversation" && (
           <ConversationDetails
             topicId={current.topic.id}
-            conversationId={current.conversation.conversation_id}
-            fallbackTitle={current.conversation.title}
+            conversationId={current.conversationId}
+            fallbackTitle={current.conversationTitle}
           />
         )}
         {current.kind === "document" && (
           <DocumentDetails
             topicId={current.topic.id}
-            documentId={current.document.document_id}
-            fallbackTitle={current.document.title}
+            documentId={current.documentId}
+            fallbackTitle={current.documentTitle}
           />
         )}
       </Box>

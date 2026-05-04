@@ -46,13 +46,13 @@ export function ConversationsPage({ crossNav }: { crossNav: CrossNav }) {
 
   useEffect(() => {
     if (data === null) return;
-    if (crossNav.initialSelectionId === null) return;
+    if (crossNav.selectionId === null) return;
     const target = data.conversations.find(
-      (c) => c.id === crossNav.initialSelectionId,
+      (c) => c.id === crossNav.selectionId,
     );
     if (target === undefined) return;
     setSelectedId(target.id);
-  }, [data, crossNav.initialSelectionId]);
+  }, [data, crossNav.selectionId]);
 
   const navigateTopic = useCallback(
     (topicId: string) => crossNav.pushTo("/topics", topicId, selectedId),

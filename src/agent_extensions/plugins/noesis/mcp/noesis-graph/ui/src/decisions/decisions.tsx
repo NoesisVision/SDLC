@@ -38,32 +38,34 @@ import type {
   DecisionsPageData,
 } from "../../../ui-contracts/decisions/decisions-data.js";
 
-type View =
+type PageState =
   | { kind: "decision"; decisionId: string }
   | {
       kind: "conversation";
       decisionId: string;
       slot: DecisionSlotPath;
       slotLabel: string;
-      conversation: DecisionConversationRef;
+      conversationId: string;
+      conversationTitle: string;
+      conversationDate: string;
     }
   | {
       kind: "document";
       decisionId: string;
       slot: DecisionSlotPath;
       slotLabel: string;
-      document: DecisionDocumentRef;
+      documentId: string;
+      documentTitle: string;
+      documentDate: string;
     };
 
-interface NavState {
-  current: View | null;
-  stack: View[];
-}
+type View = PageState;
 
 export function DecisionsPage({ crossNav }: { crossNav: CrossNav }) {
   const [data, setData] = useState<DecisionsPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [nav, setNav] = useState<NavState>({ current: null, stack: [] });
+  const view = crossNav.pageState as PageState | null;
+  const { replacePageState, pushPageState } = crossNav;
 
   useEffect(() => {
     fetch("/api/ui/decisions")
@@ -77,42 +79,65 @@ export function DecisionsPage({ crossNav }: { crossNav: CrossNav }) {
 
   useEffect(() => {
     if (data === null) return;
-    if (crossNav.initialSelectionId === null) return;
-    const target = data.decisions.find(
-      (d) => d.id === crossNav.initialSelectionId,
-    );
+    if (view !== null) return;
+    if (crossNav.selectionId === null) return;
+    const target = data.decisions.find((d) => d.id === crossNav.selectionId);
     if (target === undefined) return;
-    setNav({
-      current: { kind: "decision", decisionId: target.id },
-      stack: [],
-    });
-  }, [data, crossNav.initialSelectionId]);
-
-  const pushView = useCallback((view: View) => {
-    setNav((prev) => {
-      if (prev.current === null) return { current: view, stack: [] };
-      if (isSameView(prev.current, view)) return prev;
-      return { current: view, stack: [...prev.stack, prev.current] };
-    });
-  }, []);
-
-  const goBack = useCallback(() => {
-    setNav((prev) => {
-      if (prev.stack.length === 0) return prev;
-      const next = prev.stack[prev.stack.length - 1];
-      return { current: next, stack: prev.stack.slice(0, -1) };
-    });
-  }, []);
+    replacePageState({
+      kind: "decision",
+      decisionId: target.id,
+    } satisfies PageState);
+  }, [data, view, crossNav.selectionId, replacePageState]);
 
   const selectDecision = useCallback(
     (id: string) =>
-      setNav({ current: { kind: "decision", decisionId: id }, stack: [] }),
-    [],
+      replacePageState({ kind: "decision", decisionId: id } satisfies PageState),
+    [replacePageState],
   );
 
+  const selectConversation = useCallback(
+    (
+      decisionId: string,
+      slot: DecisionSlotPath,
+      slotLabel: string,
+      conversation: DecisionConversationRef,
+    ) =>
+      pushPageState({
+        kind: "conversation",
+        decisionId,
+        slot,
+        slotLabel,
+        conversationId: conversation.conversation_id,
+        conversationTitle: conversation.title,
+        conversationDate: conversation.date,
+      } satisfies PageState),
+    [pushPageState],
+  );
+
+  const selectDocument = useCallback(
+    (
+      decisionId: string,
+      slot: DecisionSlotPath,
+      slotLabel: string,
+      document: DecisionDocumentRef,
+    ) =>
+      pushPageState({
+        kind: "document",
+        decisionId,
+        slot,
+        slotLabel,
+        documentId: document.document_id,
+        documentTitle: document.title,
+        documentDate: document.date,
+      } satisfies PageState),
+    [pushPageState],
+  );
+
+  const goBack = useCallback(() => window.history.back(), []);
+
   const hasDecisions = data !== null && data.decisions.length > 0;
-  const activeDecisionId =
-    nav.current !== null ? viewDecisionId(nav.current) : null;
+  const activeDecisionId = view !== null ? view.decisionId : null;
+  const canGoBack = view !== null && view.kind !== "decision";
 
   return (
     <Box className={classes.page}>
@@ -168,27 +193,11 @@ export function DecisionsPage({ crossNav }: { crossNav: CrossNav }) {
 
           <Box className={classes.detailsColumn}>
             <DetailsPanel
-              current={nav.current}
-              canGoBack={nav.stack.length > 0}
+              current={view}
+              canGoBack={canGoBack}
               onBack={goBack}
-              onSelectConversation={(decisionId, slot, slotLabel, conversation) =>
-                pushView({
-                  kind: "conversation",
-                  decisionId,
-                  slot,
-                  slotLabel,
-                  conversation,
-                })
-              }
-              onSelectDocument={(decisionId, slot, slotLabel, document) =>
-                pushView({
-                  kind: "document",
-                  decisionId,
-                  slot,
-                  slotLabel,
-                  document,
-                })
-              }
+              onSelectConversation={selectConversation}
+              onSelectDocument={selectDocument}
             />
           </Box>
         </Box>
@@ -197,29 +206,6 @@ export function DecisionsPage({ crossNav }: { crossNav: CrossNav }) {
       ) : null}
     </Box>
   );
-}
-
-function viewDecisionId(view: View): string {
-  return view.decisionId;
-}
-
-function isSameView(a: View, b: View): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === "decision" && b.kind === "decision")
-    return a.decisionId === b.decisionId;
-  if (a.kind === "conversation" && b.kind === "conversation")
-    return (
-      a.decisionId === b.decisionId &&
-      a.slot === b.slot &&
-      a.conversation.conversation_id === b.conversation.conversation_id
-    );
-  if (a.kind === "document" && b.kind === "document")
-    return (
-      a.decisionId === b.decisionId &&
-      a.slot === b.slot &&
-      a.document.document_id === b.document.document_id
-    );
-  return false;
 }
 
 function DecisionListRow({
@@ -335,7 +321,8 @@ function DetailsPanel({
             decisionId={current.decisionId}
             slot={current.slot}
             slotLabel={current.slotLabel}
-            conversation={current.conversation}
+            conversationId={current.conversationId}
+            fallbackTitle={current.conversationTitle}
           />
         )}
         {current.kind === "document" && (
@@ -343,7 +330,8 @@ function DetailsPanel({
             decisionId={current.decisionId}
             slot={current.slot}
             slotLabel={current.slotLabel}
-            document={current.document}
+            documentId={current.documentId}
+            fallbackTitle={current.documentTitle}
           />
         )}
       </Box>
@@ -815,12 +803,14 @@ function ConversationDetails({
   decisionId,
   slot,
   slotLabel,
-  conversation,
+  conversationId,
+  fallbackTitle,
 }: {
   decisionId: string;
   slot: DecisionSlotPath;
   slotLabel: string;
-  conversation: DecisionConversationRef;
+  conversationId: string;
+  fallbackTitle: string;
 }) {
   const [data, setData] = useState<DecisionConversationDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -830,7 +820,7 @@ function ConversationDetails({
     setData(null);
     setError(null);
     fetch(
-      `/api/ui/decisions/${encodeURIComponent(decisionId)}/slots/${encodeURIComponent(slot)}/conversations/${encodeURIComponent(conversation.conversation_id)}`,
+      `/api/ui/decisions/${encodeURIComponent(decisionId)}/slots/${encodeURIComponent(slot)}/conversations/${encodeURIComponent(conversationId)}`,
     )
       .then((res) => {
         if (!res.ok) throw new Error(`Failed to load conversation (${res.status})`);
@@ -845,7 +835,7 @@ function ConversationDetails({
     return () => {
       cancelled = true;
     };
-  }, [decisionId, slot, conversation.conversation_id]);
+  }, [decisionId, slot, conversationId]);
 
   if (error !== null) {
     return (
@@ -863,7 +853,7 @@ function ConversationDetails({
         <Group gap="xs">
           <Loader size={14} color="noesisBlue" />
           <Text size="sm" c="dimmed">
-            Loading {conversation.title}
+            Loading {fallbackTitle}
           </Text>
         </Group>
       </Box>
@@ -957,12 +947,14 @@ function DocumentDetails({
   decisionId,
   slot,
   slotLabel,
-  document,
+  documentId,
+  fallbackTitle,
 }: {
   decisionId: string;
   slot: DecisionSlotPath;
   slotLabel: string;
-  document: DecisionDocumentRef;
+  documentId: string;
+  fallbackTitle: string;
 }) {
   const [data, setData] = useState<DecisionDocumentDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -972,7 +964,7 @@ function DocumentDetails({
     setData(null);
     setError(null);
     fetch(
-      `/api/ui/decisions/${encodeURIComponent(decisionId)}/slots/${encodeURIComponent(slot)}/documents/${encodeURIComponent(document.document_id)}`,
+      `/api/ui/decisions/${encodeURIComponent(decisionId)}/slots/${encodeURIComponent(slot)}/documents/${encodeURIComponent(documentId)}`,
     )
       .then((res) => {
         if (!res.ok) throw new Error(`Failed to load document (${res.status})`);
@@ -987,7 +979,7 @@ function DocumentDetails({
     return () => {
       cancelled = true;
     };
-  }, [decisionId, slot, document.document_id]);
+  }, [decisionId, slot, documentId]);
 
   if (error !== null) {
     return (
@@ -1005,7 +997,7 @@ function DocumentDetails({
         <Group gap="xs">
           <Loader size={14} color="noesisBlue" />
           <Text size="sm" c="dimmed">
-            Loading {document.title}
+            Loading {fallbackTitle}
           </Text>
         </Group>
       </Box>
