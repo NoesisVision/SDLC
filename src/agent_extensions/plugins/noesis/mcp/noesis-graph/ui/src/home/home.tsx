@@ -4,7 +4,6 @@ import {
   Card,
   Container,
   Group,
-  SimpleGrid,
   Stack,
   Text,
 } from "@mantine/core";
@@ -24,28 +23,15 @@ interface HealthStatus {
   status: string;
 }
 
-interface SerenaStatus {
-  status: "disconnected" | "connecting" | "connected" | "error";
-  error?: string;
-  tools?: string[];
-}
-
 export function HomePage({ onNavigate }: { onNavigate: (path: string) => void }) {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
-  const [serena, setSerena] = useState<SerenaStatus | null>(null);
-  const [serenaError, setSerenaError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/health")
       .then((res) => res.json())
       .then((data: HealthStatus) => setHealth(data))
       .catch((err: Error) => setHealthError(err.message));
-
-    fetch("/api/serena/status")
-      .then((res) => res.json())
-      .then((data: SerenaStatus) => setSerena(data))
-      .catch((err: Error) => setSerenaError(err.message));
   }, []);
 
   const actionItems: ActionItem[] = [
@@ -68,19 +54,11 @@ export function HomePage({ onNavigate }: { onNavigate: (path: string) => void })
             System Status
           </Text>
           <Card withBorder radius="md" className={classes.card}>
-            <SimpleGrid cols={2}>
-              <ServiceStatusCard
-                name="LadybugDB"
-                status={healthError ? "error" : health ? "connected" : "connecting"}
-                error={healthError ?? undefined}
-              />
-              <ServiceStatusCard
-                name="Serena"
-                status={serenaError ? "error" : serena?.status ?? "connecting"}
-                error={serenaError ?? serena?.error}
-                detail={serena?.tools ? `${serena.tools.length} tools` : undefined}
-              />
-            </SimpleGrid>
+            <ServiceStatusCard
+              name="LadybugDB"
+              status={healthError ? "error" : health ? "connected" : "connecting"}
+              error={healthError ?? undefined}
+            />
           </Card>
         </Stack>
       </Stack>
