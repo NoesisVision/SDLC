@@ -189,22 +189,6 @@ const DESIGN_DOC: DesignDoc = {
   id: "dd-sample",
   name: "Sample design",
   description: "Demo design doc covering all design-side node and edge tables.",
-  actors: {
-    added: [{ name: "Customer", description: "End user placing orders." }],
-    removed: [],
-    modified: [],
-  },
-  qualityAttributes: {
-    added: [
-      {
-        name: "Latency",
-        type: "performance",
-        description: "p99 order placement under 200ms.",
-      },
-    ],
-    removed: [],
-    modified: [],
-  },
   boundedContexts: {
     added: [
       {
@@ -268,6 +252,18 @@ const DESIGN_DOC: DesignDoc = {
                                 given: "A customer with a non-empty cart.",
                                 when: "PlaceOrder is invoked.",
                                 then: "OrderPlaced event is emitted.",
+                              },
+                            ],
+                            removed: [],
+                            modified: [],
+                          },
+                          qualityAttributes: {
+                            added: [
+                              {
+                                name: "Performance:PlaceOrderLatency",
+                                type: "performance",
+                                description:
+                                  "p99 order placement under 200 ms at 100 RPS sustained, measured at the API boundary.",
                               },
                             ],
                             removed: [],
@@ -338,28 +334,7 @@ const DESIGN_DOC_DELTA: DesignDoc = {
   id: "dd-sample-v2",
   name: "Sample design — Pricing iteration",
   description:
-    "Adds bulk-discount logic, modifies the Order aggregate, and removes the unused Customer actor.",
-  actors: {
-    added: [
-      {
-        name: "PricingAdmin",
-        description: "Adjusts pricing rules for promotions.",
-      },
-    ],
-    removed: ["Customer"],
-    modified: [],
-  },
-  qualityAttributes: {
-    added: [],
-    removed: [],
-    modified: [
-      {
-        name: "Latency",
-        type: "performance",
-        description: "Tightened to p99 under 150ms after caching rollout.",
-      },
-    ],
-  },
+    "Adds bulk-discount logic, modifies the Order aggregate, and tightens the BC-wide availability target.",
   boundedContexts: {
     added: [],
     removed: [],
@@ -393,7 +368,7 @@ const DESIGN_DOC_DELTA: DesignDoc = {
                           type: "Command",
                           description: "Apply the discount to a subtotal.",
                           isPublic: false,
-                          actor: "PricingAdmin",
+                          actor: null,
                           input: {
                             added: ["Subtotal"],
                             removed: [],
@@ -546,7 +521,7 @@ async function seedScannerData(
 
   for (const behavior of BEHAVIORS) {
     await scannerRepo.insertBehavior(
-      { id: behavior.id, name: behavior.name },
+      { id: behavior.id, name: behavior.name, actor: null },
       behavior.buildingBlockId,
     );
   }
@@ -652,6 +627,17 @@ async function seedDesignDocData(
   designDocsRepo: DesignDocsRepository,
   db: DatabaseService,
 ): Promise<void> {
+  await designDocsRepo.upsertActor(
+    { name: "Customer", description: "End user placing orders." },
+    false,
+  );
+  await designDocsRepo.upsertActor(
+    {
+      name: "Warehouse Operator",
+      description: "Fulfils orders from the warehouse floor.",
+    },
+    false,
+  );
   await designDocsRepo.applyDesignDoc(DESIGN_DOC, "2026-04-20");
   await designDocsRepo.applyDesignDoc(DESIGN_DOC_DELTA, "2026-04-26");
   await seedNestedDesignedModule(db);

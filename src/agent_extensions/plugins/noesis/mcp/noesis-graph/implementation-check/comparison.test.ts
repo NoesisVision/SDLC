@@ -10,12 +10,21 @@ function emptyTree(): DomainModelTree {
   return { boundedContexts: [] };
 }
 
-function bb(name: string, type: string, behaviorNames: string[] = []): BuildingBlockBranch {
+function bb(
+  name: string,
+  type: string,
+  behaviorNames: string[] = [],
+  behaviourActors: Record<string, string> = {},
+): BuildingBlockBranch {
   return {
     id: `${name}.cs:${name}`,
     name,
     type,
-    behaviors: behaviorNames.map((n) => ({ id: `${name}.cs:${name}:${n}`, name: n })),
+    behaviors: behaviorNames.map((n) => ({
+      id: `${name}.cs:${name}:${n}`,
+      name: n,
+      actor: behaviourActors[n] ?? null,
+    })),
   };
 }
 
@@ -289,6 +298,178 @@ describe("compareImplementation", () => {
       },
     } as never);
     const result = compareImplementation({ before, after, doc });
+    expect(result).toEqual({ status: "Ok", problems: [] });
+  });
+
+  test("Mismatch when expected actor is missing on the post-impl scan", () => {
+    const after = tree({
+      bcs: [
+        {
+          name: "Sales",
+          buildingBlocks: [bb("OrderApi", "ApplicationService", ["Place"])],
+        },
+      ],
+    });
+    const doc = emptyDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "Sales",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "OrderApi",
+                  type: "application_service",
+                  description: null,
+                  behaviours: {
+                    added: [
+                      {
+                        name: "Place",
+                        description: null,
+                        type: null,
+                        isPublic: true,
+                        actor: "Customer",
+                      } as never,
+                    ],
+                    removed: [],
+                    modified: [],
+                  },
+                } as never,
+              ],
+              removed: [],
+              modified: [],
+            },
+          },
+        ],
+        removed: [],
+        modified: [],
+      },
+    } as never);
+    const result = compareImplementation({ before: emptyTree(), after, doc });
+    expect(result.status).toBe("Mismatch");
+    expect(
+      result.problems.some(
+        (p) => p.includes("missing the [Actor(\"Customer\")]") && p.includes("Place"),
+      ),
+    ).toBe(true);
+  });
+
+  test("Mismatch when scanned actor differs from the doc's declared actor", () => {
+    const after = tree({
+      bcs: [
+        {
+          name: "Sales",
+          buildingBlocks: [
+            bb(
+              "OrderApi",
+              "ApplicationService",
+              ["Place"],
+              { Place: "Operator" },
+            ),
+          ],
+        },
+      ],
+    });
+    const doc = emptyDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "Sales",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "OrderApi",
+                  type: "application_service",
+                  description: null,
+                  behaviours: {
+                    added: [
+                      {
+                        name: "Place",
+                        description: null,
+                        type: null,
+                        isPublic: true,
+                        actor: "Customer",
+                      } as never,
+                    ],
+                    removed: [],
+                    modified: [],
+                  },
+                } as never,
+              ],
+              removed: [],
+              modified: [],
+            },
+          },
+        ],
+        removed: [],
+        modified: [],
+      },
+    } as never);
+    const result = compareImplementation({ before: emptyTree(), after, doc });
+    expect(result.status).toBe("Mismatch");
+    expect(
+      result.problems.some(
+        (p) =>
+          p.includes("has actor 'Operator'") && p.includes("declares 'Customer'"),
+      ),
+    ).toBe(true);
+  });
+
+  test("Ok when the scanned actor matches the doc's declared actor", () => {
+    const after = tree({
+      bcs: [
+        {
+          name: "Sales",
+          buildingBlocks: [
+            bb(
+              "OrderApi",
+              "ApplicationService",
+              ["Place"],
+              { Place: "Customer" },
+            ),
+          ],
+        },
+      ],
+    });
+    const doc = emptyDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "Sales",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "OrderApi",
+                  type: "application_service",
+                  description: null,
+                  behaviours: {
+                    added: [
+                      {
+                        name: "Place",
+                        description: null,
+                        type: null,
+                        isPublic: true,
+                        actor: "Customer",
+                      } as never,
+                    ],
+                    removed: [],
+                    modified: [],
+                  },
+                } as never,
+              ],
+              removed: [],
+              modified: [],
+            },
+          },
+        ],
+        removed: [],
+        modified: [],
+      },
+    } as never);
+    const result = compareImplementation({ before: emptyTree(), after, doc });
     expect(result).toEqual({ status: "Ok", problems: [] });
   });
 });

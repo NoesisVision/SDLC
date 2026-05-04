@@ -75,7 +75,7 @@ export const DesignedRuleSchema = z.object({
     .nullable()
     .default(null)
     .describe(
-      "Required ≥80 chars for `added` rules. May be omitted when `modified` only changes other fields. " +
+      "Domain concern. Required ≥80 chars for `added` rules. May be omitted when `modified` only changes other fields. " +
         "Structure: Trigger / Pre-conditions / Algorithm / Post-conditions / Edge cases. " +
         "Tautologies that paraphrase `name` and pure rationale without algorithm are rejected by the quality gate.",
     ),
@@ -98,6 +98,31 @@ export const DesignedScenarioSchema = z.object({
   edited_by_user: z.boolean().optional(),
 });
 export type DesignedScenario = z.infer<typeof DesignedScenarioSchema>;
+
+export const DesignedActorSchema = z.object({
+  name: z.string(),
+  description: z.string().nullable().default(null),
+  edited_by_user: z.boolean().optional(),
+});
+export type DesignedActor = z.infer<typeof DesignedActorSchema>;
+
+export const DesignedQualityAttributeSchema = z.object({
+  name: z.string(),
+  type: DesignedQualityAttributeTypeSchema.nullable().default(null),
+  description: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      "Technical concern (performance, availability, security, …). Required ≥80 chars for `added` quality attributes. " +
+        "May be omitted when `modified` only changes other fields. " +
+        "Should state a measurable expectation (target metric, threshold, scope) rather than a domain invariant — domain invariants belong in `Rule`.",
+    ),
+  edited_by_user: z.boolean().optional(),
+});
+export type DesignedQualityAttribute = z.infer<
+  typeof DesignedQualityAttributeSchema
+>;
 
 function changeSetSchema<T extends z.ZodTypeAny>(itemSchema: T) {
   return z.object({
@@ -133,6 +158,13 @@ export type DesignedScenarioChangeSet = z.infer<
   typeof DesignedScenarioChangeSetSchema
 >;
 
+export const DesignedQualityAttributeChangeSetSchema = changeSetSchema(
+  DesignedQualityAttributeSchema,
+);
+export type DesignedQualityAttributeChangeSet = z.infer<
+  typeof DesignedQualityAttributeChangeSetSchema
+>;
+
 export const DesignedBehaviourSchema = z.object({
   name: z.string().describe("Concise name, a few words"),
   description: z
@@ -156,12 +188,18 @@ export const DesignedBehaviourSchema = z.object({
   ),
   rules: DesignedRuleChangeSetSchema.optional(),
   scenarios: DesignedScenarioChangeSetSchema.optional(),
+  qualityAttributes: DesignedQualityAttributeChangeSetSchema.optional().describe(
+    "Quality attributes (technical concerns) constraining this single behaviour. Attach here only when the constraint does not also apply to the host BuildingBlock or its other behaviours; otherwise lift to the BuildingBlock.",
+  ),
   isPublic: z.boolean().default(false),
   actor: z
     .string()
     .nullable()
     .default(null)
-    .describe("Name of the actor who initiates this behaviour"),
+    .describe(
+      "Name of the actor who initiates this behaviour. Only valid when the host BuildingBlock type is `application_service`; rejected on save otherwise. " +
+        "Names are graph-global — call `noesis-graph:list_actors` to reuse an existing actor whenever the persona matches; introduce a new actor (via `noesis-graph:upsert_actor`) only when no existing one fits.",
+    ),
   edited_by_user: z.boolean().optional(),
 });
 export type DesignedBehaviour = z.infer<typeof DesignedBehaviourSchema>;
@@ -171,27 +209,6 @@ export const DesignedBehaviourChangeSetSchema = changeSetSchema(
 );
 export type DesignedBehaviourChangeSet = z.infer<
   typeof DesignedBehaviourChangeSetSchema
->;
-
-export const DesignedActorSchema = z.object({
-  name: z.string(),
-  description: z.string().nullable().default(null),
-  edited_by_user: z.boolean().optional(),
-});
-export type DesignedActor = z.infer<typeof DesignedActorSchema>;
-
-export const DesignedQualityAttributeSchema = z.object({
-  name: z.string(),
-  type: DesignedQualityAttributeTypeSchema.nullable().default(null),
-  description: z
-    .string()
-    .nullable()
-    .default(null)
-    .describe("Measurable quality expectation"),
-  edited_by_user: z.boolean().optional(),
-});
-export type DesignedQualityAttribute = z.infer<
-  typeof DesignedQualityAttributeSchema
 >;
 
 export const DesignedBuildingBlockSchema = z.object({
@@ -210,6 +227,9 @@ export const DesignedBuildingBlockSchema = z.object({
   behaviours: DesignedBehaviourChangeSetSchema.optional(),
   rules: DesignedRuleChangeSetSchema.optional(),
   scenarios: DesignedScenarioChangeSetSchema.optional(),
+  qualityAttributes: DesignedQualityAttributeChangeSetSchema.optional().describe(
+    "Quality attributes (technical concerns) constraining the BuildingBlock as a whole. Attach here when the constraint covers most/all of its behaviours, or when it cannot be localised to a single behaviour. Promote to Module when it spans sibling BuildingBlocks.",
+  ),
   edited_by_user: z.boolean().optional(),
 });
 export type DesignedBuildingBlock = z.infer<typeof DesignedBuildingBlockSchema>;
@@ -225,6 +245,9 @@ export const DesignedDomainModuleSchema = z.object({
   name: z.string(),
   description: z.string().nullable().default(null),
   buildingBlocks: DesignedBuildingBlockChangeSetSchema.optional(),
+  qualityAttributes: DesignedQualityAttributeChangeSetSchema.optional().describe(
+    "Quality attributes (technical concerns) covering this Module. Attach here when the constraint spans multiple BuildingBlocks within the Module but not the whole Bounded Context.",
+  ),
   edited_by_user: z.boolean().optional(),
 });
 export type DesignedDomainModule = z.infer<typeof DesignedDomainModuleSchema>;
@@ -247,15 +270,13 @@ export const DesignedBoundedContextSchema = z.object({
   buildingBlocks: DesignedBuildingBlockChangeSetSchema.optional().describe(
     "Building blocks not belonging to any module",
   ),
+  qualityAttributes: DesignedQualityAttributeChangeSetSchema.optional().describe(
+    "Quality attributes (technical concerns) covering the entire Bounded Context. Attach here only when the constraint cannot be narrowed to one Module / BuildingBlock / Behaviour.",
+  ),
   edited_by_user: z.boolean().optional(),
 });
 export type DesignedBoundedContext = z.infer<
   typeof DesignedBoundedContextSchema
->;
-
-export const DesignedActorChangeSetSchema = changeSetSchema(DesignedActorSchema);
-export type DesignedActorChangeSet = z.infer<
-  typeof DesignedActorChangeSetSchema
 >;
 
 export const DesignedBoundedContextChangeSetSchema = changeSetSchema(
@@ -263,13 +284,6 @@ export const DesignedBoundedContextChangeSetSchema = changeSetSchema(
 );
 export type DesignedBoundedContextChangeSet = z.infer<
   typeof DesignedBoundedContextChangeSetSchema
->;
-
-export const DesignedQualityAttributeChangeSetSchema = changeSetSchema(
-  DesignedQualityAttributeSchema,
-);
-export type DesignedQualityAttributeChangeSet = z.infer<
-  typeof DesignedQualityAttributeChangeSetSchema
 >;
 
 export const DesignDocSchema = z.object({
@@ -285,9 +299,7 @@ export const DesignDocSchema = z.object({
   description: z
     .string()
     .describe("Summary of what this design change covers"),
-  actors: DesignedActorChangeSetSchema.optional(),
   boundedContexts: DesignedBoundedContextChangeSetSchema.optional(),
-  qualityAttributes: DesignedQualityAttributeChangeSetSchema.optional(),
   edited_by_user: z.boolean().optional(),
   implemented: z
     .boolean()
@@ -304,9 +316,7 @@ export const DesignDocOverviewSchema = z.object({
   name: z.string(),
   description: z.string(),
   date: z.string(),
-  actor_count: z.int(),
   bounded_context_count: z.int(),
-  quality_attribute_count: z.int(),
   edited_by_user: z.boolean().optional(),
   implemented: z.boolean().optional(),
 });

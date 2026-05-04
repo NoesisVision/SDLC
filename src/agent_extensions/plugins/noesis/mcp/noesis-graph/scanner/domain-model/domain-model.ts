@@ -16,6 +16,7 @@ export interface BuildingBlock {
 export interface Behavior {
   id: string;
   name: string;
+  actor: string | null;
 }
 
 export interface BuildingBlockBranch extends BuildingBlock {

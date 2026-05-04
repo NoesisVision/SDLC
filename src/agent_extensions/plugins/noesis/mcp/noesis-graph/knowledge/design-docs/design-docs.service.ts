@@ -40,6 +40,7 @@ import {
 } from "./design-docs.repository.js";
 
 const RULE_DESCRIPTION_MIN = 80;
+const QA_DESCRIPTION_MIN = 80;
 const BEHAVIOUR_DESCRIPTION_MIN = 400;
 const BC_BUILDING_BLOCKS_FLAT_THRESHOLD = 20;
 const BEHAVIOUR_USED_BB_DIAGRAM_THRESHOLD = 3;
@@ -121,8 +122,68 @@ export class DesignDocsService implements OnModuleInit {
     return { docs };
   }
 
+  async isDesignDocImplemented(designDocId: string): Promise<boolean> {
+    const overview = await this.findOverview(designDocId);
+    return overview !== null && overview.implemented === true;
+  }
+
+  async listActors(): Promise<DesignedActor[]> {
+    return this.repository.listActors();
+  }
+
   async listDesignDocs(): Promise<DesignDocOverview[]> {
     return this.repository.listDesignDocs();
+  }
+
+  async markDesignDocImplemented(
+    designDocId: string,
+  ): Promise<{ status: "Ok"; design_doc_id: string; implemented: true }> {
+    const overview = await this.findOverview(designDocId);
+    if (overview === null) {
+      throw new Error(`DesignDoc not found: ${designDocId}`);
+    }
+    if (overview.implemented === true) {
+      return { status: "Ok", design_doc_id: designDocId, implemented: true };
+    }
+    const path = findDesignDocFileById(this.projectDir, designDocId);
+    if (path !== null && existsSync(path)) {
+      const onDisk = readSidecar(path, DesignDocSchema);
+      if (onDisk.implemented !== true) {
+        writeSidecar(path, { ...onDisk, implemented: true }, DesignDocSchema);
+      }
+      await this.fileLoader.registerWritten(path);
+    }
+    await this.repository.markDesignDocImplemented(designDocId);
+    this.logger.log(
+      `Marked DesignDoc ${designDocId} (${overview.name}) as implemented`,
+    );
+    return { status: "Ok", design_doc_id: designDocId, implemented: true };
+  }
+
+  async prepareDesignDocPath(
+    name: string,
+    id: string | null,
+  ): Promise<PrepareDesignDocPathResult> {
+    if (id !== null) {
+      const overview = await this.findOverview(id);
+      if (overview !== null && overview.implemented === true) {
+        return {
+          status: "AlreadyImplemented",
+          design_doc_id: id,
+          name: overview.name,
+        };
+      }
+    }
+    const finalId = id ?? newUuid();
+    return {
+      status: "Ok",
+      id: finalId,
+      canonical_path: designDocCanonicalPath(this.projectDir, finalId, name),
+    };
+  }
+
+  async readBoundedContextMap(): Promise<BoundedContextMapEntry[]> {
+    return this.repository.readBoundedContextMap();
   }
 
   async readDesignDoc(designDocId: string): Promise<DesignDoc | null> {
@@ -133,12 +194,27 @@ export class DesignDocsService implements OnModuleInit {
     return fromDb;
   }
 
-  async readBoundedContextMap(): Promise<BoundedContextMapEntry[]> {
-    return this.repository.readBoundedContextMap();
-  }
-
   async readModelForTargets(targets: ModelTarget[]): Promise<DesignedBoundedContext[]> {
     return this.repository.readModelForTargets(targets);
+  }
+
+  async saveDesignDoc(
+    doc: DesignDoc,
+    date: string,
+    confirmedEdits: string[] = [],
+  ): Promise<SaveDesignDocResult> {
+    await this.assertNotImplemented(doc.id);
+    return this.persist(doc, confirmedEdits, date);
+  }
+
+  async saveDesignDocFromFile(
+    path: string,
+    confirmedEdits: string[] = [],
+  ): Promise<SaveDesignDocResult> {
+    const doc = await this.readDesignDocFile(path);
+    this.assertCanonicalPath(path, doc);
+    await this.assertNotImplemented(doc.id);
+    return this.persist(doc, confirmedEdits);
   }
 
   async updateDesignDocElement(
@@ -183,66 +259,13 @@ export class DesignDocsService implements OnModuleInit {
     return { ok: true };
   }
 
-  async prepareDesignDocPath(
-    name: string,
-    id: string | null,
-  ): Promise<PrepareDesignDocPathResult> {
-    if (id !== null) {
-      const overview = await this.findOverview(id);
-      if (overview !== null && overview.implemented === true) {
-        return {
-          status: "AlreadyImplemented",
-          design_doc_id: id,
-          name: overview.name,
-        };
-      }
+  async upsertActor(actor: DesignedActor): Promise<{ status: "Ok"; name: string }> {
+    if (actor.name.trim() === "") {
+      throw new Error("Actor name must not be empty");
     }
-    const finalId = id ?? newUuid();
-    return {
-      status: "Ok",
-      id: finalId,
-      canonical_path: designDocCanonicalPath(this.projectDir, finalId, name),
-    };
-  }
-
-  async saveDesignDocFromFile(
-    path: string,
-    confirmedEdits: string[] = [],
-  ): Promise<SaveDesignDocResult> {
-    const doc = await this.readDesignDocFile(path);
-    this.assertCanonicalPath(path, doc);
-    await this.assertNotImplemented(doc.id);
-    return this.persist(doc, confirmedEdits);
-  }
-
-  async markDesignDocImplemented(
-    designDocId: string,
-  ): Promise<{ status: "Ok"; design_doc_id: string; implemented: true }> {
-    const overview = await this.findOverview(designDocId);
-    if (overview === null) {
-      throw new Error(`DesignDoc not found: ${designDocId}`);
-    }
-    if (overview.implemented === true) {
-      return { status: "Ok", design_doc_id: designDocId, implemented: true };
-    }
-    const path = findDesignDocFileById(this.projectDir, designDocId);
-    if (path !== null && existsSync(path)) {
-      const onDisk = readSidecar(path, DesignDocSchema);
-      if (onDisk.implemented !== true) {
-        writeSidecar(path, { ...onDisk, implemented: true }, DesignDocSchema);
-      }
-      await this.fileLoader.registerWritten(path);
-    }
-    await this.repository.markDesignDocImplemented(designDocId);
-    this.logger.log(
-      `Marked DesignDoc ${designDocId} (${overview.name}) as implemented`,
-    );
-    return { status: "Ok", design_doc_id: designDocId, implemented: true };
-  }
-
-  async isDesignDocImplemented(designDocId: string): Promise<boolean> {
-    const overview = await this.findOverview(designDocId);
-    return overview !== null && overview.implemented === true;
+    await this.repository.upsertActor(actor, false);
+    this.logger.log(`Upserted Actor '${actor.name}'`);
+    return { status: "Ok", name: actor.name };
   }
 
   private async assertNotImplemented(designDocId: string): Promise<void> {
@@ -265,13 +288,9 @@ export class DesignDocsService implements OnModuleInit {
     }
   }
 
-  async saveDesignDoc(
-    doc: DesignDoc,
-    date: string,
-    confirmedEdits: string[] = [],
-  ): Promise<SaveDesignDocResult> {
-    await this.assertNotImplemented(doc.id);
-    return this.persist(doc, confirmedEdits, date);
+  private async findOverview(designDocId: string): Promise<DesignDocOverview | null> {
+    const overviews = await this.repository.listDesignDocs();
+    return overviews.find((o) => o.id === designDocId) ?? null;
   }
 
   private async persist(
@@ -280,8 +299,10 @@ export class DesignDocsService implements OnModuleInit {
     date: string = todayDate(),
   ): Promise<SaveDesignDocResult> {
     const { errors, warnings } = validateDesignDocQuality(doc);
-    if (errors.length > 0) {
-      throw new Error(formatQualityErrors(errors));
+    const actorErrors = await this.validateActorReferences(doc);
+    const allErrors = [...errors, ...actorErrors];
+    if (allErrors.length > 0) {
+      throw new Error(formatQualityErrors(allErrors));
     }
     let commit;
     try {
@@ -310,15 +331,26 @@ export class DesignDocsService implements OnModuleInit {
     };
   }
 
-  private async findOverview(designDocId: string): Promise<DesignDocOverview | null> {
-    const overviews = await this.repository.listDesignDocs();
-    return overviews.find((o) => o.id === designDocId) ?? null;
-  }
-
   private async readDesignDocFile(path: string): Promise<DesignDoc> {
     const raw = await readFile(path, "utf-8");
     const parsed = JSON.parse(raw);
     return DesignDocSchema.parse(parsed);
+  }
+
+  private async validateActorReferences(doc: DesignDoc): Promise<string[]> {
+    const errors: string[] = [];
+    const seen = new Set<string>();
+    for (const ref of collectActorReferences(doc)) {
+      if (seen.has(ref.name)) continue;
+      seen.add(ref.name);
+      if (!(await this.repository.actorExists(ref.name))) {
+        errors.push(
+          `Behaviour '${ref.location}' references actor '${ref.name}' which is not in the actor catalog. ` +
+            `Call upsert_actor first to register the actor, or use an existing name (list_actors).`,
+        );
+      }
+    }
+    return errors;
   }
 }
 
@@ -347,11 +379,6 @@ function readDesignDocFromDisk(
 }
 
 function overlayEditedFlags(target: DesignDoc, source: DesignDoc): void {
-  overlayFlatList(target.actors?.added ?? [], source.actors?.added ?? []);
-  overlayFlatList(
-    target.qualityAttributes?.added ?? [],
-    source.qualityAttributes?.added ?? [],
-  );
   overlayBoundedContexts(
     target.boundedContexts?.added ?? [],
     source.boundedContexts?.added ?? [],
@@ -383,6 +410,10 @@ function overlayBoundedContexts(
       t.buildingBlocks?.added ?? [],
       s.buildingBlocks?.added ?? [],
     );
+    overlayFlatList(
+      t.qualityAttributes?.added ?? [],
+      s.qualityAttributes?.added ?? [],
+    );
   }
 }
 
@@ -399,6 +430,10 @@ function overlayModules(
       t.buildingBlocks?.added ?? [],
       s.buildingBlocks?.added ?? [],
     );
+    overlayFlatList(
+      t.qualityAttributes?.added ?? [],
+      s.qualityAttributes?.added ?? [],
+    );
   }
 }
 
@@ -414,6 +449,10 @@ function overlayBuildingBlocks(
     overlayBehaviours(t.behaviours?.added ?? [], s.behaviours?.added ?? []);
     overlayFlatList(t.rules?.added ?? [], s.rules?.added ?? []);
     overlayFlatList(t.scenarios?.added ?? [], s.scenarios?.added ?? []);
+    overlayFlatList(
+      t.qualityAttributes?.added ?? [],
+      s.qualityAttributes?.added ?? [],
+    );
   }
 }
 
@@ -428,6 +467,10 @@ function overlayBehaviours(
     if (s.edited_by_user === true) t.edited_by_user = true;
     overlayFlatList(t.rules?.added ?? [], s.rules?.added ?? []);
     overlayFlatList(t.scenarios?.added ?? [], s.scenarios?.added ?? []);
+    overlayFlatList(
+      t.qualityAttributes?.added ?? [],
+      s.qualityAttributes?.added ?? [],
+    );
   }
 }
 
@@ -464,6 +507,12 @@ function validateBoundedContext(
       );
     }
   }
+  for (const qa of bc.qualityAttributes?.added ?? []) {
+    validateQualityAttribute(`boundedContexts/${bc.name}`, qa, "added", report);
+  }
+  for (const qa of bc.qualityAttributes?.modified ?? []) {
+    validateQualityAttribute(`boundedContexts/${bc.name}`, qa, "modified", report);
+  }
   for (const m of bc.modules?.added ?? []) {
     validateModule(bc.name, m, "added", report);
   }
@@ -484,6 +533,22 @@ function validateModule(
   _mode: "added" | "modified",
   report: QualityReport
 ): void {
+  for (const qa of m.qualityAttributes?.added ?? []) {
+    validateQualityAttribute(
+      `boundedContexts/${bcName}/modules/${m.name}`,
+      qa,
+      "added",
+      report,
+    );
+  }
+  for (const qa of m.qualityAttributes?.modified ?? []) {
+    validateQualityAttribute(
+      `boundedContexts/${bcName}/modules/${m.name}`,
+      qa,
+      "modified",
+      report,
+    );
+  }
   for (const bb of m.buildingBlocks?.added ?? []) {
     validateBuildingBlock(bcName, m.name, bb, "added", report);
   }
@@ -509,12 +574,18 @@ function validateBuildingBlock(
     validateRule(blockPath, r, "modified", report);
     ruleNamesAtBB.add(r.name);
   }
+  for (const qa of bb.qualityAttributes?.added ?? []) {
+    validateQualityAttribute(blockPath, qa, "added", report);
+  }
+  for (const qa of bb.qualityAttributes?.modified ?? []) {
+    validateQualityAttribute(blockPath, qa, "modified", report);
+  }
   for (const bh of bb.behaviours?.added ?? []) {
-    validateBehaviour(blockPath, bh, "added", report);
+    validateBehaviour(blockPath, bb.type, bh, "added", report);
     flagDualLevelRules(blockPath, bb.name, bh, ruleNamesAtBB, report);
   }
   for (const bh of bb.behaviours?.modified ?? []) {
-    validateBehaviour(blockPath, bh, "modified", report);
+    validateBehaviour(blockPath, bb.type, bh, "modified", report);
     flagDualLevelRules(blockPath, bb.name, bh, ruleNamesAtBB, report);
   }
 }
@@ -540,11 +611,18 @@ function flagDualLevelRules(
 
 function validateBehaviour(
   blockPath: string,
+  bbType: DesignedBuildingBlock["type"] | undefined,
   bh: DesignedBehaviour,
   mode: "added" | "modified",
   report: QualityReport
 ): void {
   const behaviourPath = `${blockPath}.${bh.name}`;
+  if (bh.actor !== null && bh.actor !== "" && bbType !== "application_service") {
+    report.errors.push(
+      `Behaviour '${behaviourPath}' has actor '${bh.actor}' but its host BuildingBlock is ${bbType ? `'${bbType}'` : "untyped"}. ` +
+        `Actors are valid only on behaviours hosted by an 'application_service' BuildingBlock.`,
+    );
+  }
   if (mode === "added") {
     if (bh.description === null || bh.description.length === 0) {
       report.errors.push(
@@ -577,6 +655,12 @@ function validateBehaviour(
   }
   for (const r of bh.rules?.modified ?? []) {
     validateRule(behaviourPath, r, "modified", report);
+  }
+  for (const qa of bh.qualityAttributes?.added ?? []) {
+    validateQualityAttribute(behaviourPath, qa, "added", report);
+  }
+  for (const qa of bh.qualityAttributes?.modified ?? []) {
+    validateQualityAttribute(behaviourPath, qa, "modified", report);
   }
 }
 
@@ -613,6 +697,37 @@ function validateRule(
     report.errors.push(
       `Rule '${rulePath}' modified description is ${r.description.length} chars ` +
         `(need ≥${RULE_DESCRIPTION_MIN}).`
+    );
+  }
+}
+
+function validateQualityAttribute(
+  parentPath: string,
+  qa: DesignedQualityAttribute,
+  mode: "added" | "modified",
+  report: QualityReport,
+): void {
+  const qaPath = `${parentPath}#${qa.name}`;
+  if (mode === "added") {
+    if (qa.description === null || qa.description.length === 0) {
+      report.errors.push(
+        `Quality Attribute '${qaPath}' is missing description ` +
+          `(required ≥${QA_DESCRIPTION_MIN} chars for added quality attributes — state a measurable expectation).`,
+      );
+    } else if (qa.description.length < QA_DESCRIPTION_MIN) {
+      report.errors.push(
+        `Quality Attribute '${qaPath}' description is ${qa.description.length} chars ` +
+          `(need ≥${QA_DESCRIPTION_MIN}). State a measurable target metric, threshold, and scope.`,
+      );
+    }
+  } else if (
+    qa.description !== null &&
+    qa.description.length > 0 &&
+    qa.description.length < QA_DESCRIPTION_MIN
+  ) {
+    report.errors.push(
+      `Quality Attribute '${qaPath}' modified description is ${qa.description.length} chars ` +
+        `(need ≥${QA_DESCRIPTION_MIN}).`,
     );
   }
 }
@@ -681,6 +796,11 @@ interface BuildingBlockReference {
 
 interface BuildingBlockAt {
   bb: DesignedBuildingBlock;
+  location: string;
+}
+
+interface ActorReference {
+  name: string;
   location: string;
 }
 
@@ -773,12 +893,24 @@ function* collectBuildingBlockReferences(doc: DesignDoc): Generator<BuildingBloc
   }
 }
 
+function* collectActorReferences(doc: DesignDoc): Generator<ActorReference> {
+  for (const entry of iterateBuildingBlocks(doc)) {
+    for (const bh of [
+      ...(entry.bb.behaviours?.added ?? []),
+      ...(entry.bb.behaviours?.modified ?? []),
+    ]) {
+      if (bh.actor !== null && bh.actor !== "") {
+        yield { name: bh.actor, location: `${entry.location}.${bh.name}` };
+      }
+    }
+  }
+}
+
 function formatQualityErrors(errors: string[]): string {
   return `DesignDoc quality gate rejected the save:\n- ${errors.join("\n- ")}`;
 }
 
 export type ElementKind =
-  | "actor"
   | "qualityAttribute"
   | "boundedContext"
   | "module"
@@ -794,7 +926,6 @@ export interface ElementPathSegment {
 
 interface LocatedElement {
   element:
-    | DesignedActor
     | DesignedQualityAttribute
     | DesignedBoundedContext
     | DesignedDomainModule
@@ -811,26 +942,11 @@ function describePath(path: ElementPathSegment[]): string {
 function locateElement(source: DesignDoc, path: ElementPathSegment[]): LocatedElement | null {
   if (path.length === 0) return null;
   const [head, ...rest] = path;
-  switch (head.kind) {
-    case "actor": {
-      if (rest.length !== 0) return null;
-      const a = findInChangeSet(source.actors, head.name);
-      return a === null ? null : { element: a };
-    }
-    case "qualityAttribute": {
-      if (rest.length !== 0) return null;
-      const q = findInChangeSet(source.qualityAttributes, head.name);
-      return q === null ? null : { element: q };
-    }
-    case "boundedContext": {
-      const bc = findInChangeSet(source.boundedContexts, head.name);
-      if (bc === null) return null;
-      if (rest.length === 0) return { element: bc };
-      return locateInBoundedContext(bc, rest);
-    }
-    default:
-      return null;
-  }
+  if (head.kind !== "boundedContext") return null;
+  const bc = findInChangeSet(source.boundedContexts, head.name);
+  if (bc === null) return null;
+  if (rest.length === 0) return { element: bc };
+  return locateInBoundedContext(bc, rest);
 }
 
 function locateInBoundedContext(
@@ -851,6 +967,11 @@ function locateInBoundedContext(
       if (rest.length === 0) return { element: bb };
       return locateInBuildingBlock(bb, rest);
     }
+    case "qualityAttribute": {
+      if (rest.length !== 0) return null;
+      const qa = findInChangeSet(bc.qualityAttributes, head.name);
+      return qa === null ? null : { element: qa };
+    }
     default:
       return null;
   }
@@ -861,11 +982,21 @@ function locateInModule(
   path: ElementPathSegment[]
 ): LocatedElement | null {
   const [head, ...rest] = path;
-  if (head.kind !== "buildingBlock") return null;
-  const bb = findInChangeSet(m.buildingBlocks, head.name);
-  if (bb === null) return null;
-  if (rest.length === 0) return { element: bb };
-  return locateInBuildingBlock(bb, rest);
+  switch (head.kind) {
+    case "buildingBlock": {
+      const bb = findInChangeSet(m.buildingBlocks, head.name);
+      if (bb === null) return null;
+      if (rest.length === 0) return { element: bb };
+      return locateInBuildingBlock(bb, rest);
+    }
+    case "qualityAttribute": {
+      if (rest.length !== 0) return null;
+      const qa = findInChangeSet(m.qualityAttributes, head.name);
+      return qa === null ? null : { element: qa };
+    }
+    default:
+      return null;
+  }
 }
 
 function locateInBuildingBlock(
@@ -890,6 +1021,11 @@ function locateInBuildingBlock(
       const s = findInChangeSet(bb.scenarios, head.name);
       return s === null ? null : { element: s };
     }
+    case "qualityAttribute": {
+      if (rest.length !== 0) return null;
+      const qa = findInChangeSet(bb.qualityAttributes, head.name);
+      return qa === null ? null : { element: qa };
+    }
     default:
       return null;
   }
@@ -909,6 +1045,10 @@ function locateInBehavior(
     case "scenario": {
       const s = findInChangeSet(bh.scenarios, seg.name);
       return s === null ? null : { element: s };
+    }
+    case "qualityAttribute": {
+      const qa = findInChangeSet(bh.qualityAttributes, seg.name);
+      return qa === null ? null : { element: qa };
     }
     default:
       return null;

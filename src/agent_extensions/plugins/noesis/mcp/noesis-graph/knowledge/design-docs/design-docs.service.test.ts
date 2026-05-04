@@ -117,19 +117,30 @@ describe("DesignDocsService", () => {
       expect(await countNodes("DesignDoc")).toBe(1);
     });
 
-    test("creates actors, BCs, modules, BBs, behaviours, rules, scenarios", async () => {
+    test("creates BCs, modules, BBs, behaviours, rules, scenarios, quality attributes", async () => {
+      await service.upsertActor({
+        name: "Customer",
+        description: "Buys things",
+      });
       const doc = {
         id: "dd-2",
         name: "orders",
         description: "Order management",
-        actors: {
-          added: [{ name: "Customer", description: "Buys things" }],
-        },
         boundedContexts: {
           added: [
             {
               name: "Sales",
               description: "Sales context",
+              qualityAttributes: {
+                added: [
+                  {
+                    name: "Performance:SalesThroughput",
+                    type: "performance",
+                    description:
+                      "Sales endpoints sustain ≥1000 RPS during peak hours; degrade to ≥500 RPS at 2x peak load.",
+                  },
+                ],
+              },
               modules: {
                 added: [
                   {
@@ -145,6 +156,10 @@ describe("DesignDocsService", () => {
                               { name: "total", type: "Money" },
                             ],
                           },
+                        },
+                        {
+                          name: "OrderApi",
+                          type: "application_service",
                           behaviours: {
                             added: [
                               {
@@ -187,25 +202,94 @@ describe("DesignDocsService", () => {
             },
           ],
         },
-        qualityAttributes: {
-          added: [
-            { name: "Throughput", type: "performance", description: "1000 rps" },
-          ],
-        },
       };
       const path = await writeDoc(doc);
       const result = await service.saveDesignDocFromFile(path);
 
       expect(result.status).toBe("Ok");
       expect(result.design_doc_id).toBe("dd-2");
-      expect(await countNodes("DesignedActor")).toBe(1);
       expect(await countNodes("DesignedBoundedContext")).toBe(1);
       expect(await countNodes("DesignedDomainModule")).toBe(1);
-      expect(await countNodes("DesignedBuildingBlock")).toBe(1);
+      expect(await countNodes("DesignedBuildingBlock")).toBe(2);
       expect(await countNodes("DesignedBehaviour")).toBe(1);
       expect(await countNodes("DesignedRule")).toBe(1);
       expect(await countNodes("DesignedScenario")).toBe(1);
       expect(await countNodes("DesignedQualityAttribute")).toBe(1);
+    });
+
+    test("rejects behaviour.actor on a non-application_service host", async () => {
+      await service.upsertActor({ name: "Customer", description: null });
+      const doc = {
+        id: "dd-actor-bad",
+        name: "actor-bad",
+        description: "actor on aggregate",
+        boundedContexts: {
+          added: [
+            {
+              name: "Sales",
+              buildingBlocks: {
+                added: [
+                  {
+                    name: "Order",
+                    type: "aggregate",
+                    behaviours: {
+                      added: [
+                        {
+                          name: "Place",
+                          type: "Command",
+                          description: BEHAVIOUR_DESCRIPTION,
+                          isPublic: true,
+                          actor: "Customer",
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      };
+      await expect(
+        service.saveDesignDocFromFile(await writeDoc(doc)),
+      ).rejects.toThrow(/application_service/);
+    });
+
+    test("rejects behaviour.actor referencing an actor not in the catalog", async () => {
+      const doc = {
+        id: "dd-actor-missing",
+        name: "actor-missing",
+        description: "actor not in catalog",
+        boundedContexts: {
+          added: [
+            {
+              name: "Sales",
+              buildingBlocks: {
+                added: [
+                  {
+                    name: "OrderApi",
+                    type: "application_service",
+                    behaviours: {
+                      added: [
+                        {
+                          name: "Place",
+                          type: "Command",
+                          description: BEHAVIOUR_DESCRIPTION,
+                          isPublic: true,
+                          actor: "Stranger",
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      };
+      await expect(
+        service.saveDesignDocFromFile(await writeDoc(doc)),
+      ).rejects.toThrow(/actor catalog/);
     });
 
     test("modified ChangeSet updates only changed fields", async () => {
@@ -428,7 +512,7 @@ describe("DesignDocsService", () => {
           id: "dd-nullcs",
           name: "nullcs",
           description: "should reject null",
-          actors: null,
+          boundedContexts: null,
         },
       );
       await expect(service.saveDesignDocFromFile(path)).rejects.toThrow();
@@ -439,28 +523,21 @@ describe("DesignDocsService", () => {
         id: "dd-5",
         name: "drop",
         description: "v1",
-        actors: {
-          added: [
-            { name: "Alpha" },
-            { name: "Beta" },
-          ],
+        boundedContexts: {
+          added: [{ name: "Alpha" }, { name: "Beta" }],
         },
       };
-      await service.saveDesignDocFromFile(
-        await writeDoc(initial),
-      );
-      expect(await countNodes("DesignedActor")).toBe(2);
+      await service.saveDesignDocFromFile(await writeDoc(initial));
+      expect(await countNodes("DesignedBoundedContext")).toBe(2);
 
       const delta = {
         id: "dd-5",
         name: "drop",
         description: "v1",
-        actors: { removed: ["Alpha"] },
+        boundedContexts: { removed: ["Alpha"] },
       };
-      await service.saveDesignDocFromFile(
-        await writeDoc(delta),
-      );
-      expect(await countNodes("DesignedActor")).toBe(1);
+      await service.saveDesignDocFromFile(await writeDoc(delta));
+      expect(await countNodes("DesignedBoundedContext")).toBe(1);
     });
   });
 
@@ -476,11 +553,20 @@ describe("DesignDocsService", () => {
           id: "dd-r",
           name: "read-test",
           description: "d",
-          actors: { added: [{ name: "A" }] },
           boundedContexts: {
             added: [
               {
                 name: "BC",
+                qualityAttributes: {
+                  added: [
+                    {
+                      name: "Security:NoPlaintext",
+                      type: "security",
+                      description:
+                        "All BC traffic uses TLS 1.3; cardholder data never appears in plaintext logs or persisted records.",
+                    },
+                  ],
+                },
                 buildingBlocks: {
                   added: [{ name: "BB", type: "entity" }],
                 },
@@ -492,35 +578,63 @@ describe("DesignDocsService", () => {
       await service.saveDesignDocFromFile(path);
       const doc = await service.readDesignDoc("dd-r");
       expect(doc).not.toBeNull();
-      expect(doc?.actors?.added.map((a) => a.name)).toEqual(["A"]);
       expect(doc?.boundedContexts?.added[0].name).toBe("BC");
+      expect(
+        doc?.boundedContexts?.added[0].qualityAttributes?.added.map((q) => q.name),
+      ).toEqual(["Security:NoPlaintext"]);
       expect(
         doc?.boundedContexts?.added[0].buildingBlocks?.added[0].name,
       ).toBe("BB");
     });
   });
 
+  describe("listActors / upsertActor", () => {
+    test("upsertActor adds to the catalog and listActors returns it", async () => {
+      await service.upsertActor({
+        name: "Customer",
+        description: "Buys things",
+      });
+      await service.upsertActor({
+        name: "Approving Manager",
+        description: "Approves discounts >30%",
+      });
+      const actors = await service.listActors();
+      expect(actors.map((a) => a.name).sort()).toEqual([
+        "Approving Manager",
+        "Customer",
+      ]);
+      const customer = actors.find((a) => a.name === "Customer");
+      expect(customer?.description).toBe("Buys things");
+    });
+
+    test("upsertActor updates the description on a re-call", async () => {
+      await service.upsertActor({ name: "Customer", description: "v1" });
+      await service.upsertActor({ name: "Customer", description: "v2" });
+      const actors = await service.listActors();
+      expect(actors).toHaveLength(1);
+      expect(actors[0].description).toBe("v2");
+    });
+  });
+
   describe("listDesignDocs", () => {
     test("returns overview rows for all design docs", async () => {
       await service.saveDesignDocFromFile(
-        await writeDoc(
-          {
-            id: "dd-a",
-            name: "alpha",
-            description: "first",
-            actors: { added: [{ name: "X" }] },
-          },
-        ),
+        await writeDoc({
+          id: "dd-a",
+          name: "alpha",
+          description: "first",
+          boundedContexts: { added: [{ name: "BC1" }, { name: "BC2" }] },
+        }),
       );
       await service.saveDesignDocFromFile(
-        await writeDoc(
-          { id: "dd-b", name: "beta", description: "second" },
-        ),
+        await writeDoc({ id: "dd-b", name: "beta", description: "second" }),
       );
       const docs = await service.listDesignDocs();
       expect(docs).toHaveLength(2);
       const alpha = docs.find((d) => d.id === "dd-a");
-      expect(alpha?.actor_count).toBe(1);
+      expect(alpha?.bounded_context_count).toBe(2);
+      const beta = docs.find((d) => d.id === "dd-b");
+      expect(beta?.bounded_context_count).toBe(0);
     });
   });
 
@@ -923,7 +1037,9 @@ describe("DesignDocsService", () => {
           id: "dd-impl-update",
           name: "sealed-edit",
           description: "d",
-          actors: { added: [{ name: "Alpha", description: "first" }] },
+          boundedContexts: {
+            added: [{ name: "Billing", description: "first" }],
+          },
         },
       );
       await service.saveDesignDocFromFile(path);
@@ -932,7 +1048,7 @@ describe("DesignDocsService", () => {
       await expect(
         service.updateDesignDocElement(
           "dd-impl-update",
-          [{ kind: "actor", name: "Alpha" }],
+          [{ kind: "boundedContext", name: "Billing" }],
           { description: "edited" },
         ),
       ).rejects.toThrow(/implemented/);
@@ -971,30 +1087,40 @@ describe("DesignDocsService", () => {
   });
 
   describe("deleteDesignDoc", () => {
-    test("removes a DesignDoc and all descendants", async () => {
+    test("removes a DesignDoc and all in-doc descendants but leaves graph-global actors", async () => {
+      await service.upsertActor({ name: "Customer", description: null });
       await service.saveDesignDocFromFile(
-        await writeDoc(
-          {
-            id: "dd-del",
-            name: "x",
-            description: "d",
-            actors: { added: [{ name: "A" }] },
-            boundedContexts: {
-              added: [
-                {
-                  name: "BC",
-                  buildingBlocks: { added: [{ name: "BB" }] },
+        await writeDoc({
+          id: "dd-del",
+          name: "x",
+          description: "d",
+          boundedContexts: {
+            added: [
+              {
+                name: "BC",
+                qualityAttributes: {
+                  added: [
+                    {
+                      name: "Performance:Latency",
+                      type: "performance",
+                      description:
+                        "BC-wide endpoints meet p95 ≤ 250 ms at 50 RPS sustained, measured at the API boundary.",
+                    },
+                  ],
                 },
-              ],
-            },
+                buildingBlocks: { added: [{ name: "BB" }] },
+              },
+            ],
           },
-        ),
+        }),
       );
       await service.deleteDesignDoc("dd-del");
       expect(await countNodes("DesignDoc")).toBe(0);
-      expect(await countNodes("DesignedActor")).toBe(0);
       expect(await countNodes("DesignedBoundedContext")).toBe(0);
       expect(await countNodes("DesignedBuildingBlock")).toBe(0);
+      expect(await countNodes("DesignedQualityAttribute")).toBe(0);
+      // Graph-global actors are not deleted with the design doc.
+      expect(await countNodes("DesignedActor")).toBe(1);
     });
   });
 });

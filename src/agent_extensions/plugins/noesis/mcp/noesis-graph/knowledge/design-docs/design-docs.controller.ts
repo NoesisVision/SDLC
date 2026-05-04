@@ -5,7 +5,9 @@ import {
   Get,
   Param,
   Patch,
+  Put,
 } from "@nestjs/common";
+import type { DesignedActor } from "../../../../shared-contracts/design-doc.js";
 import type {
   DesignDocDetailData,
   DesignDocsPageData,
@@ -21,23 +23,27 @@ interface DesignDocElementUpdateBody {
   fields: { name?: string; description?: string };
 }
 
-@Controller("api/ui/design-docs")
+interface ActorUpsertBody {
+  description?: string | null;
+}
+
+@Controller("api/ui")
 export class DesignDocsController {
   constructor(private readonly service: DesignDocsService) {}
 
-  @Get()
+  @Get("design-docs")
   async get(): Promise<DesignDocsPageData> {
     return this.service.getDesignDocsPage();
   }
 
-  @Get(":designDocId")
+  @Get("design-docs/:designDocId")
   async getDetail(
     @Param("designDocId") designDocId: string,
   ): Promise<DesignDocDetailData> {
     return this.service.getDesignDocDetail(designDocId);
   }
 
-  @Patch(":designDocId/elements")
+  @Patch("design-docs/:designDocId/elements")
   async updateElement(
     @Param("designDocId") designDocId: string,
     @Body() body: DesignDocElementUpdateBody,
@@ -62,5 +68,21 @@ export class DesignDocsController {
       }
       throw err;
     }
+  }
+
+  @Get("actors")
+  async listActors(): Promise<{ actors: DesignedActor[] }> {
+    return { actors: await this.service.listActors() };
+  }
+
+  @Put("actors/:name")
+  async upsertActor(
+    @Param("name") name: string,
+    @Body() body: ActorUpsertBody,
+  ): Promise<{ status: "Ok"; name: string }> {
+    return this.service.upsertActor({
+      name,
+      description: body.description ?? null,
+    });
   }
 }

@@ -641,6 +641,196 @@ describe("validateDesignDocQuality — implements resolution", () => {
   });
 });
 
+describe("validateDesignDocQuality — quality attributes", () => {
+  test("flags an added quality attribute with no description as error", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            qualityAttributes: {
+              added: [
+                { name: "MissingDesc", type: "performance", description: null },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    const { errors } = validateDesignDocQuality(doc);
+    expect(errors[0]).toMatch(/Quality Attribute.*MissingDesc.*missing description/);
+  });
+
+  test("flags an added quality attribute with description shorter than 80 chars", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            qualityAttributes: {
+              added: [
+                { name: "Short", type: "performance", description: "Too short." },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    const { errors } = validateDesignDocQuality(doc);
+    expect(errors[0]).toMatch(/Quality Attribute.*Short.* description is \d+ chars/);
+  });
+
+  test("accepts a quality attribute attached at the behaviour level with substantive description", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "OrderApi",
+                  type: "application_service",
+                  description: null,
+                  behaviours: {
+                    added: [
+                      {
+                        name: "Place",
+                        type: "Command",
+                        description: BEHAVIOUR_DESC,
+                        isPublic: true,
+                        actor: null,
+                        qualityAttributes: {
+                          added: [
+                            {
+                              name: "Performance:PlaceLatency",
+                              type: "performance",
+                              description: placeholderDescription(
+                                80,
+                                "p95 ≤ 200 ms at 100 RPS sustained",
+                              ),
+                            },
+                          ],
+                          modified: [],
+                          removed: [],
+                        },
+                      },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    expect(validateDesignDocQuality(doc).errors).toEqual([]);
+  });
+});
+
+describe("validateDesignDocQuality — actor placement", () => {
+  test("flags actor set on a behaviour hosted by a non-application_service BB", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "Order",
+                  type: "aggregate",
+                  description: null,
+                  behaviours: {
+                    added: [
+                      {
+                        name: "Place",
+                        type: "Command",
+                        description: BEHAVIOUR_DESC,
+                        isPublic: true,
+                        actor: "Customer",
+                      },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    const { errors } = validateDesignDocQuality(doc);
+    expect(
+      errors.some((e) => e.includes("application_service") && e.includes("Customer")),
+    ).toBe(true);
+  });
+
+  test("accepts actor set on a behaviour hosted by an application_service BB", () => {
+    const doc = buildDoc({
+      boundedContexts: {
+        added: [
+          {
+            name: "BC",
+            description: null,
+            buildingBlocks: {
+              added: [
+                {
+                  name: "OrderApi",
+                  type: "application_service",
+                  description: null,
+                  behaviours: {
+                    added: [
+                      {
+                        name: "Place",
+                        type: "Command",
+                        description: BEHAVIOUR_DESC,
+                        isPublic: true,
+                        actor: "Customer",
+                      },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          },
+        ],
+        modified: [],
+        removed: [],
+      },
+    });
+    const { errors } = validateDesignDocQuality(doc);
+    expect(errors).toEqual([]);
+  });
+});
+
 describe("validateDesignDocQuality — bounded context saturation", () => {
   test("warns when BC has >20 building blocks and zero modules", () => {
     const blocks = Array.from({ length: 25 }, (_, i) => ({

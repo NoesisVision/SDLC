@@ -296,8 +296,34 @@ describe("parseAnnotations - behaviors", () => {
     `;
     const matches = parseAnnotations(src);
     expect(matches[0].behaviors).toEqual([
-      { methodName: "AddItem", nameOverride: null },
+      { methodName: "AddItem", nameOverride: null, actor: null },
     ]);
+  });
+
+  test("captures [Actor(\"<name>\")] annotation on a method", () => {
+    const src = `
+      namespace Sales;
+
+      [DddApplicationService]
+      public class OrderApi
+      {
+        [Actor("Customer")]
+        public void Place() { }
+
+        [DomainBehavior("Cancel Order")]
+        [ActorAttribute("Approving Manager")]
+        public void Cancel() { }
+
+        public void NoActor() { }
+      }
+    `;
+    const matches = parseAnnotations(src);
+    const byMethod = new Map(
+      matches[0].behaviors.map((b) => [b.methodName, b.actor]),
+    );
+    expect(byMethod.get("Place")).toBe("Customer");
+    expect(byMethod.get("Cancel")).toBe("Approving Manager");
+    expect(byMethod.get("NoActor")).toBeNull();
   });
 
   test("ignores properties, fields, constructors and nested type methods", () => {

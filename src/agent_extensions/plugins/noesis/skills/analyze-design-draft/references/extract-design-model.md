@@ -12,17 +12,29 @@ Walk the fragments grouped by `section_path`. Detect model-bearing sections usin
 
 Following the schema in `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` Section 2 and the rules in Section 3:
 
-1. **Actors** — user roles, external services mentioned in the draft.
-2. **Bounded Contexts** — top-level domain partitions.
-3. For each Bounded Context:
+1. **Bounded Contexts** — top-level domain partitions.
+2. For each Bounded Context:
    - **Modules** — required once a Bounded Context grows past ~15 Building Blocks (see "Modularising large Bounded Contexts" below). Skip when the BC is small and flat is fine.
    - **Building Blocks** — Aggregates, Entities, Value Objects, Domain Events, Commands, Queries, Services, Repositories, Factories, External Integrations.
-4. For each Building Block:
+3. For each Building Block:
    - `properties` (name + optional type),
-   - `behaviours` (Commands / Events / Queries with `input` / `output` / `usedBuildingBlocks`),
-   - `rules` (with `ruleType` if stated),
+   - `behaviours` (Commands / Events / Queries with `input` / `output` / `usedBuildingBlocks` and, for behaviours hosted by an `application_service`, an optional `actor` referencing the graph-global actor catalog),
+   - `rules` (with `ruleType` if stated) — domain concerns only.
    - `scenarios` (Given / When / Then triplets).
-5. **Quality Attributes** — performance, availability, security, etc., with measurable expectations.
+   - `qualityAttributes` (technical concerns) — only when the QA is genuinely scoped to this BB; lift to Module/BC if it spans more.
+4. **Quality Attributes** at every relevant scope (BC, Module, BB, Behaviour) — attach each at the **narrowest level it actually constrains**. Never attach at root: there is no top-level `qualityAttributes` field.
+
+### Actors (graph-global)
+
+Actors are not part of the DesignDoc tree. Before extracting, call `noesis-graph:list_actors` to load the catalog and reuse names whenever the persona matches. Set `actor` only on behaviours whose host BuildingBlock has `type: application_service`. For any new persona, call `noesis-graph:upsert_actor({ name, description })` **before** `save_design_doc` — the save validates that every referenced actor name exists in the catalog and rejects an actor placed on a non-app-service host.
+
+### Rule vs Quality Attribute
+
+A `Rule` describes a **domain concern**: an invariant, a transition guard, a computation. It belongs to the ubiquitous language and is verified at runtime by domain code (and exercised by Scenarios).
+
+A `QualityAttribute` describes a **technical concern**: latency targets, throughput, availability windows, authn/authz constraints, encryption, observability, … It belongs to operations / security / performance vocabulary and is verified by tests, SLOs, or platform mechanisms.
+
+When a constraint is both, model the domain truth as a Rule and add the operational envelope as a QualityAttribute on the same parent. Do **not** collapse one into the other.
 
 ### Modularising large Bounded Contexts
 
@@ -99,10 +111,12 @@ For `modified` behaviours, omit `description` when the change does not touch it.
 Before saving, verify:
 
 - Every `behaviour.input`, `behaviour.output`, `behaviour.usedBuildingBlocks`, and non-primitive `property.type` refers to a Building Block name present in the design doc (existing or `added`).
-- Every `behaviour.actor` refers to an Actor present in the design doc.
+- Every `behaviour.actor` refers to a name present in the actor catalog (loaded from `list_actors`); if it does not, register it with `upsert_actor` before saving.
+- Every `behaviour.actor` is set on a Behaviour hosted by an `application_service` Building Block — `save_design_doc` rejects actors on any other host.
 - No empty Building Blocks, Modules, or Bounded Contexts (each must have at least a description or a child).
+- Each Quality Attribute is attached at the narrowest level that covers it, with description ≥80 chars stating a measurable target/threshold/scope.
 
-If a reference cannot be resolved, fix the omission (promote the referenced block to `added`) or drop the broken reference. Never emit a Design Doc with dangling references.
+If a reference cannot be resolved, fix the omission (promote the referenced block to `added`, register a missing actor) or drop the broken reference. Never emit a Design Doc with dangling references.
 
 ## Save
 

@@ -18,7 +18,7 @@ const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS BoundedContext(name STRING, PRIMARY KEY(name))",
   "CREATE NODE TABLE IF NOT EXISTS Module(name STRING, fullPath STRING, PRIMARY KEY(fullPath))",
   "CREATE NODE TABLE IF NOT EXISTS BuildingBlock(id STRING, name STRING, type STRING, PRIMARY KEY(id))",
-  "CREATE NODE TABLE IF NOT EXISTS Behavior(id STRING, name STRING, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS Behavior(id STRING, name STRING, actor STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS CSharpNamespace(name STRING, fullName STRING, PRIMARY KEY(fullName))",
   "CREATE NODE TABLE IF NOT EXISTS CSharpType(id STRING, name STRING, fullName STRING, filePath STRING, PRIMARY KEY(id))",
   "CREATE REL TABLE IF NOT EXISTS BC_CONTAINS_MODULE(FROM BoundedContext TO Module)",
@@ -66,6 +66,7 @@ const BehaviorWithBbRowSchema = z.object({
   buildingBlockId: z.string(),
   id: z.string(),
   name: z.string(),
+  actor: z.string(),
 });
 type BehaviorWithBbRow = z.infer<typeof BehaviorWithBbRowSchema>;
 
@@ -120,8 +121,8 @@ export class ScannerRepository {
 
   async insertBehavior(behavior: Behavior, buildingBlockId: string): Promise<void> {
     await this.db.query(
-      "CREATE (x:Behavior {id: $id, name: $name})",
-      { id: behavior.id, name: behavior.name },
+      "CREATE (x:Behavior {id: $id, name: $name, actor: $actor})",
+      { id: behavior.id, name: behavior.name, actor: behavior.actor ?? "" },
     );
     await this.db.query(
       "MATCH (b:BuildingBlock), (x:Behavior) WHERE b.id = $bbId AND x.id = $behaviorId CREATE (b)-[:BB_CONTAINS_BEHAVIOR]->(x)",
@@ -218,7 +219,7 @@ export class ScannerRepository {
       .array(BehaviorWithBbRowSchema)
       .parse(
         await this.db.query<BehaviorWithBbRow>(
-          "MATCH (b:BuildingBlock)-[:BB_CONTAINS_BEHAVIOR]->(x:Behavior) RETURN b.id AS buildingBlockId, x.id AS id, x.name AS name ORDER BY x.name",
+          "MATCH (b:BuildingBlock)-[:BB_CONTAINS_BEHAVIOR]->(x:Behavior) RETURN b.id AS buildingBlockId, x.id AS id, x.name AS name, x.actor AS actor ORDER BY x.name",
         ),
       );
 
@@ -280,7 +281,7 @@ function buildTree(
   boundedContexts: BoundedContext[],
   modules: Module[],
   buildingBlocks: Array<BuildingBlock & { containerPath: string }>,
-  behaviors: Array<Behavior & { buildingBlockId: string }>,
+  behaviors: Array<{ buildingBlockId: string; id: string; name: string; actor: string }>,
 ): DomainModelTree {
   const modulesByParent = groupModulesByParent(modules);
   const behaviorsByBb = groupBehaviorsByBb(behaviors);
@@ -325,12 +326,12 @@ function groupBbByContainer(
 }
 
 function groupBehaviorsByBb(
-  behaviors: Array<Behavior & { buildingBlockId: string }>,
+  behaviors: Array<{ buildingBlockId: string; id: string; name: string; actor: string }>,
 ): Map<string, Behavior[]> {
   const map = new Map<string, Behavior[]>();
   for (const row of behaviors) {
     const list = map.get(row.buildingBlockId) ?? [];
-    list.push({ id: row.id, name: row.name });
+    list.push({ id: row.id, name: row.name, actor: row.actor === "" ? null : row.actor });
     map.set(row.buildingBlockId, list);
   }
   return map;

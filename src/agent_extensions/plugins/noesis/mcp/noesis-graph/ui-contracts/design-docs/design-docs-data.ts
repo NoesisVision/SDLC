@@ -41,6 +41,12 @@ export interface DesignedScenarioData {
   then: string;
 }
 
+export interface DesignedQualityAttributeData {
+  name: string;
+  type: string | null;
+  description: string | null;
+}
+
 export interface DesignedBehaviourData {
   name: string;
   description: string | null;
@@ -52,6 +58,7 @@ export interface DesignedBehaviourData {
   usedBuildingBlocks?: DesignDocChangeSet<string>;
   rules?: DesignDocChangeSet<DesignedRuleData>;
   scenarios?: DesignDocChangeSet<DesignedScenarioData>;
+  qualityAttributes?: DesignDocChangeSet<DesignedQualityAttributeData>;
 }
 
 export interface DesignedBuildingBlockData {
@@ -63,12 +70,14 @@ export interface DesignedBuildingBlockData {
   behaviours?: DesignDocChangeSet<DesignedBehaviourData>;
   rules?: DesignDocChangeSet<DesignedRuleData>;
   scenarios?: DesignDocChangeSet<DesignedScenarioData>;
+  qualityAttributes?: DesignDocChangeSet<DesignedQualityAttributeData>;
 }
 
 export interface DesignedDomainModuleData {
   name: string;
   description: string | null;
   buildingBlocks?: DesignDocChangeSet<DesignedBuildingBlockData>;
+  qualityAttributes?: DesignDocChangeSet<DesignedQualityAttributeData>;
 }
 
 export interface DesignedBoundedContextData {
@@ -76,6 +85,7 @@ export interface DesignedBoundedContextData {
   description: string | null;
   modules?: DesignDocChangeSet<DesignedDomainModuleData>;
   buildingBlocks?: DesignDocChangeSet<DesignedBuildingBlockData>;
+  qualityAttributes?: DesignDocChangeSet<DesignedQualityAttributeData>;
 }
 
 export interface DesignedActorData {
@@ -83,19 +93,15 @@ export interface DesignedActorData {
   description: string | null;
 }
 
-export interface DesignedQualityAttributeData {
-  name: string;
-  type: string | null;
-  description: string | null;
-}
-
 export interface DesignDocSourceData {
   id: string;
   name: string;
   description: string;
-  actors?: DesignDocChangeSet<DesignedActorData>;
   boundedContexts?: DesignDocChangeSet<DesignedBoundedContextData>;
-  qualityAttributes?: DesignDocChangeSet<DesignedQualityAttributeData>;
+}
+
+export interface ActorsPageData {
+  actors: DesignedActorData[];
 }
 
 export interface DesignDocDetailData {

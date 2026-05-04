@@ -6,6 +6,7 @@ import {
   type DesignedBoundedContext,
   type DesignedBuildingBlock,
   type DesignedDomainModule,
+  type DesignedQualityAttribute,
   type DesignedRule,
   type DesignedScenario,
 } from "../../../shared-contracts/design-doc.js";
@@ -106,14 +107,6 @@ function collectBlockedEdits(
 ): string[] {
   if (prev === null) return [];
   const blocked: string[] = [];
-  walkBlockedFlat(prev.actors, next.actors, "actors", confirmed, blocked);
-  walkBlockedFlat(
-    prev.qualityAttributes,
-    next.qualityAttributes,
-    "qualityAttributes",
-    confirmed,
-    blocked,
-  );
   walkBlockedBoundedContexts(
     prev.boundedContexts,
     next.boundedContexts,
@@ -176,6 +169,13 @@ function walkBlockedBCChildren(
     confirmed,
     blocked,
   );
+  walkBlockedFlat<DesignedQualityAttribute>(
+    prev.qualityAttributes,
+    next.qualityAttributes,
+    `${basePath}/qualityAttributes`,
+    confirmed,
+    blocked,
+  );
 }
 
 function walkBlockedModules(
@@ -199,6 +199,13 @@ function walkBlockedModules(
         prevM.buildingBlocks,
         m.buildingBlocks,
         `${path}/buildingBlocks`,
+        confirmed,
+        blocked,
+      );
+      walkBlockedFlat<DesignedQualityAttribute>(
+        prevM.qualityAttributes,
+        m.qualityAttributes,
+        `${path}/qualityAttributes`,
         confirmed,
         blocked,
       );
@@ -234,8 +241,15 @@ function walkBlockedBBChildren(
   blocked: string[],
 ): void {
   walkBlockedBehaviours(prev.behaviours, next.behaviours, `${basePath}/behaviours`, confirmed, blocked);
-  walkBlockedFlat(prev.rules, next.rules, `${basePath}/rules`, confirmed, blocked);
-  walkBlockedFlat(prev.scenarios, next.scenarios, `${basePath}/scenarios`, confirmed, blocked);
+  walkBlockedFlat<DesignedRule>(prev.rules, next.rules, `${basePath}/rules`, confirmed, blocked);
+  walkBlockedFlat<DesignedScenario>(prev.scenarios, next.scenarios, `${basePath}/scenarios`, confirmed, blocked);
+  walkBlockedFlat<DesignedQualityAttribute>(
+    prev.qualityAttributes,
+    next.qualityAttributes,
+    `${basePath}/qualityAttributes`,
+    confirmed,
+    blocked,
+  );
 }
 
 function walkBlockedBehaviours(
@@ -255,8 +269,15 @@ function walkBlockedBehaviours(
     flagIfBlocked(prevByName.get(bh.name), path, confirmed, blocked);
     const prevBH = prevByName.get(bh.name);
     if (prevBH !== undefined) {
-      walkBlockedFlat(prevBH.rules, bh.rules, `${path}/rules`, confirmed, blocked);
-      walkBlockedFlat(prevBH.scenarios, bh.scenarios, `${path}/scenarios`, confirmed, blocked);
+      walkBlockedFlat<DesignedRule>(prevBH.rules, bh.rules, `${path}/rules`, confirmed, blocked);
+      walkBlockedFlat<DesignedScenario>(prevBH.scenarios, bh.scenarios, `${path}/scenarios`, confirmed, blocked);
+      walkBlockedFlat<DesignedQualityAttribute>(
+        prevBH.qualityAttributes,
+        bh.qualityAttributes,
+        `${path}/qualityAttributes`,
+        confirmed,
+        blocked,
+      );
     }
   }
 }
@@ -288,13 +309,6 @@ function mergeWithUserEdits(
   return {
     ...next,
     implemented: prev.implemented === true ? true : next.implemented,
-    actors: mergeFlatChangeSet(prev.actors, next.actors, "actors", confirmed),
-    qualityAttributes: mergeFlatChangeSet(
-      prev.qualityAttributes,
-      next.qualityAttributes,
-      "qualityAttributes",
-      confirmed,
-    ),
     boundedContexts: mergeBoundedContexts(
       prev.boundedContexts,
       next.boundedContexts,
@@ -388,6 +402,12 @@ function mergeBoundedContext(
       `${path}/buildingBlocks`,
       confirmed,
     ),
+    qualityAttributes: mergeFlatChangeSet<DesignedQualityAttribute>(
+      prev.qualityAttributes,
+      next.qualityAttributes,
+      `${path}/qualityAttributes`,
+      confirmed,
+    ),
   };
 }
 
@@ -426,6 +446,12 @@ function mergeModule(
       prev.buildingBlocks,
       next.buildingBlocks,
       `${path}/buildingBlocks`,
+      confirmed,
+    ),
+    qualityAttributes: mergeFlatChangeSet<DesignedQualityAttribute>(
+      prev.qualityAttributes,
+      next.qualityAttributes,
+      `${path}/qualityAttributes`,
       confirmed,
     ),
   };
@@ -480,6 +506,12 @@ function mergeBuildingBlock(
       `${path}/scenarios`,
       confirmed,
     ),
+    qualityAttributes: mergeFlatChangeSet<DesignedQualityAttribute>(
+      prev.qualityAttributes,
+      next.qualityAttributes,
+      `${path}/qualityAttributes`,
+      confirmed,
+    ),
   };
 }
 
@@ -524,6 +556,12 @@ function mergeBehaviour(
       prev.scenarios,
       next.scenarios,
       `${path}/scenarios`,
+      confirmed,
+    ),
+    qualityAttributes: mergeFlatChangeSet<DesignedQualityAttribute>(
+      prev.qualityAttributes,
+      next.qualityAttributes,
+      `${path}/qualityAttributes`,
       confirmed,
     ),
   };

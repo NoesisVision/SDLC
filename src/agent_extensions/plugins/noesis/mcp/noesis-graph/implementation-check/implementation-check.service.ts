@@ -18,7 +18,11 @@ const DomainModelTreeSchema: z.ZodType<DomainModelTree> = z.lazy(() =>
   }),
 ) as z.ZodType<DomainModelTree>;
 
-const BehaviorSchema = z.object({ id: z.string(), name: z.string() });
+const BehaviorSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  actor: z.string().nullable(),
+});
 
 const BuildingBlockBranchSchema = z.object({
   id: z.string(),

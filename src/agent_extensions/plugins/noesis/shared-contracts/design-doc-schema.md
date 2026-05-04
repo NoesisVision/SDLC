@@ -13,11 +13,13 @@ A section is treated as **model-describing** when its heading or body contains t
 | Module | "Module", "Domain Module", "Package" |
 | Building Block | "Aggregate", "Entity", "Value Object", "Domain Event", "Command", "Query", "Domain Service", "Application Service", "Repository", "Factory", "External Integration" |
 | Behaviour | "Behaviour", "Use case", "Operation", "Scenario name" |
-| Rule | "Business rule", "Invariant", "Constraint", "Rule:" |
+| Rule | "Business rule", "Invariant", "Constraint", "Rule:" — must be a **domain concern** |
 | Scenario | "Scenario:", "Given/When/Then", "Acceptance criteria" |
-| Quality Attribute | "Performance", "Availability", "Security", "Quality attribute", "NFR" |
+| Quality Attribute | "Performance", "Availability", "Security", "Quality attribute", "NFR", "SLA", "SLO" — must be a **technical concern** |
 
 A section that contains none of the above (e.g. background discussion, narrative, comparison tables) is NOT a model section. Skip it.
+
+**Rule vs Quality Attribute discriminator.** Rules describe *what the business says is true* (invariants over domain state, transitions, computations). Quality attributes describe *how the system must behave technically* (latency, throughput, availability targets, authn/authz constraints, data-protection requirements). When in doubt, ask: does the constraint live in the ubiquitous language of the domain, or in the operational vocabulary of the platform? Domain → Rule. Platform → Quality Attribute.
 
 ## 2. JSON schema (TypeScript / Zod, mirrors `shared-contracts/design-doc.ts`)
 
@@ -28,24 +30,21 @@ DesignDoc {
   id?: string                                  // omit for first iteration → server generates UUID
   name: string                                 // stable human-readable, e.g. "pageindex-tree-search"
   description: string                          // 1–2 sentences, what this design covers
-  actors?: ChangeSet<DesignedActor>
   boundedContexts?: ChangeSet<DesignedBoundedContext>
-  qualityAttributes?: ChangeSet<DesignedQualityAttribute>
 }
-
-DesignedActor { name; description? }
-DesignedQualityAttribute { name; type?: "performance"|"availability"|"security"|"other"; description? }
 
 DesignedBoundedContext {
   name
   description?
   modules?: ChangeSet<DesignedDomainModule>
   buildingBlocks?: ChangeSet<DesignedBuildingBlock>   // blocks not belonging to any module
+  qualityAttributes?: ChangeSet<DesignedQualityAttribute>   // BC-wide technical concerns
 }
 
 DesignedDomainModule {
   name; description?
   buildingBlocks?: ChangeSet<DesignedBuildingBlock>
+  qualityAttributes?: ChangeSet<DesignedQualityAttribute>   // Module-wide technical concerns
 }
 
 DesignedBuildingBlock {
@@ -58,6 +57,7 @@ DesignedBuildingBlock {
   behaviours?: ChangeSet<DesignedBehaviour>
   rules?: ChangeSet<DesignedRule>
   scenarios?: ChangeSet<DesignedScenario>
+  qualityAttributes?: ChangeSet<DesignedQualityAttribute>   // BB-wide technical concerns
 }
 
 DesignedProperty {
@@ -79,20 +79,38 @@ DesignedBehaviour {
   usedBuildingBlocks?: ChangeSet<string>
   rules?: ChangeSet<DesignedRule>
   scenarios?: ChangeSet<DesignedScenario>
+  qualityAttributes?: ChangeSet<DesignedQualityAttribute>   // Behaviour-scoped technical concerns
   isPublic: boolean                    // default false
-  actor?: string                       // Actor name initiating this behaviour
+  actor?: string                       // Graph-global actor name. Only valid when host BuildingBlock type === "application_service".
 }
 
 DesignedRule {
   name
   ruleType?: "Consistency"|"Structure"|"Computation"|"State change"
-  description           // Required ≥80 chars on `added`; omit on `modified` when not changing.
+  description           // Domain concern. Required ≥80 chars on `added`; omit on `modified` when not changing.
                         // Server rejects tautologies that paraphrase `name`.
 }
 DesignedScenario { name; description; given; when; then }
+DesignedQualityAttribute {
+  name
+  type?: "performance"|"availability"|"security"|"other"
+  description           // Technical concern. Required ≥80 chars on `added`; omit on `modified` when not changing.
+                        // State a measurable expectation (target metric, threshold, scope).
+}
 
 ChangeSet<T> { added: T[]; modified: T[]; removed: string[] }    // removed by name
 ```
+
+**Actors are not part of the DesignDoc tree.** They live as a graph-global catalog. Use them via three side channels:
+
+1. `noesis-graph:list_actors` returns the catalog `[{ name, description }, …]`. Call it before authoring to see what already exists.
+2. Reference an actor on an `application_service` behaviour by setting `behaviour.actor = "<name>"`. Reuse names verbatim from the catalog whenever the persona matches.
+3. Introduce a new actor with `noesis-graph:upsert_actor` (`{ name, description }`) **before** calling `save_design_doc`. The save validates that every referenced actor exists in the catalog and that `actor` is set only on `application_service` behaviours; both are hard errors.
+
+`save_design_doc` rejects:
+- A `qualityAttributes` ChangeSet attached at the wrong level when the same QA name is also declared at a wider scope in the same doc (pick one — the narrowest level that covers the constraint).
+- An `actor` set on a behaviour whose host BuildingBlock type is anything other than `application_service`.
+- A `behaviour.actor` whose name is not present in the actor catalog.
 
 ## 3. ChangeSet rules
 
@@ -112,19 +130,38 @@ When all of `added`, `modified` and `removed` are empty for a given collection f
 - **Green-field implementation status** (no `implement-design-doc` run has materialised this design in code yet — the typical case for a first or second authoring pass): every item belongs in `added`, even when a prior Design Doc record already lists them. `modified` and `removed` stay empty until implementation has happened. A second authoring pass against the same unimplemented design keeps items in `added` (with refined definitions); it does **not** move them to `modified`.
 - **Post-implementation status** (one or more `implement-design-doc` runs have produced code from this design): the diff is against the resulting code. The prior Design Doc record is a *hint* about what was last asked-for; the system of record is the code.
 
-**Identity.** `name` is the identity key for every entity. A rename of an item already in code is `removed: ["<old>"]` + `added: [<new>]`, plus a sweep of cross-references (`input`, `output`, `usedBuildingBlocks`, `properties[].type`, `implements`) to point at the new name. A rename of an item *not* in code is just `added: [<new>]` — the prior design doc's `<old>` is irrelevant because no code has it yet.
+**Identity.** `name` is the identity key for every entity. A rename of an item already in code is `removed: ["<old>"]` + `added: [<new>]`, plus a sweep of cross-references (`input`, `output`, `usedBuildingBlocks`, `properties[].type`, `implements`, `behaviour.actor`) to point at the new name. A rename of an item *not* in code is just `added: [<new>]` — the prior design doc's `<old>` is irrelevant because no code has it yet.
 
 ## 4. Naming conventions
 
 - BuildingBlock names: `PascalCase` (e.g. `OrderAggregate`, `PriceCalculated`).
 - Behaviour names: `PascalCase` matching the type — Commands as imperative (`PlaceOrder`), Events past tense (`OrderPlaced`), Queries noun + `By...` (`OrderById`).
-- Actor names: free-form (`Customer`, `External Pricing Service`).
+- Actor names: free-form (`Customer`, `Warehouse Operator`). **Always check `list_actors` for an existing match before introducing a new one.**
 - BoundedContext / Module names: domain-language nouns (`Pricing`, `InventoryManagement`).
+- Quality attribute names: `<Type>:<Subject>` is a useful convention (`Performance:OrderListLatency`, `Security:CardholderData`), but free-form is allowed when a single descriptive token is clearer.
 - Re-use names that already exist in the knowledge graph (check by reading the current design doc first); only introduce new names when no semantic match exists.
 
 ## 5. Modelling conventions
 
-### 5.1 Interchangeable Building Blocks
+### 5.1 Quality attribute placement — narrowest level that applies
+
+Each quality attribute attaches at exactly one of: `Behaviour`, `BuildingBlock`, `DesignedDomainModule`, `DesignedBoundedContext`. Pick the **narrowest** scope that covers the constraint:
+
+- The constraint applies only to one specific behaviour (e.g. *"`PlaceOrder` p95 ≤ 200 ms"*) → attach to that `Behaviour`.
+- The constraint applies to a BuildingBlock as a whole (e.g. *"`OrderRepository` reads must be served by a read replica"*) → attach to that `BuildingBlock`.
+- The constraint spans sibling BuildingBlocks in one Module (e.g. *"`Pricing.Calculation` must be deterministic and pure"*) → attach to that `DesignedDomainModule`.
+- The constraint covers the whole Bounded Context (e.g. *"`Billing` must redact PII from all logs"*) → attach to that `DesignedBoundedContext`.
+
+Do not duplicate a QA across levels. If you find yourself attaching the same QA to multiple levels, lift it to the lowest common ancestor.
+
+### 5.2 Rule vs Quality Attribute
+
+- **Rule** = domain concern. Belongs to the ubiquitous language. Examples: *"An invoice cannot be issued before the order has been paid in full."*, *"A discount of more than 30% requires manager approval."*. Verified at runtime by domain code, exercised by Scenarios.
+- **Quality Attribute** = technical concern. Belongs to operations, security, performance, availability vocabulary. Examples: *"`PlaceOrder` p95 ≤ 200 ms under 100 RPS sustained"*, *"All requests authenticated via OAuth2 bearer."*, *"Service availability ≥ 99.9% measured monthly."*. Verified by tests/SLOs/policies, not by domain rule machinery.
+
+A constraint that fits both buckets is almost always a Rule with one or more derived Quality Attributes — express the domain truth as a Rule, then add a QA only when the technical envelope is also part of the contract.
+
+### 5.3 Interchangeable Building Blocks
 
 When two or more BBs need to be interchangeable in some context (heterogeneous collection elements, polymorphic property values, behaviour I/O), introduce an explicit **base Building Block** that models the common abstraction. Implementing BBs declare `implements: ["<BaseBB>"]`; property / input / output `type` then references the **base BB by name**.
 
@@ -159,7 +196,7 @@ The base BB is a real domain concept — name the role and the shared shape, not
 
 The validator resolves every `implements` entry against declared BBs (in this doc or in the prior model). Property `type` values like `"Component"` are valid because `Component` is declared.
 
-### 5.2 Mermaid blocks inside `description` fields
+### 5.4 Mermaid blocks inside `description` fields
 
 Embed mermaid diagrams in JSON `description` fields with `\n`-separated lines:
 
@@ -172,16 +209,18 @@ The triple-backtick `mermaid` opener and the trailing triple-backtick close the 
 ## 6. Producing the JSON
 
 1. If iterating, call `noesis-graph:read_design_doc` first; cache the rendered Markdown, never load the JSON wholesale. Treat it as a hint — the diff baseline is the implemented codebase (§3).
-2. Walk model-bearing fragments grouped by Bounded Context.
-3. For each entity built, set its name from the source heading or the first declarative sentence; do NOT invent names that are absent from the draft.
-4. Validate locally: every `usedBuildingBlocks` / `input` / `output` reference, every `properties[].type`, and every entry in `implements` must resolve to a BuildingBlock name present in the same DesignDoc (existing or `added`). Unknown references are bugs in extraction — flag and either drop the reference or promote the missing block to `added`.
-5. SKILL.md Step 4 owns the Save flow (write the JSON, run the pre-save check, call `save_design_doc`). Do not duplicate Save instructions here.
+2. Call `noesis-graph:list_actors` and keep the catalog handy — it is the deduplication source for `behaviour.actor` names.
+3. Walk model-bearing fragments grouped by Bounded Context.
+4. For each entity built, set its name from the source heading or the first declarative sentence; do NOT invent names that are absent from the draft.
+5. Validate locally: every `usedBuildingBlocks` / `input` / `output` reference, every `properties[].type`, every entry in `implements`, and every `behaviour.actor` must resolve — BB references against BBs in this doc (existing or `added`), actor names against the catalog (or new actors you will introduce). Unknown references are bugs in extraction — flag and either drop the reference, promote the missing block to `added`, or call `upsert_actor` for a new actor before save.
+6. Before `save_design_doc`, call `noesis-graph:upsert_actor` for every new actor name introduced — the save fails if a referenced actor isn't in the catalog.
+7. SKILL.md Step 4 owns the Save flow (write the JSON, run the pre-save check, call `save_design_doc`). Do not duplicate Save instructions here.
 
 ## 7. Worked examples
 
 ### 7.1 Green-field iteration (no code yet)
 
-Second authoring pass on a Design Doc whose `implement-design-doc` has **not** run. The prior Design Doc record lists `PlaceOrder` with `description: "..."` (300 chars). The new authoring pass refines the description to 480 chars and adds a new property to `Order`.
+Second authoring pass on a Design Doc whose `implement-design-doc` has **not** run. The prior Design Doc record lists `PlaceOrder` with `description: "..."` (300 chars). The new authoring pass refines the description to 480 chars, adds a new property to `Order`, attaches an actor and a behaviour-scoped quality attribute.
 
 Correct ChangeSets:
 
@@ -197,10 +236,27 @@ Correct ChangeSets:
           "properties": { "added": [
             { "name": "id", "type": "OrderId" },
             { "name": "customerId", "type": "CustomerId" },
-            { "name": "couponCode", "type": "String", "nullable": true }   // newly modelled this pass
-          ] },
+            { "name": "couponCode", "type": "String", "nullable": true }
+          ] }
+        },
+        {
+          "name": "PlaceOrderService",
+          "type": "application_service",
           "behaviours": { "added": [
-            { "name": "PlaceOrder", "type": "Command", "description": "...refined 480-char description...", "isPublic": true }
+            {
+              "name": "PlaceOrder",
+              "type": "Command",
+              "isPublic": true,
+              "actor": "Customer",
+              "description": "...refined 480-char description...",
+              "qualityAttributes": { "added": [
+                {
+                  "name": "Performance:PlaceOrderLatency",
+                  "type": "performance",
+                  "description": "p95 ≤ 200 ms at 100 RPS sustained, measured at the API boundary; degrades to p95 ≤ 500 ms at 250 RPS."
+                }
+              ] }
+            }
           ] }
         }
       ] }
@@ -209,7 +265,9 @@ Correct ChangeSets:
 }
 ```
 
-Both `Order` and `PlaceOrder` stay in `added` because no code exists yet. `modified` and `removed` are absent.
+Both Order and PlaceOrder stay in `added` because no code exists yet. `modified` and `removed` are absent. The QA hangs off the behaviour because it is specific to `PlaceOrder` and would not survive being lifted to the BC.
+
+The skill must have called `upsert_actor({ name: "Customer", description: "..." })` before this save — `Customer` either reuses the catalog entry or is freshly registered.
 
 ### 7.2 Post-implementation rename
 
@@ -240,8 +298,12 @@ Plus a sweep so `PriceState.lock`'s property `type` and any `usedBuildingBlocks`
 
 ## 8. Things this agent must NOT do
 
-- Do not invent business rules, scenarios, or properties not stated in the source. The draft is the source of truth; gap-filling is the architect's job, not the extractor's.
+- Do not invent business rules, scenarios, properties, or quality attributes not stated in the source. The draft is the source of truth; gap-filling is the architect's job, not the extractor's.
 - Do not classify discussion / comparison content as model content. Comparison tables ("Vector RAG vs PageIndex") are NOT Building Blocks.
 - Do not invent module names from arbitrary headings. Modules must reflect actual cohesion in the model — not arbitrary heading structure in the source. **However**, once a Bounded Context contains more than ~15 Building Blocks, group them into 3–7 Modules along natural cohesion axes (typically the topic structure pulled in Step 2). Reuse those topic names rather than inventing fresh module names. A Module with fewer than 3 Building Blocks is a smell — fold it back into the BC or merge with a sibling. `save_design_doc` emits a warning when a Bounded Context has >20 building blocks and zero modules.
-- Do not produce an empty DesignDoc (no actors, no contexts, no quality attributes). If extraction yields nothing, skip writing the design doc JSON and skip the `save_design_doc` call.
-- Do not invent a phantom umbrella Building Block to satisfy a heterogeneous collection — model the real abstraction or omit `type` (§5.1).
+- Do not produce an empty DesignDoc (no contexts). If extraction yields no model material, skip writing the design doc JSON and skip the `save_design_doc` call.
+- Do not invent a phantom umbrella Building Block to satisfy a heterogeneous collection — model the real abstraction or omit `type` (§5.3).
+- Do not classify a domain invariant as a Quality Attribute or vice versa (§5.2). The discriminator is "domain concern vs technical concern".
+- Do not attach a Quality Attribute at a level wider than its actual scope (§5.1) — pick the narrowest container.
+- Do not place an `actor` on a behaviour whose host is not an `application_service` — `save_design_doc` rejects it.
+- Do not reference an actor name that is not in the catalog. Either reuse from `list_actors` or call `upsert_actor` first.

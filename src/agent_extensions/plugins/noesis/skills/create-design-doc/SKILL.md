@@ -24,7 +24,7 @@ Before Setup, load these reference files in a **single parallel `Read` batch** a
 
 These references are knowledge inputs — they are exempt from the **Minimum reload principle**, which applies only to scratch analysis files.
 
-**MCP tool preload.** In a deferred-tool harness, the workflow needs the following tools — load them in **one** `ToolSearch` call up front: `mcp__plugin_noesis_noesis-graph__list_design_docs`, `…__read_bounded_context_map`, `…__list_topic_summaries_for_sources`, `…__list_decisions_for_sources`, `…__read_design_doc`, `…__read_model_for_modules`, `…__list_topic_items_since`, `…__prepare_design_doc_path`, `…__save_design_doc`, plus `AskUserQuestion`.
+**MCP tool preload.** In a deferred-tool harness, the workflow needs the following tools — load them in **one** `ToolSearch` call up front: `mcp__plugin_noesis_noesis-graph__list_design_docs`, `…__read_bounded_context_map`, `…__list_topic_summaries_for_sources`, `…__list_decisions_for_sources`, `…__read_design_doc`, `…__read_model_for_modules`, `…__list_topic_items_since`, `…__prepare_design_doc_path`, `…__save_design_doc`, `…__list_actors`, `…__upsert_actor`, plus `AskUserQuestion`.
 
 ## Setup
 
@@ -80,7 +80,7 @@ Each sub-step is a single MCP call. Read the returned tmp file, extract what is 
 
 #### 1.0 Existing Design Doc baseline
 
-Run only when iterating (i.e. `design_doc_id` was provided in Setup). Call `noesis-graph:read_design_doc` with that id. The tool writes a Markdown rendering of the full current state (actors, bounded contexts → modules → building blocks → behaviours, rules, scenarios, quality attributes) to a tmp file and returns the path. Read it once to orient, then offload it — it will be re-read in Step 4 as a *hint* about what was last asked-for. **It is not the diff baseline.** The diff baseline is determined in §1.0a and is the implemented codebase.
+Run only when iterating (i.e. `design_doc_id` was provided in Setup). Call `noesis-graph:read_design_doc` with that id. The tool writes a Markdown rendering of the full current state (bounded contexts → modules → building blocks → behaviours, with rules, scenarios, and quality attributes nested at the level they apply) to a tmp file and returns the path. Read it once to orient, then offload it — it will be re-read in Step 4 as a *hint* about what was last asked-for. **It is not the diff baseline.** The diff baseline is determined in §1.0a and is the implemented codebase. The graph-global actor catalog is read separately via `noesis-graph:list_actors` (§3.2).
 
 If creating a new Design Doc (`design_doc_title` was provided), skip this sub-step.
 
@@ -154,7 +154,11 @@ Write findings to `<working_dir>/analysis-bounded-contexts.md`:
 
 Identify use cases — actions triggerable from outside a Bounded Context by Command, Event or Query. **A use case is a public Behaviour** (`isPublic: true`, `type: Command | Event | Query`). Group cohesive use cases under one `application_service` Building Block; do not 1:1-map every use case to its own service.
 
-Identify the **actors** that initiate those Behaviours. An **actor is always an end-user persona or role** (e.g. *Customer*, *Warehouse Operator*, *Approving Manager*). An actor is **never** an external system, another module, a scheduled trigger, or any abstract/technical/architectural concept (e.g. "application layer", "scheduler", "upstream service"). When a Behaviour is initiated by a non-human trigger, model the trigger as an inbound Event/Command on the hosting Building Block — do **not** invent an actor for it. The actor list in `DesignDoc.actors` is produced here, not invented at Step 4.
+Identify the **actors** that initiate those Behaviours. An **actor is always an end-user persona or role** (e.g. *Customer*, *Warehouse Operator*, *Approving Manager*). An actor is **never** an external system, another module, a scheduled trigger, or any abstract/technical/architectural concept (e.g. "application layer", "scheduler", "upstream service"). When a Behaviour is initiated by a non-human trigger, model the trigger as an inbound Event/Command on the hosting Building Block — do **not** invent an actor for it.
+
+**Actors are graph-global and attach only at the Behaviour level.** Every actor is set on its initiating Behaviour via the Behaviour's `actor` field, and that Behaviour must be hosted by an `application_service` Building Block — `save_design_doc` rejects an actor on any other host type. There is no `DesignDoc.actors` field.
+
+**Reuse-first rule.** Call `noesis-graph:list_actors` once at the start of §3.2 and keep the catalog in active context. For every persona you identify, search the catalog by both name and description before introducing a new actor. Use the existing name verbatim whenever the persona matches — even partial matches are usually correct (the description is the definitive disambiguator). Only call `noesis-graph:upsert_actor` (with a one-line description) when no existing actor fits; the upsert happens **before** Step 4.1 so the save-time validator sees the actor.
 
 When the input contains a table, decide what the table represents before treating its rows as model elements:
 - *Each row has distinct behaviour or invariants* → row = Building Block.
@@ -162,8 +166,8 @@ When the input contains a table, decide what the table represents before treatin
 - *Rows are runtime data the system reads/writes* → not modelled as BBs; the table is operational data outside the design doc (or, if structurally relevant, captured as configuration of a single aggregate BB).
 
 Write findings to `<working_dir>/analysis-process.md`:
-- Per Bounded Context: the use case list with target Module, triggering Behaviour name & type, hosting `application_service` BB, initiating Actor, and one-line purpose.
-- Actor list: name + one-line description.
+- Per Bounded Context: the use case list with target Module, triggering Behaviour name & type, hosting `application_service` BB, initiating Actor (catalog name) and one-line purpose.
+- New-actor list: name + one-line description for each actor that does **not** already exist in the catalog (these will be `upsert_actor`-ed at Step 4.0). Reused actors do not appear here — only new ones.
 
 When a Behaviour identified here will use ≥3 Building Blocks (or hosts an `application_service`), record the source diagrams in the input files that can be adapted into a mermaid sequence diagram for §3.5.
 
@@ -212,12 +216,22 @@ When applying an obvious resolution directly, append the choice to the relevant 
 
 Otherwise build a list of well-formed questions, each with 2-3 candidate answers, and present them via `AskUserQuestion`. Continue only after the user has decided.
 
-#### 3.7 Cross-cutting qualities
+#### 3.7 Quality attributes
 
-Identify quality attributes (performance, availability, security, …) that cannot be localised to a single Building Block or Behaviour. **Guard:** do not restate something already captured as a Rule attached to a specific block — quality attributes are for properties not localisable to one place.
+Identify quality attributes (performance, availability, security, "other") expressed in the evidence and attach each at the **narrowest level it actually constrains** — pick one of `Behaviour`, `BuildingBlock`, `DesignedDomainModule`, `DesignedBoundedContext`. There is no top-level `qualityAttributes` ChangeSet on the DesignDoc.
+
+**Rule vs Quality Attribute.** A quality attribute is a **technical concern** (operational envelope: latency targets, throughput, availability, authn/authz, encryption, observability, …). A Rule is a **domain concern** (invariants, computations, state-transition guards). When a constraint expresses a domain truth, model it as a Rule (per §3.3). When it expresses an operational expectation, model it as a quality attribute. A constraint that has both faces is almost always a Rule with one or more derived quality attributes — keep them separate, do not collapse one into the other. **If the previous version of this design doc captured an operational constraint as a Rule, demote it to a Quality Attribute (`removed: ["<rule-name>"]` from the rule's parent + `added` quality attribute on the same parent).**
+
+Choose the narrowest level by asking *"which scope does this constraint actually cover?"*:
+- One specific Behaviour — attach there (e.g. *"`PlaceOrder` p95 ≤ 200 ms"* on `PlaceOrder`).
+- One Building Block as a whole — attach there (e.g. *"`OrderRepository` reads must be served by a read replica"*).
+- Multiple BBs of one Module — attach to the Module.
+- Whole BC, with no narrower fit — attach to the BC.
+
+Do **not** duplicate a QA across levels; lift to the lowest common ancestor instead. The QA description must state a measurable expectation (target metric, threshold, scope) — not just rationale.
 
 Write findings to `<working_dir>/analysis-qualities.md`:
-- One entry per quality attribute: name, type, description, scope (whole DesignDoc or specific BCs).
+- One entry per quality attribute: name, type, attachment target (full path: `<bc>` / `<bc>/<module>` / `<bc>/(<module>?)/<bb>` / `<bc>/(<module>?)/<bb>/<bh>`), description.
 
 ### Step 4: Produce the Design Doc
 
@@ -235,7 +249,13 @@ Build a `DesignDoc` payload using the schema rules already loaded in **Pre-fligh
 
 **Empty ChangeSets may be omitted.** When `added`, `modified`, and `removed` are all empty for a given collection field, drop the field entirely rather than emitting `{ "added": [], "modified": [], "removed": [] }`.
 
-**Renames** (post-implementation only). When renaming a Building Block, Behaviour, Property or Rule that already exists in code, emit `removed: ["<old>"]` and `added: [<full new spec>]`. Then **double-check** that the old name does not appear elsewhere in the JSON (any `input`, `output`, `usedBuildingBlocks`, `properties[].type`, behaviour-host reference, or `implements` entry). If it does, those references must point at the new name. In green-field status renames don't exist as remove+add — the old name was never in code, so just emit the new name in `added`.
+**Renames** (post-implementation only). When renaming a Building Block, Behaviour, Property or Rule that already exists in code, emit `removed: ["<old>"]` and `added: [<full new spec>]`. Then **double-check** that the old name does not appear elsewhere in the JSON (any `input`, `output`, `usedBuildingBlocks`, `properties[].type`, `behaviour.actor`, behaviour-host reference, or `implements` entry). If it does, those references must point at the new name. In green-field status renames don't exist as remove+add — the old name was never in code, so just emit the new name in `added`.
+
+#### Step 4.0 — Register new actors
+
+Before saving, walk the new-actor list captured in §3.2 (the actors that were *not* present in `list_actors`). For each, call `noesis-graph:upsert_actor` with `{ name, description }`. Skip this step when no new actors were introduced. Reused actors require no upsert.
+
+`save_design_doc` validates that every `behaviour.actor` resolves to a name in the catalog — running this step first prevents a guaranteed save failure.
 
 #### Step 4.1 — Save
 
@@ -272,4 +292,4 @@ Report the returned `design_doc_id` and the totals (`added` / `modified` / `remo
 - **Use existing references unmodified.** The `references/` directory is curated input; do not edit it as part of this skill's run.
 - **Persist via `save_design_doc`.** Always compute the path with `noesis-graph:prepare_design_doc_path` first, write the design doc JSON to that exact `canonical_path`, then call `noesis-graph:save_design_doc` with that path. Never construct the filename manually.
 - **English-only output.** The Design Doc — and every scratch analysis file produced under `<working_dir>` — must be written in **English**, regardless of the language of the source material (conversations, topics, documents, decisions, user-supplied files, or the invocation prompt). Translate prose, headings, names, descriptions, and BDD scenarios to English while authoring; do not defer translation to a later pass. Preserve ubiquitous-language tokens (proper nouns, established domain terms with no clean English equivalent) verbatim and, on first use, gloss them in English in parentheses.
-- **Respect user edits.** The Step 1.0 `read_design_doc` rendering tags every user-edited element with ` _[edited_by_user]_`. Before producing a `modified` or `removed` entry against any such element (Bounded Context, Module, Building Block, Behaviour, Rule, Scenario, Quality Attribute, Actor), ask for explicit user acceptance via `AskUserQuestion`. For each path the user approves, add the element-path string (e.g. `boundedContexts/Billing/buildingBlocks/Invoice/behaviours/IssueInvoice`) to the `confirmed_edits` array and pass it to `save_design_doc` alongside the JSON path. `save_design_doc` rejects the save when any user-edited target is missing from `confirmed_edits`. If the user declines, drop the change from the ChangeSet and proceed with the rest of the diff. **Never include a path in `confirmed_edits` without an explicit user approval for that path** — the array is the user's authorisation receipt, not the agent's intent log.
+- **Respect user edits.** The Step 1.0 `read_design_doc` rendering tags every user-edited element with ` _[edited_by_user]_`. Before producing a `modified` or `removed` entry against any such element (Bounded Context, Module, Building Block, Behaviour, Rule, Scenario, Quality Attribute), ask for explicit user acceptance via `AskUserQuestion`. For each path the user approves, add the element-path string (e.g. `boundedContexts/Billing/buildingBlocks/Invoice/behaviours/IssueInvoice` or `boundedContexts/Billing/buildingBlocks/Invoice/qualityAttributes/Performance:IssueInvoiceLatency`) to the `confirmed_edits` array and pass it to `save_design_doc` alongside the JSON path. `save_design_doc` rejects the save when any user-edited target is missing from `confirmed_edits`. If the user declines, drop the change from the ChangeSet and proceed with the rest of the diff. **Never include a path in `confirmed_edits` without an explicit user approval for that path** — the array is the user's authorisation receipt, not the agent's intent log. Actors are graph-global and not part of the design doc tree — manage their descriptions via `upsert_actor`, not via `confirmed_edits`.

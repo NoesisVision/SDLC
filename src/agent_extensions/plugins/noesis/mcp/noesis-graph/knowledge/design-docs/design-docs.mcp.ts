@@ -37,6 +37,8 @@ export function registerDesignDocsTools(
   registerReadBoundedContextMap(mcp, service);
   registerReadModelForModules(mcp, service);
   registerMarkDesignDocImplemented(mcp, service, indexState);
+  registerListActors(mcp, service);
+  registerUpsertActor(mcp, service, indexState);
 }
 
 function registerPrepareDesignDocPath(
@@ -86,7 +88,10 @@ function registerSaveDesignDoc(
         "Tool reads it, validates, and applies ChangeSets recursively (added → upsert, " +
         "modified → partial update, removed → delete by name). " +
         "Quality gate (rejects on save): every `added` Rule needs description ≥80 chars (Trigger / Pre / Algorithm / Post / Edge cases — no tautologies); " +
-        "every `added` Behaviour needs description ≥400 chars (Input / Validation / numbered Steps / Output). " +
+        "every `added` Quality Attribute needs description ≥80 chars stating a measurable target/threshold/scope; " +
+        "every `added` Behaviour needs description ≥400 chars (Input / Validation / numbered Steps / Output); " +
+        "behaviours with `actor` set must be hosted by an `application_service` BuildingBlock; " +
+        "every behaviour `actor` must reference a name present in the actor catalog (call `upsert_actor` first to register a new actor — `list_actors` shows the catalog). " +
         "Warnings (non-blocking): a Bounded Context with >20 building blocks and 0 modules; an application_service or ≥3-block-using behaviour without an embedded ```mermaid sequence diagram. " +
         "User-edit gate (fires only when this save renames the doc — different slug than the prior canonical filename): any element in the prior on-disk state with `edited_by_user: true` rejects the save when targeted by `modified` or `removed` unless its element-path appears in `confirmed_edits`. " +
         "Implemented-doc gate: when the targeted doc has already been marked implemented (via `mark_design_doc_implemented`), the tool returns `{ status: \"AlreadyImplemented\", design_doc_id, name }` instead of saving — the agent must stop and ask the user whether to create a new doc. " +
@@ -103,7 +108,7 @@ function registerSaveDesignDoc(
           .optional()
           .describe(
             "Element paths the user has explicitly approved overwriting. " +
-              "Format: 'boundedContexts/<bc>/buildingBlocks/<bb>/behaviours/<bh>' (or '/rules/<r>', '/scenarios/<s>'). " +
+              "Format: 'boundedContexts/<bc>/buildingBlocks/<bb>/behaviours/<bh>' (or '/rules/<r>', '/scenarios/<s>', '/qualityAttributes/<qa>'). " +
               "Required for any user-edited element targeted by `modified` or `removed`. Agent must NEVER include a path here without explicit user confirmation.",
           ),
       },
@@ -167,8 +172,9 @@ function registerReadDesignDoc(
     {
       description:
         "Read the full current state of a DesignDoc by id. Writes a Markdown rendering " +
-        "(actors, bounded contexts → modules → building blocks → behaviours/rules/scenarios, quality attributes) " +
-        "to a tmp file and returns the file path. Read it with the Read tool.",
+        "(bounded contexts → modules → building blocks → behaviours / rules / scenarios / quality attributes — quality attributes are nested at the level they apply) " +
+        "to a tmp file and returns the file path. Read it with the Read tool. " +
+        "Actors are not part of a single design doc — call `list_actors` to read the graph-global actor catalog.",
       inputSchema: {
         design_doc_id: z.string().describe("Id of the DesignDoc to read."),
       },
@@ -190,7 +196,7 @@ function registerListDesignDocs(
     "list_design_docs",
     {
       description:
-        "List all DesignDocs in the knowledge graph (id, name, description, counts). " +
+        "List all DesignDocs in the knowledge graph (id, name, description, bounded-context counts). " +
         "Writes Markdown to a tmp file and returns the file path — read it with the Read tool.",
       inputSchema: {},
     },
@@ -212,8 +218,9 @@ function registerDeleteDesignDoc(
     "delete_design_doc",
     {
       description:
-        "Remove a DesignDoc and all its descendants (actors, bounded contexts, modules, " +
-        "building blocks, behaviours, rules, scenarios, quality attributes) from the graph.",
+        "Remove a DesignDoc and all its descendants (bounded contexts, modules, " +
+        "building blocks, behaviours, rules, scenarios, quality attributes) from the graph. " +
+        "Graph-global actors are not deleted — manage them with `upsert_actor` / `list_actors`.",
       inputSchema: {
         design_doc_id: z.string().describe("Id of the DesignDoc to delete."),
       },
@@ -252,7 +259,7 @@ function registerReadModelForModules(
     "read_model_for_modules",
     {
       description:
-        "Render the existing model (Bounded Context → Module → Building Block → Behaviour, with rules and scenarios) " +
+        "Render the existing model (Bounded Context → Module → Building Block → Behaviour, with rules, scenarios and quality attributes) " +
         "for the listed targets. Each target picks one Bounded Context within a Design Doc, optionally narrowed to " +
         "a single Module. Writes Markdown to a tmp file and returns the file path — read it with the Read tool.",
       inputSchema: {
@@ -298,6 +305,63 @@ function registerReadModelForModules(
               module_name: t.module_name ?? null,
             })),
           ),
+      ),
+  );
+}
+
+function registerListActors(
+  mcp: McpServer,
+  service: DesignDocsService,
+): void {
+  mcp.registerTool(
+    "list_actors",
+    {
+      description:
+        "Return the graph-global actor catalog (every actor referenced by any design doc). " +
+        "Use this before authoring a design doc to reuse an existing actor name whenever the persona matches; " +
+        "introduce a new actor with `upsert_actor` only when no existing one fits. " +
+        "Result is returned inline (small payload) — no tmp file.",
+      inputSchema: {},
+    },
+    async () =>
+      runInlineJsonTool(async () => ({
+        actors: await service.listActors(),
+      })),
+  );
+}
+
+function registerUpsertActor(
+  mcp: McpServer,
+  service: DesignDocsService,
+  indexState: IndexStateService,
+): void {
+  mcp.registerTool(
+    "upsert_actor",
+    {
+      description:
+        "Create or update a graph-global actor. Call this BEFORE `save_design_doc` for every new actor name a behaviour will reference, " +
+        "otherwise the save fails (every `behaviour.actor` must resolve to a name in the catalog). " +
+        "Updating an existing actor refreshes its description; reusing an existing name in a behaviour does not require a call here. " +
+        "Returns `{ status: \"Ok\", name }`.",
+      inputSchema: {
+        name: z.string().describe("Actor name (graph-global identity)."),
+        description: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            "One-line description of the actor's role/persona — surfaces in the catalog and in design-doc renderings.",
+          ),
+      },
+    },
+    async ({ name, description }) =>
+      runInlineJsonTool(() =>
+        gateWriteTool(indexState, () =>
+          service.upsertActor({
+            name,
+            description: description ?? null,
+          }),
+        ),
       ),
   );
 }
@@ -356,6 +420,7 @@ function formatModelForModules(
   for (const bc of contexts) {
     parts.push(`## ${bc.name}`);
     if (bc.description) parts.push(bc.description);
+    appendQualityAttributes(parts, bc.qualityAttributes?.added ?? []);
     parts.push("");
     for (const m of bc.modules?.added ?? []) {
       appendModule(parts, m, 3);
@@ -378,26 +443,8 @@ function formatDesignDoc(
   lines.push(`- **Description:** ${doc.description}`);
   lines.push(`- **Implemented:** ${doc.implemented === true ? "yes" : "no"}`);
   lines.push("");
-
-  appendActors(lines, doc.actors?.added ?? []);
-  appendQualityAttributes(lines, doc.qualityAttributes?.added ?? []);
   appendBoundedContexts(lines, doc.boundedContexts?.added ?? []);
-
   return lines.join("\n").trimEnd();
-}
-
-function appendActors(lines: string[], actors: DesignedActor[]): void {
-  lines.push("## Actors");
-  lines.push("");
-  if (actors.length === 0) {
-    lines.push("(none)");
-    lines.push("");
-    return;
-  }
-  for (const a of actors) {
-    lines.push(`- **${a.name}**${editedSuffix(a)} — ${a.description ?? ""}`);
-  }
-  lines.push("");
 }
 
 function editedSuffix(item: { edited_by_user?: boolean }): string {
@@ -408,18 +455,13 @@ function appendQualityAttributes(
   lines: string[],
   attrs: DesignedQualityAttribute[],
 ): void {
-  lines.push("## Quality Attributes");
+  if (attrs.length === 0) return;
   lines.push("");
-  if (attrs.length === 0) {
-    lines.push("(none)");
-    lines.push("");
-    return;
-  }
+  lines.push("**Quality Attributes:**");
   for (const q of attrs) {
     const type = q.type ? ` _(${q.type})_` : "";
     lines.push(`- **${q.name}**${type}${editedSuffix(q)} — ${q.description ?? ""}`);
   }
-  lines.push("");
 }
 
 function appendBoundedContexts(
@@ -435,6 +477,7 @@ function appendBoundedContexts(
   for (const bc of contexts) {
     lines.push(`### ${bc.name}${editedSuffix(bc)}`);
     if (bc.description) lines.push(bc.description);
+    appendQualityAttributes(lines, bc.qualityAttributes?.added ?? []);
     lines.push("");
     for (const m of bc.modules?.added ?? []) {
       appendModule(lines, m, 4);
@@ -452,6 +495,7 @@ function appendModule(
 ): void {
   lines.push(`${"#".repeat(headingLevel)} Module: ${mod.name}${editedSuffix(mod)}`);
   if (mod.description) lines.push(mod.description);
+  appendQualityAttributes(lines, mod.qualityAttributes?.added ?? []);
   lines.push("");
   for (const bb of mod.buildingBlocks?.added ?? []) {
     appendBuildingBlock(lines, bb, headingLevel + 1);
@@ -474,6 +518,7 @@ function appendBuildingBlock(
       lines.push(`- ${p.name}${p.type ? `: ${p.type}` : ""}`);
     }
   }
+  appendQualityAttributes(lines, bb.qualityAttributes?.added ?? []);
   for (const bh of bb.behaviours?.added ?? []) {
     appendBehaviour(lines, bh, headingLevel + 1);
   }
@@ -504,6 +549,7 @@ function appendBehaviour(
   if (inputs.length > 0) lines.push(`- **Input:** ${inputs.join(", ")}`);
   if (outputs.length > 0) lines.push(`- **Output:** ${outputs.join(", ")}`);
   if (used.length > 0) lines.push(`- **Uses:** ${used.join(", ")}`);
+  appendQualityAttributes(lines, bh.qualityAttributes?.added ?? []);
   for (const r of bh.rules?.added ?? []) appendRule(lines, r);
   for (const s of bh.scenarios?.added ?? []) appendScenario(lines, s);
   lines.push("");
@@ -535,10 +581,12 @@ function formatDesignDocList(docs: DesignDocOverview[]): string {
     parts.push(`- **ID:** ${d.id}`);
     parts.push(`- **Description:** ${d.description}`);
     parts.push(`- **Implemented:** ${d.implemented === true ? "yes" : "no"}`);
-    parts.push(
-      `- **Counts:** ${d.actor_count} actors, ${d.bounded_context_count} bounded contexts, ${d.quality_attribute_count} quality attributes`,
-    );
+    parts.push(`- **Bounded contexts:** ${d.bounded_context_count}`);
     parts.push("");
   }
   return parts.join("\n").trimEnd();
 }
+
+// DesignedActor isn't formatted here — `list_actors` returns the raw list inline,
+// the agent surfaces it directly. Keep the import for typing only when needed.
+export type { DesignedActor };

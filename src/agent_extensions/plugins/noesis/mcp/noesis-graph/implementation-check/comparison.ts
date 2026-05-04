@@ -1,10 +1,12 @@
 import type {
   DesignDoc,
+  DesignedBehaviour,
   DesignedBoundedContext,
   DesignedBuildingBlock,
   DesignedDomainModule,
 } from "../../../shared-contracts/design-doc.js";
 import type {
+  Behavior,
   BoundedContextBranch,
   BuildingBlockBranch,
   DomainModelTree,
@@ -38,7 +40,12 @@ interface ModuleSnapshot {
 interface BuildingBlockSnapshot {
   name: string;
   type: string;
-  behaviors: Map<string, true>;
+  behaviors: Map<string, BehaviorSnapshot>;
+}
+
+interface BehaviorSnapshot {
+  name: string;
+  actor: string | null;
 }
 
 type ChangeOp = "added" | "removed" | "modified";
@@ -58,6 +65,7 @@ export function compareImplementation(input: ComparisonInput): ComparisonResult 
   const problems: string[] = [];
   problems.push(...findMissingChanges(expected, actual));
   problems.push(...findUnexpectedChanges(expected, actual));
+  problems.push(...verifyActorAnnotations(input.doc, after));
 
   return { status: problems.length === 0 ? "Ok" : "Mismatch", problems };
 }
@@ -106,8 +114,16 @@ function indexBuildingBlocks(blocks: BuildingBlockBranch[]): Map<string, Buildin
     map.set(bb.name, {
       name: bb.name,
       type: bb.type,
-      behaviors: new Map(bb.behaviors.map((b) => [b.name, true as const])),
+      behaviors: indexBehaviors(bb.behaviors),
     });
+  }
+  return map;
+}
+
+function indexBehaviors(behaviors: Behavior[]): Map<string, BehaviorSnapshot> {
+  const map = new Map<string, BehaviorSnapshot>();
+  for (const b of behaviors) {
+    map.set(b.name, { name: b.name, actor: b.actor });
   }
   return map;
 }
@@ -213,8 +229,8 @@ function diffBuildingBlocks(
 function diffBehaviors(
   container: string,
   bbName: string,
-  before: Map<string, true>,
-  after: Map<string, true>,
+  before: Map<string, BehaviorSnapshot>,
+  after: Map<string, BehaviorSnapshot>,
   out: Map<string, ChangeKey>,
 ): void {
   for (const name of before.keys()) {
@@ -493,6 +509,111 @@ function findUnexpectedChanges(
   return out;
 }
 
+function verifyActorAnnotations(
+  doc: DesignDoc,
+  after: Map<string, BoundedContextSnapshot>,
+): string[] {
+  const out: string[] = [];
+  for (const expected of collectExpectedActors(doc)) {
+    const bc = after.get(expected.boundedContext);
+    if (bc === undefined) continue;
+    const bb = findBuildingBlockSnapshot(bc, expected.module, expected.buildingBlock);
+    if (bb === undefined) continue;
+    if (bb.type !== "ApplicationService") {
+      // The doc validator already rejects an actor on a non-app-service host.
+      // If the type drifted in code, the missing-app-service error is reported by the structural diff.
+      continue;
+    }
+    const behavior = bb.behaviors.get(expected.behavior);
+    if (behavior === undefined) continue;
+    if (behavior.actor === expected.actor) continue;
+    if (behavior.actor === null) {
+      out.push(
+        `Behavior '${expected.path}' is missing the [Actor("${expected.actor}")] annotation expected by the design doc.`,
+      );
+    } else {
+      out.push(
+        `Behavior '${expected.path}' has actor '${behavior.actor}' but the design doc declares '${expected.actor}'.`,
+      );
+    }
+  }
+  return out;
+}
+
+interface ExpectedActor {
+  boundedContext: string;
+  module: string | null;
+  buildingBlock: string;
+  behavior: string;
+  actor: string;
+  path: string;
+}
+
+function* collectExpectedActors(doc: DesignDoc): Generator<ExpectedActor> {
+  for (const bc of [
+    ...(doc.boundedContexts?.added ?? []),
+    ...(doc.boundedContexts?.modified ?? []),
+  ]) {
+    for (const bb of [
+      ...(bc.buildingBlocks?.added ?? []),
+      ...(bc.buildingBlocks?.modified ?? []),
+    ]) {
+      yield* expectedActorsForBB(bc.name, null, bb);
+    }
+    for (const m of [...(bc.modules?.added ?? []), ...(bc.modules?.modified ?? [])]) {
+      const fullPath = `${bc.name}.${m.name}`;
+      for (const bb of [
+        ...(m.buildingBlocks?.added ?? []),
+        ...(m.buildingBlocks?.modified ?? []),
+      ]) {
+        yield* expectedActorsForBB(bc.name, fullPath, bb);
+      }
+    }
+  }
+}
+
+function* expectedActorsForBB(
+  bcName: string,
+  modulePath: string | null,
+  bb: DesignedBuildingBlock,
+): Generator<ExpectedActor> {
+  if (bb.type !== "application_service") return;
+  for (const bh of [
+    ...(bb.behaviours?.added ?? []),
+    ...(bb.behaviours?.modified ?? []),
+  ]) {
+    yield* expectedActorForBehaviour(bcName, modulePath, bb.name, bh);
+  }
+}
+
+function* expectedActorForBehaviour(
+  bcName: string,
+  modulePath: string | null,
+  bbName: string,
+  bh: DesignedBehaviour,
+): Generator<ExpectedActor> {
+  if (bh.actor === null || bh.actor === "") return;
+  const container = modulePath ?? bcName;
+  yield {
+    boundedContext: bcName,
+    module: modulePath,
+    buildingBlock: bbName,
+    behavior: bh.name,
+    actor: bh.actor,
+    path: behaviorIdentifier(container, bbName, bh.name),
+  };
+}
+
+function findBuildingBlockSnapshot(
+  bc: BoundedContextSnapshot,
+  modulePath: string | null,
+  bbName: string,
+): BuildingBlockSnapshot | undefined {
+  if (modulePath === null) return bc.buildingBlocks.get(bbName);
+  const mod = bc.modules.get(modulePath);
+  return mod?.buildingBlocks.get(bbName);
+}
+
 function isPresentInActual(change: ChangeKey, actual: Map<string, ChangeKey>): boolean {
   if (actual.has(keyOf({ ...change, op: "added" }))) return true;
   if (actual.has(keyOf({ ...change, op: "modified" }))) return true;
@@ -538,4 +659,3 @@ function describe(change: ChangeKey): string {
       return `${change.op} Behavior '${change.identifier}'`;
   }
 }
-

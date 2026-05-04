@@ -24,7 +24,6 @@ import {
   IconPackage,
   IconScale,
   IconShield,
-  IconUser,
 } from "@tabler/icons-react";
 import type {
   ChangeStatus,
@@ -33,7 +32,6 @@ import type {
   DesignDocListItem,
   DesignDocSourceData,
   DesignDocsPageData,
-  DesignedActorData,
   DesignedBehaviourData,
   DesignedBoundedContextData,
   DesignedBuildingBlockData,
@@ -48,7 +46,6 @@ import { SyncBadges } from "../shared/sync-badges.js";
 import classes from "./design-docs.module.css";
 
 type ElementKind =
-  | "actor"
   | "qualityAttribute"
   | "boundedContext"
   | "module"
@@ -99,8 +96,6 @@ async function patchDesignDocElement(
 
 function treeIdMarker(kind: ElementKind): string {
   switch (kind) {
-    case "actor":
-      return "actor";
     case "qualityAttribute":
       return "qa";
     case "boundedContext":
@@ -133,7 +128,6 @@ function mapRenamedSelectedId(
 
 type TreeNodeKind =
   | "section"
-  | "actor"
   | "boundedContext"
   | "module"
   | "buildingBlock"
@@ -153,7 +147,6 @@ interface TreeNode {
 }
 
 type NodePayload =
-  | { kind: "actor"; data: DesignedActorData | null }
   | { kind: "boundedContext"; data: DesignedBoundedContextData | null }
   | { kind: "module"; data: DesignedDomainModuleData | null }
   | { kind: "buildingBlock"; data: DesignedBuildingBlockData | null }
@@ -595,8 +588,6 @@ function nodeIcon(kind: TreeNodeKind): React.ReactNode {
   switch (kind) {
     case "section":
       return <IconList size={14} stroke={1.5} />;
-    case "actor":
-      return <IconUser size={14} stroke={1.5} />;
     case "boundedContext":
       return <IconLayoutGrid size={14} stroke={1.5} />;
     case "module":
@@ -676,16 +667,6 @@ function NodeDetailsView({
   const payload = node.payload;
   const editable = !docImplemented && node.status !== "removed";
   switch (payload.kind) {
-    case "actor":
-      return (
-        <ActorDetails
-          data={payload.data}
-          status={node.status}
-          name={node.label}
-          path={node.path}
-          onEdit={editable ? onEdit : null}
-        />
-      );
     case "boundedContext":
       return (
         <BoundedContextDetails
@@ -866,29 +847,6 @@ function DescriptionSection({
   );
 }
 
-function ActorDetails({
-  data,
-  status,
-  name,
-  path,
-  onEdit,
-}: DetailsProps<DesignedActorData>) {
-  return (
-    <Stack gap={0}>
-      <DetailsHeader
-        kind="actor"
-        name={data?.name ?? name}
-        status={status}
-        path={path}
-        onEdit={onEdit}
-      />
-      {data !== null && (
-        <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
-      )}
-    </Stack>
-  );
-}
-
 function QualityAttributeDetails({
   data,
   status,
@@ -936,6 +894,7 @@ function BoundedContextDetails({
         <ChangeSummary
           modules={data.modules}
           buildingBlocks={data.buildingBlocks}
+          qualityAttributes={data.qualityAttributes}
         />
       )}
     </Stack>
@@ -961,7 +920,12 @@ function ModuleDetails({
       {data !== null && (
         <DescriptionSection value={data.description} path={path} onEdit={onEdit} />
       )}
-      {data !== null && <ChangeSummary buildingBlocks={data.buildingBlocks} />}
+      {data !== null && (
+        <ChangeSummary
+          buildingBlocks={data.buildingBlocks}
+          qualityAttributes={data.qualityAttributes}
+        />
+      )}
     </Stack>
   );
 }
@@ -999,6 +963,7 @@ function BuildingBlockDetails({
           behaviours={data.behaviours}
           rules={data.rules}
           scenarios={data.scenarios}
+          qualityAttributes={data.qualityAttributes}
         />
       )}
     </Stack>
@@ -1057,7 +1022,11 @@ function BehaviorDetails({
         </Box>
       )}
       {data !== null && (
-        <ChangeSummary rules={data.rules} scenarios={data.scenarios} />
+        <ChangeSummary
+          rules={data.rules}
+          scenarios={data.scenarios}
+          qualityAttributes={data.qualityAttributes}
+        />
       )}
     </Stack>
   );
@@ -1125,12 +1094,14 @@ function ChangeSummary({
   behaviours,
   rules,
   scenarios,
+  qualityAttributes,
 }: {
   modules?: DesignDocChangeSet<DesignedDomainModuleData>;
   buildingBlocks?: DesignDocChangeSet<DesignedBuildingBlockData>;
   behaviours?: DesignDocChangeSet<DesignedBehaviourData>;
   rules?: DesignDocChangeSet<DesignedRuleData>;
   scenarios?: DesignDocChangeSet<DesignedScenarioData>;
+  qualityAttributes?: DesignDocChangeSet<DesignedQualityAttributeData>;
 }) {
   const sections: Array<{ label: string; cs: { added: unknown[]; removed: string[]; modified: unknown[] } }> = [];
   if (modules !== undefined) sections.push({ label: "Modules", cs: modules });
@@ -1139,6 +1110,8 @@ function ChangeSummary({
   if (behaviours !== undefined) sections.push({ label: "Behaviors", cs: behaviours });
   if (rules !== undefined) sections.push({ label: "Rules", cs: rules });
   if (scenarios !== undefined) sections.push({ label: "Scenarios", cs: scenarios });
+  if (qualityAttributes !== undefined)
+    sections.push({ label: "Quality Attributes", cs: qualityAttributes });
   if (sections.length === 0) return null;
   return (
     <Box className={classes.section}>
@@ -1294,18 +1267,6 @@ function buildTree(source: DesignDocSourceData): TreeNode[] {
   const docId = source.id;
   const sections: TreeNode[] = [];
 
-  if (source.actors !== undefined) {
-    sections.push({
-      id: `${docId}|sec:actors`,
-      kind: "section",
-      label: "Actors",
-      status: null,
-      payload: null,
-      path: [],
-      children: actorChildren(docId, source.actors),
-    });
-  }
-
   if (source.boundedContexts !== undefined) {
     sections.push({
       id: `${docId}|sec:bounded-contexts`,
@@ -1315,18 +1276,6 @@ function buildTree(source: DesignDocSourceData): TreeNode[] {
       payload: null,
       path: [],
       children: boundedContextChildren(docId, source.boundedContexts),
-    });
-  }
-
-  if (source.qualityAttributes !== undefined) {
-    sections.push({
-      id: `${docId}|sec:quality-attributes`,
-      kind: "section",
-      label: "Quality Attributes",
-      status: null,
-      payload: null,
-      path: [],
-      children: qualityAttributeChildren(docId, source.qualityAttributes),
     });
   }
 
@@ -1341,57 +1290,17 @@ function appendSegment(
   return [...parentPath, { kind, name }];
 }
 
-function actorChildren(
+function qaChildren(
   parentId: string,
-  cs: DesignDocChangeSet<DesignedActorData>,
-): TreeNode[] {
-  const out: TreeNode[] = [];
-  for (const a of cs.added) {
-    out.push(actorNode(parentId, a, "added"));
-  }
-  for (const a of cs.modified) {
-    out.push(actorNode(parentId, a, "modified"));
-  }
-  for (const name of cs.removed) {
-    out.push({
-      id: `${parentId}|actor:${name}`,
-      kind: "actor",
-      label: name,
-      status: "removed",
-      payload: { kind: "actor", data: null },
-      path: appendSegment([], "actor", name),
-      children: [],
-    });
-  }
-  return out;
-}
-
-function actorNode(
-  parentId: string,
-  data: DesignedActorData,
-  status: ChangeStatus,
-): TreeNode {
-  return {
-    id: `${parentId}|actor:${data.name}`,
-    kind: "actor",
-    label: data.name,
-    status,
-    payload: { kind: "actor", data },
-    path: appendSegment([], "actor", data.name),
-    children: [],
-  };
-}
-
-function qualityAttributeChildren(
-  parentId: string,
+  parentPath: ElementPathSegment[],
   cs: DesignDocChangeSet<DesignedQualityAttributeData>,
 ): TreeNode[] {
   const out: TreeNode[] = [];
   for (const q of cs.added) {
-    out.push(qaNode(parentId, q, "added"));
+    out.push(qaNode(parentId, parentPath, q, "added"));
   }
   for (const q of cs.modified) {
-    out.push(qaNode(parentId, q, "modified"));
+    out.push(qaNode(parentId, parentPath, q, "modified"));
   }
   for (const name of cs.removed) {
     out.push({
@@ -1400,7 +1309,7 @@ function qualityAttributeChildren(
       label: name,
       status: "removed",
       payload: { kind: "qualityAttribute", data: null },
-      path: appendSegment([], "qualityAttribute", name),
+      path: appendSegment(parentPath, "qualityAttribute", name),
       children: [],
     });
   }
@@ -1409,6 +1318,7 @@ function qualityAttributeChildren(
 
 function qaNode(
   parentId: string,
+  parentPath: ElementPathSegment[],
   data: DesignedQualityAttributeData,
   status: ChangeStatus,
 ): TreeNode {
@@ -1418,7 +1328,7 @@ function qaNode(
     label: data.name,
     status,
     payload: { kind: "qualityAttribute", data },
-    path: appendSegment([], "qualityAttribute", data.name),
+    path: appendSegment(parentPath, "qualityAttribute", data.name),
     children: [],
   };
 }
@@ -1490,6 +1400,11 @@ function bcNode(
       });
     }
   }
+  if (data.qualityAttributes !== undefined) {
+    for (const node of qaChildren(id, path, data.qualityAttributes)) {
+      children.push(node);
+    }
+  }
   return {
     id,
     kind: "boundedContext",
@@ -1525,6 +1440,11 @@ function moduleNode(
         path: appendSegment(path, "buildingBlock", name),
         children: [],
       });
+    }
+  }
+  if (data.qualityAttributes !== undefined) {
+    for (const node of qaChildren(id, path, data.qualityAttributes)) {
+      children.push(node);
     }
   }
   return {
@@ -1597,6 +1517,11 @@ function buildingBlockNode(
       });
     }
   }
+  if (data.qualityAttributes !== undefined) {
+    for (const node of qaChildren(id, path, data.qualityAttributes)) {
+      children.push(node);
+    }
+  }
   return {
     id,
     kind: "buildingBlock",
@@ -1648,6 +1573,11 @@ function behaviorNode(
         path: appendSegment(path, "scenario", name),
         children: [],
       });
+    }
+  }
+  if (data.qualityAttributes !== undefined) {
+    for (const node of qaChildren(id, path, data.qualityAttributes)) {
+      children.push(node);
     }
   }
   return {
@@ -1741,8 +1671,6 @@ function kindLabel(kind: TreeNodeKind): string {
   switch (kind) {
     case "section":
       return "Section";
-    case "actor":
-      return "Actor";
     case "boundedContext":
       return "Bounded Context";
     case "module":

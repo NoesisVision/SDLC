@@ -50,6 +50,8 @@ const DISQUALIFYING_METHOD_KEYWORDS = /\b(class|struct|interface|enum|record|del
 
 const DOMAIN_BEHAVIOR_ATTRIBUTE_PATTERN = /\[DomainBehavior(?:Attribute)?(?:\s*\(\s*"([^"]*)"\s*\))?\s*]/;
 
+const ACTOR_ATTRIBUTE_PATTERN = /\[Actor(?:Attribute)?\s*\(\s*"([^"]*)"\s*\)\s*]/;
+
 const TECHNICAL_METHOD_NAMES = new Set([
   "Equals",
   "GetHashCode",
@@ -64,6 +66,7 @@ const TECHNICAL_METHOD_NAMES = new Set([
 interface BehaviorMatch {
   methodName: string;
   nameOverride: string | null;
+  actor: string | null;
 }
 
 interface AnnotationMatch {
@@ -228,6 +231,7 @@ export class ScannerService implements OnModuleInit {
           const behavior: Behavior = {
             id: `${block.id}:${behaviorMatch.methodName}`,
             name: behaviorName,
+            actor: behaviorMatch.actor,
           };
           await this.repository.insertBehavior(behavior, block.id);
           behaviorCount++;
@@ -330,12 +334,14 @@ export function assembleDomainTree(
       const behaviors: Behavior[] = match.behaviors.map((b) => ({
         id: `${bbId}:${b.methodName}`,
         name: b.nameOverride ?? b.methodName,
+        actor: b.actor,
       }));
+      behaviors.sort((a, b) => a.name.localeCompare(b.name));
       const bb: BuildingBlockBranch = {
         id: bbId,
         name: blockName,
         type: annotationToBlockType(match.annotation),
-        behaviors: behaviors.sort((a, b) => a.name.localeCompare(b.name)),
+        behaviors,
       };
       const list = bbByContainer.get(containerPath) ?? [];
       list.push(bb);
@@ -611,6 +617,8 @@ function parseMethodStatement(
 ): BehaviorMatch | null {
   const attrMatch = DOMAIN_BEHAVIOR_ATTRIBUTE_PATTERN.exec(stmt);
   const nameOverride = attrMatch?.[1] ?? null;
+  const actorMatch = ACTOR_ATTRIBUTE_PATTERN.exec(stmt);
+  const actor = actorMatch?.[1] ?? null;
 
   const withoutAttrs = stmt.replace(/\[[^\]]*]/g, " ");
 
@@ -634,7 +642,7 @@ function parseMethodStatement(
   if (methodName === "this" || methodName === "base") return null;
   if (TECHNICAL_METHOD_NAMES.has(methodName)) return null;
 
-  return { methodName, nameOverride };
+  return { methodName, nameOverride, actor };
 }
 
 function toCSharpNamespace(fullName: string): CSharpNamespace {

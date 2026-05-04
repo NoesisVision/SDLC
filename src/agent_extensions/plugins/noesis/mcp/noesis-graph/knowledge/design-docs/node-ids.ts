@@ -1,5 +1,5 @@
-export function actorNodeId(designDocId: string, actorName: string): string {
-  return `${designDocId}|A:${actorName}`;
+export function actorNodeId(actorName: string): string {
+  return `A:${actorName}`;
 }
 
 export function boundedContextNodeId(
@@ -33,8 +33,8 @@ export function scenarioNodeId(parentId: string, scenarioName: string): string {
 }
 
 export function qualityAttributeNodeId(
-  designDocId: string,
+  parentId: string,
   qaName: string,
 ): string {
-  return `${designDocId}|QA:${qaName}`;
+  return `${parentId}|QA:${qaName}`;
 }
