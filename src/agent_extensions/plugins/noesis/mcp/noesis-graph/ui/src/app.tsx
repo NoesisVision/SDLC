@@ -16,6 +16,7 @@ import {
   IconGavel,
   IconCube,
   IconFileDescription,
+  IconFileText,
   IconSchema,
   IconChevronsRight,
   IconChevronsLeft,
@@ -27,6 +28,7 @@ import { HomePage } from "./home/home.js";
 import { TopicsPage } from "./topics/topics.js";
 import { DecisionsPage } from "./decisions/decisions.js";
 import { ConversationsPage } from "./conversations/conversations.js";
+import { DocumentsPage } from "./documents/documents.js";
 import { DesignDocsPage } from "./design-docs/design-docs.js";
 import { ModelExplorerPage } from "./model-explorer/model-explorer.js";
 import { SchemaExplorerPage } from "./schema-explorer/schema-explorer.js";
@@ -34,6 +36,7 @@ import { SchemaExplorerPage } from "./schema-explorer/schema-explorer.js";
 const NAV_ITEMS = [
   { label: "Home", icon: IconHome, path: "/" },
   { label: "Conversations", icon: IconMessages, path: "/conversations" },
+  { label: "Documents", icon: IconFileText, path: "/documents" },
   { label: "Topics", icon: IconMessageCircle, path: "/topics" },
   { label: "Decisions", icon: IconGavel, path: "/decisions" },
   { label: "Design Docs", icon: IconFileDescription, path: "/design-docs" },
@@ -258,6 +261,8 @@ function PageRouter({
   switch (activePath) {
     case "/conversations":
       return <ConversationsPage crossNav={crossNav} />;
+    case "/documents":
+      return <DocumentsPage crossNav={crossNav} />;
     case "/topics":
       return <TopicsPage crossNav={crossNav} />;
     case "/decisions":

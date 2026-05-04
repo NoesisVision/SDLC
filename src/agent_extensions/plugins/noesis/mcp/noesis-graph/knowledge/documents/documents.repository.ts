@@ -23,6 +23,19 @@ const DocumentRefRowSchema = z.object({
 });
 type DocumentRefRow = z.infer<typeof DocumentRefRowSchema>;
 
+const TopicRefRowSchema = z.object({
+  topic_id: z.string(),
+  title: z.string(),
+});
+type TopicRefRow = z.infer<typeof TopicRefRowSchema>;
+
+const DecisionRefRowSchema = z.object({
+  decision_id: z.string(),
+  title: z.string(),
+  status: z.string(),
+});
+type DecisionRefRow = z.infer<typeof DecisionRefRowSchema>;
+
 const DocumentFragmentRowSchema = z.object({
   start_offset: z.union([z.number(), z.bigint()]),
   end_offset: z.union([z.number(), z.bigint()]),
@@ -43,6 +56,17 @@ export interface DocumentRef {
   document_id: string;
   title: string;
   date: string;
+}
+
+export interface DocumentTopicRow {
+  topic_id: string;
+  title: string;
+}
+
+export interface DocumentDecisionRow {
+  decision_id: string;
+  title: string;
+  status: string;
 }
 
 export interface TopicDocumentFragment {
@@ -120,6 +144,64 @@ export class DocumentsRepository {
         section_path: [],
       };
     });
+  }
+
+  async listAllDocuments(): Promise<DocumentRef[]> {
+    const rawRows = await this.db.query<DocumentRefRow>(
+      "MATCH (d:Document) " +
+        "RETURN d.id AS document_id, d.title AS title, d.date AS date " +
+        "ORDER BY date DESC",
+    );
+    return z.array(DocumentRefRowSchema).parse(rawRows);
+  }
+
+  async listDecisionsForDocument(
+    documentId: string,
+  ): Promise<DocumentDecisionRow[]> {
+    const seen = new Set<string>();
+    const out: DocumentDecisionRow[] = [];
+    const queries = [
+      "MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) " +
+        "WHERE f.document_id = $documentId " +
+        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
+      "MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) " +
+        "WHERE f.document_id = $documentId " +
+        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
+      "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) " +
+        "WHERE f.document_id = $documentId " +
+        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
+    ];
+    for (const q of queries) {
+      const rawRows = await this.db.query<DecisionRefRow>(q, { documentId });
+      for (const row of z.array(DecisionRefRowSchema).parse(rawRows)) {
+        if (seen.has(row.decision_id)) continue;
+        seen.add(row.decision_id);
+        out.push(row);
+      }
+    }
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return out;
+  }
+
+  async listTopicsForDocument(documentId: string): Promise<DocumentTopicRow[]> {
+    const rawRows = await this.db.query<TopicRefRow>(
+      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment) " +
+        "WHERE f.document_id = $documentId " +
+        "RETURN DISTINCT t.id AS topic_id, t.title AS title " +
+        "ORDER BY title",
+      { documentId },
+    );
+    return z.array(TopicRefRowSchema).parse(rawRows);
+  }
+
+  async readDocumentHead(documentId: string): Promise<DocumentRef | null> {
+    const rawRows = await this.db.query<DocumentRefRow>(
+      "MATCH (d:Document) WHERE d.id = $id " +
+        "RETURN d.id AS document_id, d.title AS title, d.date AS date LIMIT 1",
+      { id: documentId },
+    );
+    if (rawRows.length === 0) return null;
+    return DocumentRefRowSchema.parse(rawRows[0]);
   }
 
   async listDocumentsForTopic(topicId: string): Promise<DocumentRef[]> {

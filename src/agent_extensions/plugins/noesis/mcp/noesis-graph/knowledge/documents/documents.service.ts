@@ -19,6 +19,10 @@ import {
 import { type TopicItem } from "../../../../shared-contracts/topics.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
 import { documentMdPath } from "../../../../shared-contracts/source-files.js";
+import type {
+  DocumentDetailData,
+  DocumentsPageData,
+} from "../../ui-contracts/documents/documents-data.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { splitDocument } from "../../file-sync/document-splitter.js";
 import { FileLoaderService } from "../../file-sync/file-loader.service.js";
@@ -76,6 +80,31 @@ export class DocumentsService {
       if (review !== null) reviews.push(review);
     }
     return reviews;
+  }
+
+  async getDocumentDetail(documentId: string): Promise<DocumentDetailData> {
+    const head = await this.repository.readDocumentHead(documentId);
+    if (head === null) throw new Error(`Document not found: ${documentId}`);
+    const topics = await this.repository.listTopicsForDocument(documentId);
+    const decisions = await this.repository.listDecisionsForDocument(documentId);
+    return {
+      id: head.document_id,
+      title: head.title,
+      date: head.date,
+      topics,
+      decisions,
+    };
+  }
+
+  async getDocumentsPage(): Promise<DocumentsPageData> {
+    const all = await this.repository.listAllDocuments();
+    return {
+      documents: all.map((d) => ({
+        id: d.document_id,
+        title: d.title,
+        date: d.date,
+      })),
+    };
   }
 
   async getTopicForDocumentReview(
