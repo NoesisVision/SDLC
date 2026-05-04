@@ -15,7 +15,7 @@ import {
   IconMessageCircle,
   IconGavel,
   IconCube,
-  IconFileDescription,
+  IconFileVector,
   IconFileText,
   IconSchema,
   IconChevronsRight,
@@ -39,7 +39,7 @@ const NAV_ITEMS = [
   { label: "Documents", icon: IconFileText, path: "/documents" },
   { label: "Topics", icon: IconMessageCircle, path: "/topics" },
   { label: "Decisions", icon: IconGavel, path: "/decisions" },
-  { label: "Design Docs", icon: IconFileDescription, path: "/design-docs" },
+  { label: "Design Docs", icon: IconFileVector, path: "/design-docs" },
   { label: "Model Explorer", icon: IconCube, path: "/model-explorer" },
   { label: "Schema Explorer", icon: IconSchema, path: "/schema-explorer" },
 ];

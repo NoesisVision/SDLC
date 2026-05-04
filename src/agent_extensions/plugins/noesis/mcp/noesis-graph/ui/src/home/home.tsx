@@ -12,7 +12,7 @@ import {
   IconMessageCircle,
   IconGavel,
   IconCube,
-  IconFileDescription,
+  IconFileVector,
   IconFileText,
   IconSchema,
   IconMessages,
@@ -53,9 +53,9 @@ export function HomePage({ onNavigate }: { onNavigate: (path: string) => void })
     { title: "Documents", icon: IconFileText, color: "noesisGreen", onClick: () => onNavigate("/documents") },
     { title: "Topics", icon: IconMessageCircle, color: "noesisGreen", onClick: () => onNavigate("/topics") },
     { title: "Decisions", icon: IconGavel, color: "noesisIndigo", onClick: () => onNavigate("/decisions") },
-    { title: "Design Docs", icon: IconFileDescription, color: "noesisIndigo", onClick: () => onNavigate("/design-docs") },
-    { title: "Model Explorer", icon: IconCube, color: "noesisBlue", onClick: () => onNavigate("/model-explorer") },
-    { title: "Schema Explorer", icon: IconSchema, color: "noesisGreen", onClick: () => onNavigate("/schema-explorer") },
+    { title: "Design Docs", icon: IconFileVector, color: "noesisIndigo", onClick: () => onNavigate("/design-docs") },
+    { title: "Model", icon: IconCube, color: "noesisBlue", onClick: () => onNavigate("/model-explorer") },
+    { title: "Schema", icon: IconSchema, color: "noesisGreen", onClick: () => onNavigate("/schema-explorer") },
   ];
 
   return (

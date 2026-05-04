@@ -9,7 +9,7 @@
   justify-content: center;
   text-align: center;
   border-radius: var(--mantine-radius-md);
-  height: 90px;
+  aspect-ratio: 1 / 1;
   background-color: light-dark(var(--mantine-color-white), var(--mantine-color-dark-6));
   transition:
     box-shadow 150ms ease,
