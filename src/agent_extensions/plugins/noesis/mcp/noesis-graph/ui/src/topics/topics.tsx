@@ -28,6 +28,7 @@ import {
   groupIdeaUnitsByTurn,
 } from "../shared/idea-units.js";
 import classes from "./topics.module.css";
+import type { CrossNav } from "../app.js";
 import type {
   TopicConversationDetail,
   TopicConversationRef,
@@ -87,7 +88,7 @@ function applyTopicUpdate(
   });
 }
 
-export function TopicsPage() {
+export function TopicsPage({ crossNav }: { crossNav: CrossNav }) {
   const [data, setData] = useState<TopicsPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nav, setNav] = useState<NavState>({ current: null, stack: [] });
@@ -101,6 +102,14 @@ export function TopicsPage() {
       .then((d) => setData(d))
       .catch((err: Error) => setError(err.message));
   }, []);
+
+  useEffect(() => {
+    if (data === null) return;
+    if (crossNav.initialSelectionId === null) return;
+    const target = findTopicById(data.topics, crossNav.initialSelectionId);
+    if (target === null) return;
+    setNav({ current: { kind: "topic", topic: target }, stack: [] });
+  }, [data, crossNav.initialSelectionId]);
 
   const updateTopic = useCallback(
     async (topicId: string, fields: TopicEditableFields): Promise<void> => {
@@ -140,8 +149,9 @@ export function TopicsPage() {
   }, []);
 
   const selectTopic = useCallback(
-    (topic: TopicNode) => pushView({ kind: "topic", topic }),
-    [pushView],
+    (topic: TopicNode) =>
+      setNav({ current: { kind: "topic", topic }, stack: [] }),
+    [],
   );
 
   const hasTopics = data !== null && data.topics.length > 0;
@@ -213,6 +223,15 @@ export function TopicsPage() {
       ) : null}
     </Box>
   );
+}
+
+function findTopicById(topics: TopicNode[], id: string): TopicNode | null {
+  for (const t of topics) {
+    if (t.id === id) return t;
+    const sub = findTopicById(t.subtopics, id);
+    if (sub !== null) return sub;
+  }
+  return null;
 }
 
 function isSameView(a: View, b: View): boolean {
@@ -469,9 +488,11 @@ function DetailsPanel({
 
   return (
     <Box className={classes.detailsShell}>
-      <Box className={classes.detailsHeader}>
-        <BackButton canGoBack={canGoBack} onBack={onBack} />
-      </Box>
+      {canGoBack && (
+        <Box className={classes.detailsHeader}>
+          <BackButton onBack={onBack} />
+        </Box>
+      )}
       <Box className={classes.detailsBody}>
         {current.kind === "topic" && (
           <TopicDetails
@@ -502,20 +523,9 @@ function DetailsPanel({
   );
 }
 
-function BackButton({
-  canGoBack,
-  onBack,
-}: {
-  canGoBack: boolean;
-  onBack: () => void;
-}) {
+function BackButton({ onBack }: { onBack: () => void }) {
   return (
-    <UnstyledButton
-      onClick={onBack}
-      disabled={!canGoBack}
-      className={classes.backButton}
-      data-disabled={!canGoBack}
-    >
+    <UnstyledButton onClick={onBack} className={classes.backButton}>
       <IconArrowLeft size={14} stroke={1.75} />
       <span>Back</span>
     </UnstyledButton>

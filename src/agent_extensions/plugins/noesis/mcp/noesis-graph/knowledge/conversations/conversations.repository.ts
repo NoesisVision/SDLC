@@ -30,10 +30,34 @@ const ConversationRefRowSchema = z.object({
 });
 type ConversationRefRow = z.infer<typeof ConversationRefRowSchema>;
 
+const TopicRefRowSchema = z.object({
+  topic_id: z.string(),
+  title: z.string(),
+});
+type TopicRefRow = z.infer<typeof TopicRefRowSchema>;
+
+const DecisionRefRowSchema = z.object({
+  decision_id: z.string(),
+  title: z.string(),
+  status: z.string(),
+});
+type DecisionRefRow = z.infer<typeof DecisionRefRowSchema>;
+
 export interface ConversationRef {
   conversation_id: string;
   main_topic: string;
   time: string;
+}
+
+export interface ConversationTopicRow {
+  topic_id: string;
+  title: string;
+}
+
+export interface ConversationDecisionRow {
+  decision_id: string;
+  title: string;
+  status: string;
 }
 
 @Injectable()
@@ -87,6 +111,15 @@ export class ConversationsRepository {
     }
   }
 
+  async listAllConversations(): Promise<ConversationRef[]> {
+    const rawRows = await this.db.query<ConversationRefRow>(
+      "MATCH (c:Conversation) " +
+        "RETURN c.id AS conversation_id, c.main_topic AS main_topic, c.time AS time " +
+        "ORDER BY time DESC",
+    );
+    return z.array(ConversationRefRowSchema).parse(rawRows);
+  }
+
   async listConversationsForTopic(topicId: string): Promise<ConversationRef[]> {
     const rawRows = await this.db.query<ConversationRefRow>(
       "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) " +
@@ -96,6 +129,34 @@ export class ConversationsRepository {
       { topicId },
     );
     return z.array(ConversationRefRowSchema).parse(rawRows);
+  }
+
+  async listDecisionsForConversation(
+    conversationId: string,
+  ): Promise<ConversationDecisionRow[]> {
+    const seen = new Set<string>();
+    const out: ConversationDecisionRow[] = [];
+    const queries = [
+      "MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) " +
+        "WHERE u.conversation_id = $conversationId " +
+        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
+      "MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) " +
+        "WHERE u.conversation_id = $conversationId " +
+        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
+      "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) " +
+        "WHERE u.conversation_id = $conversationId " +
+        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
+    ];
+    for (const q of queries) {
+      const rawRows = await this.db.query<DecisionRefRow>(q, { conversationId });
+      for (const row of z.array(DecisionRefRowSchema).parse(rawRows)) {
+        if (seen.has(row.decision_id)) continue;
+        seen.add(row.decision_id);
+        out.push(row);
+      }
+    }
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return out;
   }
 
   async listIdeaUnitsForTopicAndConversation(
@@ -121,6 +182,31 @@ export class ConversationsRepository {
       sentences: r.sentences,
       categories: r.categories as IdeaUnitDetail["categories"],
     }));
+  }
+
+  async listTopicsForConversation(
+    conversationId: string,
+  ): Promise<ConversationTopicRow[]> {
+    const rawRows = await this.db.query<TopicRefRow>(
+      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
+        "WHERE u.conversation_id = $conversationId " +
+        "RETURN DISTINCT t.id AS topic_id, t.title AS title " +
+        "ORDER BY title",
+      { conversationId },
+    );
+    return z.array(TopicRefRowSchema).parse(rawRows);
+  }
+
+  async readConversationHead(
+    conversationId: string,
+  ): Promise<ConversationRef | null> {
+    const rawRows = await this.db.query<ConversationRefRow>(
+      "MATCH (c:Conversation) WHERE c.id = $id " +
+        "RETURN c.id AS conversation_id, c.main_topic AS main_topic, c.time AS time LIMIT 1",
+      { id: conversationId },
+    );
+    if (rawRows.length === 0) return null;
+    return ConversationRefRowSchema.parse(rawRows[0]);
   }
 
   async requireIdeaUnit(

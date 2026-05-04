@@ -19,6 +19,10 @@ import {
   type AnalyzeConversationOutput,
 } from "../../../../shared-contracts/skills/analyze-conversation/output.js";
 import { conversationMdPath } from "../../../../shared-contracts/source-files.js";
+import type {
+  ConversationDetailData,
+  ConversationsPageData,
+} from "../../ui-contracts/conversations/conversations-data.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { splitConversation } from "../../file-sync/conversation-splitter.js";
 import { FileLoaderService } from "../../file-sync/file-loader.service.js";
@@ -75,6 +79,34 @@ export class ConversationsService {
       conversation_id: conversation.conversation_id,
       turns: conversation.turns.length,
       idea_units: ideaUnits,
+    };
+  }
+
+  async getConversationDetail(
+    conversationId: string,
+  ): Promise<ConversationDetailData> {
+    const head = await this.repository.readConversationHead(conversationId);
+    if (head === null) throw new Error(`Conversation not found: ${conversationId}`);
+    const topics = await this.repository.listTopicsForConversation(conversationId);
+    const decisions =
+      await this.repository.listDecisionsForConversation(conversationId);
+    return {
+      id: head.conversation_id,
+      title: head.main_topic,
+      date: head.time,
+      topics,
+      decisions,
+    };
+  }
+
+  async getConversationsPage(): Promise<ConversationsPageData> {
+    const all = await this.repository.listAllConversations();
+    return {
+      conversations: all.map((c) => ({
+        id: c.conversation_id,
+        title: c.main_topic,
+        date: c.time,
+      })),
     };
   }
 

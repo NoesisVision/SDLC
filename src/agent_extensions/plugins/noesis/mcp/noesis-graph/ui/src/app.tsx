@@ -19,18 +19,21 @@ import {
   IconSchema,
   IconChevronsRight,
   IconChevronsLeft,
+  IconMessages,
 } from "@tabler/icons-react";
 import { theme } from "./theme.js";
 import { AppHeader } from "./app-header.js";
 import { HomePage } from "./home/home.js";
 import { TopicsPage } from "./topics/topics.js";
 import { DecisionsPage } from "./decisions/decisions.js";
+import { ConversationsPage } from "./conversations/conversations.js";
 import { DesignDocsPage } from "./design-docs/design-docs.js";
 import { ModelExplorerPage } from "./model-explorer/model-explorer.js";
 import { SchemaExplorerPage } from "./schema-explorer/schema-explorer.js";
 
 const NAV_ITEMS = [
   { label: "Home", icon: IconHome, path: "/" },
+  { label: "Conversations", icon: IconMessages, path: "/conversations" },
   { label: "Topics", icon: IconMessageCircle, path: "/topics" },
   { label: "Decisions", icon: IconGavel, path: "/decisions" },
   { label: "Design Docs", icon: IconFileDescription, path: "/design-docs" },
@@ -42,28 +45,68 @@ const NAVBAR_WIDTH_COLLAPSED = 60;
 const NAVBAR_WIDTH_EXPANDED = 220;
 const HEADER_HEIGHT = 50;
 
-function usePathRouting() {
+interface HistoryState {
+  selectionId: string | null;
+}
+
+export interface CrossNav {
+  initialSelectionId: string | null;
+  pushTo: (
+    targetPath: string,
+    targetId: string,
+    sourceId: string | null,
+  ) => void;
+}
+
+function readHistorySelection(): string | null {
+  const state = window.history.state as HistoryState | null;
+  return state?.selectionId ?? null;
+}
+
+export function App() {
   const [activePath, setActivePath] = useState(window.location.pathname);
+  const [pendingSelection, setPendingSelection] = useState<string | null>(
+    readHistorySelection,
+  );
+  const [navExpanded, setNavExpanded] = useState(false);
 
   useEffect(() => {
-    const handlePopState = () => setActivePath(window.location.pathname);
+    const handlePopState = () => {
+      setPendingSelection(readHistorySelection());
+      setActivePath(window.location.pathname);
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   const navigate = useCallback((path: string) => {
     if (path !== window.location.pathname) {
-      window.history.pushState(null, "", path);
+      window.history.pushState({ selectionId: null }, "", path);
+    } else {
+      window.history.replaceState({ selectionId: null }, "", path);
     }
+    setPendingSelection(null);
     setActivePath(path);
   }, []);
 
-  return [activePath, navigate] as const;
-}
+  const pushTo = useCallback(
+    (targetPath: string, targetId: string, sourceId: string | null) => {
+      window.history.replaceState(
+        { selectionId: sourceId },
+        "",
+        window.location.pathname,
+      );
+      window.history.pushState({ selectionId: targetId }, "", targetPath);
+      setPendingSelection(targetId);
+      setActivePath(targetPath);
+    },
+    [],
+  );
 
-export function App() {
-  const [activePath, navigate] = usePathRouting();
-  const [navExpanded, setNavExpanded] = useState(false);
+  const crossNav: CrossNav = {
+    initialSelectionId: pendingSelection,
+    pushTo,
+  };
 
   const navbarWidth = navExpanded ? NAVBAR_WIDTH_EXPANDED : NAVBAR_WIDTH_COLLAPSED;
 
@@ -104,7 +147,11 @@ export function App() {
             </ActionIcon>
           </AppShell.Navbar>
           <AppShell.Main>
-            <PageRouter activePath={activePath} onNavigate={navigate} />
+            <PageRouter
+              activePath={activePath}
+              onNavigate={navigate}
+              crossNav={crossNav}
+            />
           </AppShell.Main>
         </AppShell>
       </ReactFlowProvider>
@@ -167,15 +214,19 @@ function NavButton({
 function PageRouter({
   activePath,
   onNavigate,
+  crossNav,
 }: {
   activePath: string;
   onNavigate: (path: string) => void;
+  crossNav: CrossNav;
 }) {
   switch (activePath) {
+    case "/conversations":
+      return <ConversationsPage crossNav={crossNav} />;
     case "/topics":
-      return <TopicsPage />;
+      return <TopicsPage crossNav={crossNav} />;
     case "/decisions":
-      return <DecisionsPage />;
+      return <DecisionsPage crossNav={crossNav} />;
     case "/design-docs":
       return <DesignDocsPage />;
     case "/model-explorer":

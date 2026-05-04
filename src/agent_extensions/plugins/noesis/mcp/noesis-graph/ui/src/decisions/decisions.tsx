@@ -26,6 +26,7 @@ import {
   groupIdeaUnitsByTurn,
 } from "../shared/idea-units.js";
 import classes from "./decisions.module.css";
+import type { CrossNav } from "../app.js";
 import type {
   DecisionConversationDetailData,
   DecisionConversationRef,
@@ -59,7 +60,7 @@ interface NavState {
   stack: View[];
 }
 
-export function DecisionsPage() {
+export function DecisionsPage({ crossNav }: { crossNav: CrossNav }) {
   const [data, setData] = useState<DecisionsPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nav, setNav] = useState<NavState>({ current: null, stack: [] });
@@ -73,6 +74,19 @@ export function DecisionsPage() {
       .then((d) => setData(d))
       .catch((err: Error) => setError(err.message));
   }, []);
+
+  useEffect(() => {
+    if (data === null) return;
+    if (crossNav.initialSelectionId === null) return;
+    const target = data.decisions.find(
+      (d) => d.id === crossNav.initialSelectionId,
+    );
+    if (target === undefined) return;
+    setNav({
+      current: { kind: "decision", decisionId: target.id },
+      stack: [],
+    });
+  }, [data, crossNav.initialSelectionId]);
 
   const pushView = useCallback((view: View) => {
     setNav((prev) => {
@@ -91,8 +105,9 @@ export function DecisionsPage() {
   }, []);
 
   const selectDecision = useCallback(
-    (id: string) => pushView({ kind: "decision", decisionId: id }),
-    [pushView],
+    (id: string) =>
+      setNav({ current: { kind: "decision", decisionId: id }, stack: [] }),
+    [],
   );
 
   const hasDecisions = data !== null && data.decisions.length > 0;
@@ -302,9 +317,11 @@ function DetailsPanel({
 
   return (
     <Box className={classes.detailsShell}>
-      <Box className={classes.detailsHeader}>
-        <BackButton canGoBack={canGoBack} onBack={onBack} />
-      </Box>
+      {canGoBack && (
+        <Box className={classes.detailsHeader}>
+          <BackButton onBack={onBack} />
+        </Box>
+      )}
       <Box className={classes.detailsBody}>
         {current.kind === "decision" && (
           <DecisionDetails
@@ -334,20 +351,9 @@ function DetailsPanel({
   );
 }
 
-function BackButton({
-  canGoBack,
-  onBack,
-}: {
-  canGoBack: boolean;
-  onBack: () => void;
-}) {
+function BackButton({ onBack }: { onBack: () => void }) {
   return (
-    <UnstyledButton
-      onClick={onBack}
-      disabled={!canGoBack}
-      className={classes.backButton}
-      data-disabled={!canGoBack}
-    >
+    <UnstyledButton onClick={onBack} className={classes.backButton}>
       <IconArrowLeft size={14} stroke={1.75} />
       <span>Back</span>
     </UnstyledButton>
