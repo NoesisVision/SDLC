@@ -15,8 +15,6 @@
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "test": "pytest",
-    "test:verbose": "pytest -v",
     "smoke:noesis": "bun run tests/agent_extensions/plugins/noesis/smoke/run-smoke.ts"
   },
   "devDependencies": {
