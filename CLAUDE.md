@@ -45,18 +45,3 @@
 
 1. Ask the user for explicit approval first.
 2. Only after approval, run with `NOESIS_SMOKE_CONFIRM=1 bun run smoke:noesis`. Without that env var the test refuses to start.
-
-## Python
-
-1. Use PEP 8 guidelines.
-2. Use type hints for all public functions.
-3. Always use strong types.
-4. Use `@dataclass` for entities in internal logic.
-5. Use `Pydantic` for DTOs used in API.
-6. Use `pytest` for tests.
-7. Use docstrings with Google style for inline documentation.
-8. Do NOT use comments in method bodies. Use descriptive function and variable names.
-9. Use ONLY `uv` to run scripts.
-10. Access Pydantic model fields via **typed attributes** (`result.id`, `result.items[0].name`), never via dict keys. Use `.model_dump()` only at serialization boundaries (API responses, file I/O).
-11. Use `None` for optional arguments in functions.
-12. PEP 723 scripts executed with `uv run` cannot import from Python packages (directories with `__init__.py`). Keep all shared modules as flat `.py` files in the same directory.
