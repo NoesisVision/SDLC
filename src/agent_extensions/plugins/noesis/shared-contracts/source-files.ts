@@ -34,10 +34,7 @@ export function noesisRoot(projectDir: string): string {
   return resolve(projectDir, NOESIS_DIR_NAME);
 }
 
-export function noesisSubdirPath(
-  projectDir: string,
-  kind: SourceFileKind,
-): string {
+export function noesisSubdirPath(projectDir: string, kind: SourceFileKind): string {
   return resolve(noesisRoot(projectDir), SUBDIR_FOR_KIND[kind]);
 }
 
@@ -68,31 +65,23 @@ export function decisionJsonPath(projectDir: string, id: string): string {
 const DESIGN_DOC_SLUG_MAX = 20;
 const DESIGN_DOC_ID_SUFFIX_MIN = 8;
 
-export function designDocCanonicalFilename(
-  projectDir: string,
-  id: string,
-  name: string,
-): string {
+export function designDocCanonicalFilename(projectDir: string, id: string, name: string): string {
   const slug = slugifyForFilename(name).slice(0, DESIGN_DOC_SLUG_MAX);
   const idSuffix = pickUniqueIdSuffix(projectDir, id);
   return slug === "" ? `${idSuffix}.json` : `${slug}-${idSuffix}.json`;
 }
 
-export function designDocCanonicalPath(
-  projectDir: string,
-  id: string,
-  name: string,
-): string {
+export function designDocCanonicalPath(projectDir: string, id: string, name: string): string {
   return resolve(
     noesisSubdirPath(projectDir, "design_doc"),
-    designDocCanonicalFilename(projectDir, id, name),
+    designDocCanonicalFilename(projectDir, id, name)
   );
 }
 
 export function findDesignDocFileById(
   projectDir: string,
   id: string,
-  exclude?: ReadonlySet<string>,
+  exclude?: ReadonlySet<string>
 ): string | null {
   const dir = noesisSubdirPath(projectDir, "design_doc");
   if (!existsSync(dir)) return null;
@@ -161,23 +150,14 @@ export function idLineComment(kind: SourceFileKind, id: string): string {
   return `<!-- ${ID_FIELD_FOR_KIND[kind]}: ${id} -->`;
 }
 
-export function extractIdFromMd(
-  content: string,
-  kind: SourceFileKind,
-): string | null {
+export function extractIdFromMd(content: string, kind: SourceFileKind): string | null {
   const firstLine = content.split(/\r?\n/, 1)[0] ?? "";
-  const pattern = new RegExp(
-    `^<!--\\s*${ID_FIELD_FOR_KIND[kind]}\\s*:\\s*([^\\s>]+)\\s*-->\\s*$`,
-  );
+  const pattern = new RegExp(`^<!--\\s*${ID_FIELD_FOR_KIND[kind]}\\s*:\\s*([^\\s>]+)\\s*-->\\s*$`);
   const match = firstLine.match(pattern);
   return match === null ? null : match[1];
 }
 
-export function stampIdLine(
-  content: string,
-  kind: SourceFileKind,
-  id: string,
-): string {
+export function stampIdLine(content: string, kind: SourceFileKind, id: string): string {
   const stripped = stripIdLine(content);
   const header = idLineComment(kind, id);
   if (stripped === "") return `${header}\n`;
@@ -185,9 +165,7 @@ export function stampIdLine(
 }
 
 export function stripIdLine(content: string): string {
-  const match = content.match(
-    /^<!--\s*[a-z_]+_id\s*:\s*[^\s>]+\s*-->\s*\r?\n?/,
-  );
+  const match = content.match(/^<!--\s*[a-z_]+_id\s*:\s*[^\s>]+\s*-->\s*\r?\n?/);
   if (match === null) return content;
   return content.slice(match[0].length);
 }
@@ -206,10 +184,10 @@ export function readSidecar<T>(absPath: string, schema: z.ZodType<T>): T {
   return schema.parse(parsed);
 }
 
-export function writeSidecar<T>(
+export function writeSidecar<S extends z.ZodType>(
   absPath: string,
-  data: T,
-  schema: z.ZodType<T>,
+  data: z.input<S>,
+  schema: S
 ): void {
   const validated = schema.parse(data);
   mkdirSync(dirname(absPath), { recursive: true });

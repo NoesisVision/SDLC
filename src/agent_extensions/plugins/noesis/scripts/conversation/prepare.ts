@@ -34,7 +34,7 @@ export function buildCleanedMarkdown(
   conversationId: string,
   time: string,
   mainTopic: string,
-  transcript: RawTranscript,
+  transcript: RawTranscript
 ): string {
   const lines: string[] = [];
   lines.push(`<!-- conversation_id: ${conversationId} -->`);
@@ -52,10 +52,7 @@ export function buildCleanedMarkdown(
   return lines.join("\n");
 }
 
-export function getCanonicalConversationPath(
-  projectDir: string,
-  conversationId: string,
-): string {
+export function getCanonicalConversationPath(projectDir: string, conversationId: string): string {
   return conversationMdPath(projectDir, conversationId);
 }
 
@@ -63,12 +60,12 @@ export function prepareConversation(
   transcriptPath: string,
   conversationTime: string,
   mainTopic: string,
-  options: PrepareOptions = {},
+  options: PrepareOptions = {}
 ): PrepareResult {
   const projectDir = resolveProjectDir(options.projectDir);
 
   const rawText = readFileSync(transcriptPath, "utf-8");
-  const conversationId = resolveConversationId(transcriptPath, rawText);
+  const conversationId = resolveConversationId(rawText);
   const cleanedPath = getCanonicalConversationPath(projectDir, conversationId);
 
   const parsed = parseTranscript(rawText, conversationId);
@@ -80,16 +77,12 @@ export function prepareConversation(
     conversationId,
     conversationTime,
     mainTopic,
-    parsed.transcript,
+    parsed.transcript
   );
   mkdirSync(dirname(cleanedPath), { recursive: true });
   writeFileSync(cleanedPath, cleanedMarkdown, "utf-8");
 
-  const workingDir = resolveWorkingDir(
-    SKILL_NAME,
-    conversationId,
-    options.workingDirBase,
-  );
+  const workingDir = resolveWorkingDir(SKILL_NAME, conversationId, options.workingDirBase);
 
   const output: AnalyzeConversationOutput = {
     conversation: {
@@ -137,7 +130,7 @@ function deriveIdFromContent(content: string): string {
   ].join("-");
 }
 
-function resolveConversationId(transcriptPath: string, rawText: string): string {
+function resolveConversationId(rawText: string): string {
   const stamped = extractIdFromContent(rawText);
   if (stamped !== null) return stamped;
   return deriveIdFromContent(rawText);
@@ -145,12 +138,9 @@ function resolveConversationId(transcriptPath: string, rawText: string): string 
 
 function resolveProjectDir(explicit: string | undefined): string {
   if (explicit !== undefined && explicit !== "") return explicit;
-  const fromEnv =
-    process.env["CLAUDE_PROJECT_DIR"] ?? process.env["NOESIS_PROJECT_DIR"];
+  const fromEnv = process.env["CLAUDE_PROJECT_DIR"] ?? process.env["NOESIS_PROJECT_DIR"];
   if (fromEnv === undefined || fromEnv === "") {
-    throw new Error(
-      "Project directory is required. Set CLAUDE_PROJECT_DIR or NOESIS_PROJECT_DIR.",
-    );
+    throw new Error("Project directory is required. Set CLAUDE_PROJECT_DIR or NOESIS_PROJECT_DIR.");
   }
   return fromEnv;
 }
@@ -165,7 +155,7 @@ function main(): void {
     const result = prepareConversation(
       args["transcript_path"],
       args["conversation_time"],
-      args["main_topic"],
+      args["main_topic"]
     );
     outputResult(result);
   } catch (err) {

@@ -20,20 +20,15 @@ import { clearDiscovery, writeDiscovery } from "./dev-discovery.js";
 export async function startDevServer(): Promise<void> {
   const logger = new Logger("DevServer");
   const externalDataDir = resolveExternalDir("NOESIS_DEV_DATA_DIR");
-  const dataDir =
-    externalDataDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-"));
+  const dataDir = externalDataDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-"));
   const ownsDataDir = externalDataDir === null;
   const externalProjectDir = resolveExternalDir("NOESIS_DEV_PROJECT_DIR");
-  const projectDir =
-    externalProjectDir ??
-    mkdtempSync(join(tmpdir(), "noesis-graph-dev-project-"));
+  const projectDir = externalProjectDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-project-"));
   const ownsProjectDir = externalProjectDir === null;
   ensureNoesisLayout(projectDir);
   const skipSeed = process.env["NOESIS_DEV_NO_SEED"] === "1";
   logger.log(`Data dir: ${dataDir}${ownsDataDir ? " (ephemeral)" : ""}`);
-  logger.log(
-    `Project dir: ${projectDir}${ownsProjectDir ? " (ephemeral)" : ""}`,
-  );
+  logger.log(`Project dir: ${projectDir}${ownsProjectDir ? " (ephemeral)" : ""}`);
 
   const app = await NestFactory.create(AppModule.forRoot(dataDir, projectDir), {
     logger,
@@ -72,9 +67,7 @@ export async function startDevServer(): Promise<void> {
     try {
       await app.close();
     } catch (err) {
-      logger.error(
-        `Error closing app: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logger.error(`Error closing app: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (ownsDataDir) {
       try {
