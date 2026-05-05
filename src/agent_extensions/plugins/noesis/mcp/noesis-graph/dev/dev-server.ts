@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import { ensureNoesisLayout } from "../../../shared-contracts/source-files.js";
 import { AppModule } from "../app.module.js";
 import { DatabaseService } from "../database/database.service.js";
 import { ScannerRepository } from "../scanner/scanner.repository.js";
@@ -18,13 +19,21 @@ import { clearDiscovery, writeDiscovery } from "./dev-discovery.js";
 
 export async function startDevServer(): Promise<void> {
   const logger = new Logger("DevServer");
-  const externalDataDir = resolveExternalDataDir();
+  const externalDataDir = resolveExternalDir("NOESIS_DEV_DATA_DIR");
   const dataDir =
     externalDataDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-"));
   const ownsDataDir = externalDataDir === null;
-  const projectDir = process.cwd();
+  const externalProjectDir = resolveExternalDir("NOESIS_DEV_PROJECT_DIR");
+  const projectDir =
+    externalProjectDir ??
+    mkdtempSync(join(tmpdir(), "noesis-graph-dev-project-"));
+  const ownsProjectDir = externalProjectDir === null;
+  ensureNoesisLayout(projectDir);
   const skipSeed = process.env["NOESIS_DEV_NO_SEED"] === "1";
   logger.log(`Data dir: ${dataDir}${ownsDataDir ? " (ephemeral)" : ""}`);
+  logger.log(
+    `Project dir: ${projectDir}${ownsProjectDir ? " (ephemeral)" : ""}`,
+  );
 
   const app = await NestFactory.create(AppModule.forRoot(dataDir, projectDir), {
     logger,
@@ -74,6 +83,13 @@ export async function startDevServer(): Promise<void> {
         // best-effort cleanup
       }
     }
+    if (ownsProjectDir) {
+      try {
+        rmSync(projectDir, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
     process.exit(0);
   };
 
@@ -85,8 +101,8 @@ export async function startDevServer(): Promise<void> {
   });
 }
 
-function resolveExternalDataDir(): string | null {
-  const value = process.env["NOESIS_DEV_DATA_DIR"];
+function resolveExternalDir(envVar: string): string | null {
+  const value = process.env[envVar];
   if (value === undefined || value === "") return null;
   const dir = resolve(value);
   if (!existsSync(dir)) {
