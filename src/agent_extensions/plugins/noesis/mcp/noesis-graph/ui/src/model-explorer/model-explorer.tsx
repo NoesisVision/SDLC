@@ -302,7 +302,7 @@ function BoundedContextItem({
         }
         level={0}
       />
-      <Collapse in={opened}>
+      <Collapse expanded={opened}>
         <Box pl="md" pb="xs">
           {bc.modules.map((mod) => (
             <ModuleItem
@@ -363,7 +363,7 @@ function ModuleItem({
         badge={null}
         level={level}
       />
-      <Collapse in={opened}>
+      <Collapse expanded={opened}>
         <Box pl="md">
           {mod.modules.map((child) => (
             <ModuleItem

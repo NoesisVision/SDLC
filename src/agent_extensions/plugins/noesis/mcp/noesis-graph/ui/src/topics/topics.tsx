@@ -338,7 +338,7 @@ function TopicTreeRoot({
         level={0}
       />
       {hasChildren && (
-        <Collapse in={opened}>
+        <Collapse expanded={opened}>
           <Box pl="md" pb="xs">
             {topic.subtopics.map((sub) => (
               <TopicTreeBranch
@@ -394,7 +394,7 @@ function TopicTreeBranch({
         level={level}
       />
       {hasChildren && (
-        <Collapse in={opened}>
+        <Collapse expanded={opened}>
           <Box pl="md">
             {topic.subtopics.map((sub) => (
               <TopicTreeBranch

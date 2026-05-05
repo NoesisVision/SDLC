@@ -558,7 +558,7 @@ function TreeItem({
         </Group>
       </UnstyledButton>
       {hasChildren && (
-        <Collapse in={opened}>
+        <Collapse expanded={opened}>
           <Stack gap={2} mt={2}>
             {node.children.map((child) => (
               <TreeItem
