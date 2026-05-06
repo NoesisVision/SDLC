@@ -10,14 +10,13 @@
     - public functions in alphabetical order
     - private functions after public functions that use them.
     - private functions in an order that makes understanding easier (dependency after dependant)
-6. Check and adjust (if needed) code structure on EVERY modification. 
-7. Mimic `src` structure in `tests`.
-8. Naming:
+6. Check and adjust (if needed) code structure on EVERY modification.
+7. Naming:
    - **Directories and Files:** `kebab-case`
    - **Types, Interfaces, Enums:** `PascalCase`
    - **Functions, methods, variables:** `camelCase`
    - **Constants:** `UPPER_SNAKE_CASE`
-9. All code, comments, documentation, and commit messages must be in **English**.
+8. All code, comments, documentation, and commit messages must be in **English**.
 
 ## TypeScript
 
@@ -27,6 +26,22 @@
 4. Strict TypeScript — no `any` types without justification.
 5. Narrow discriminated unions (and any closed string-literal union) with `switch` on the discriminator plus an `assertNever(x)` default — never `if`/`else if` chains or ternaries. This gives compile-time exhaustiveness when a new variant is added. The `assertNever` helper lives in `shared-contracts/assert-never.ts`.
 
+## Tests
+
+- All test code lives under `tests/` — never colocated with `src/`. Unit tests mirror the `src/` tree: `src/<path>/foo.ts` → `tests/unit/<path>/foo.test.ts`. Protocol-level / entry-point tests likewise mirror the `src/` tree under `tests/e2e/`, located at the entry point's path: `src/<path>/foo.mcp.ts` → `tests/e2e/<path>/foo.mcp.test.ts`. Shared fixtures and test helpers live under `tests/` (e.g. `tests/helpers/`, `tests/fixtures/`), never inside `src/`. Use a TS path alias (`@src/*` → `src/*`) to keep test imports short.
+- Use BDD syntax with `tests/bdd.ts` helpers for all tests. Pay close attention to each step description - it must reflect domain relevant information. These scenarios are not only tests but also documentation.
+- Test each behavior at exactly **one** layer — never re-assert the same outcome in service, handler, controller, and e2e tests:
+   - **Services** own all business-logic and DB-shape assertions.
+   - **MCP handler unit tests** are limited to formatting/presentation helpers (e.g. Markdown rendering); never test handlers themselves.
+   - **Controllers** have no unit tests — entry-point coverage comes from e2e tests.
+   - **E2E tests** (`tests/e2e/`) — one or more tests per entry point (MCP tool, HTTP endpoint, UI page), split by distinct output (e.g. success path, validation errors, auth failures) when the entry point produces more than one. Drive each at its protocol boundary: JSON-RPC over stdio for MCP, HTTP over the wire for API endpoints, Playwright for UI pages. Verify only wiring, schema/contract validation, presentation logic, and error formatting — never re-test business rules.
+- Completeness checklist:
+   - Every `*.service.ts` has a matching `*.service.test.ts` under `tests/unit/`.
+   - Every entry point (MCP tool in `*.mcp.ts`, HTTP endpoint in `*.controller.ts`, UI page) has at least one test under `tests/e2e/` at the mirrored path, plus one additional test per distinct output.
+   - Every public function in `scripts/` has unit tests.
+- Asserts on data read from the DB compare whole rows (or the full set of relevant fields). Presence/count helpers (`countNodes`, `countRels`, `toHaveLength`) and single-field projections (`.map(r => r.id)`) are acceptable only as **additional** sanity checks, never as the sole assertion.
+- Reuse seed data from `dev-seed.ts` and shared test helpers under `tests/helpers/` (e.g. a `sampleConversation()` fixture builder, a `setupKnowledgeTests()` lifecycle wrapper) instead of constructing fresh fixtures or copy-pasting `beforeAll` / `afterAll` / `beforeEach` blocks per test.
+
 ## UI verification
 
 1. Every UI change MUST be verified in a real browser via the **Playwright MCP** server (`.mcp.json`) before reporting the task as complete. Type checks alone are not sufficient.
@@ -35,11 +50,13 @@
    - **UI**: `cd src/agent_extensions/plugins/noesis/mcp/noesis-graph/ui && bun run dev` — Vite proxies `/api/*` to the backend via the discovery file.
    - **Browser**: open the Vite URL with `mcp__playwright__browser_navigate`, then drive interactions and assert state with `browser_snapshot` / `browser_evaluate` / `browser_console_messages`.
    Run backend and UI dev servers with `run_in_background: true`.
-3. After verification, ALWAYS delete any PNG screenshots saved to the repo via `browser_take_screenshot` (whether at the repo root or elsewhere). They are throwaway verification artifacts and must not be left behind before reporting the task as complete.
+3. After verification, ALWAYS delete throwaway Playwright MCP artifacts before reporting the task as complete:
+   - Any PNG screenshots saved via `browser_take_screenshot` (at the repo root or elsewhere).
+   - The contents of `.playwright-mcp/` (console `*.log` files and page `*.yml` snapshots auto-written by `browser_console_messages` / `browser_snapshot`). The directory itself is gitignored, but its files accumulate across sessions and must be removed.
 
 ## End-to-end smoke test
 
-`bun run smoke:noesis` drives a real `claude -p` session through the full skill chain (`analyze-conversation` → `analyze-design-draft` → `create-design-doc`) and verifies every UI view endpoint against the produced graph. See `tests/agent_extensions/plugins/noesis/smoke/README.md`.
+`bun run test:smoke` drives a real `claude -p` session through the full skill chain (`analyze-conversation` → `analyze-design-draft` → `create-design-doc`) and verifies every UI view endpoint against the produced graph. See `tests/agent_extensions/plugins/noesis/smoke/README.md`.
 
 **It consumes LLM tokens.** Do NOT run it autonomously. Always:
 
