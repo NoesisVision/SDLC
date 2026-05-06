@@ -28,8 +28,15 @@
 
 ## Tests
 
-- All test code lives under `tests/` — never colocated with `src/`. Unit tests mirror the `src/` tree: `src/<path>/foo.ts` → `tests/unit/<path>/foo.test.ts`. Protocol-level / entry-point tests likewise mirror the `src/` tree under `tests/e2e/`, located at the entry point's path: `src/<path>/foo.mcp.ts` → `tests/e2e/<path>/foo.mcp.test.ts`. Shared fixtures and test helpers live under `tests/` (e.g. `tests/helpers/`, `tests/fixtures/`), never inside `src/`. Use a TS path alias (`@src/*` → `src/*`) to keep test imports short.
+- All test code lives under `tests/` — never colocated with `src/`. Unit tests mirror the `src/` tree: `src/<path>/foo.ts` → `tests/unit/<path>/foo.test.ts`. Protocol-level / entry-point tests likewise mirror the `src/` tree under `tests/e2e/`, located at the entry point's path: `src/<path>/foo.mcp.ts` → `tests/e2e/<path>/foo.mcp.test.ts`. Shared fixtures and test helpers live under `tests/` (e.g. `tests/helpers/`, `tests/fixtures/`), never inside `src/`.
+- **Always use the TS path aliases for test imports** — never deep-relative chains like `../../../../src/...`. The aliases live in the SDLC root `tsconfig.json` and are honored by Bun:
+   - `@noesis/*` → `src/agent_extensions/plugins/noesis/*` — for any source under the noesis plugin (services, repositories, shared-contracts, ui-contracts, etc.).
+   - `@tests/*` → `tests/*` — for `tests/bdd.ts`, `tests/helpers/*`, `tests/fixtures/*`.
+   Examples: `import { DatabaseService } from "@noesis/mcp/noesis-graph/database/database.service.js";`, `import { given, when, then } from "@tests/bdd.js";`. When adding new top-level test directories (e.g. plugin-specific helpers), extend `tsconfig.json` `paths` rather than introducing relative imports.
 - Use BDD syntax with `tests/bdd.ts` helpers for all tests. Pay close attention to each step description - it must reflect domain relevant information. These scenarios are not only tests but also documentation.
+   - **Step roles**: `given` sets up preconditions, `when` performs the action under test, `then` asserts the outcome. Never put the action in `given` while leaving `when` empty — the `when` body IS the documentation of what is being tested.
+   - **Descriptions read like prose**, not like restated code: state the domain fact, not the variable name or the call site. Avoid descriptions that just paraphrase the next assertion.
+   - **One scenario, one outcome**: do not bundle unrelated success and failure paths (e.g. "adds X and rejects Y") into a single test — split them.
 - Test each behavior at exactly **one** layer — never re-assert the same outcome in service, handler, controller, and e2e tests:
    - **Services** own all business-logic and DB-shape assertions.
    - **MCP handler unit tests** are limited to formatting/presentation helpers (e.g. Markdown rendering); never test handlers themselves.

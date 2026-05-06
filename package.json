@@ -10,7 +10,7 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "test:smoke": "bun run tests/agent_extensions/plugins/noesis/smoke/run-smoke.ts",
-    "test:unit": "bun run src/agent_extensions/plugins/noesis/scripts/run-tests.ts"
+    "test:unit": "bun run tests/run-unit-tests.ts"
   },
   "devDependencies": {
     "prettier": "^3.8.3"
