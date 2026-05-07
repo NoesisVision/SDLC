@@ -26,7 +26,7 @@ import {
 } from "./node-ids.js";
 
 const SCHEMA_STATEMENTS = [
-  "CREATE NODE TABLE IF NOT EXISTS DesignDoc(id STRING, name STRING, description STRING, source_json STRING, date STRING, source_sha STRING, edited_by_user BOOLEAN, implemented BOOLEAN DEFAULT false, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS DesignDoc(id STRING, name STRING, description STRING, date STRING, source_sha STRING, edited_by_user BOOLEAN, implemented BOOLEAN DEFAULT false, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedActor(id STRING, name STRING, description STRING, edited_by_user BOOLEAN DEFAULT false, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedBoundedContext(id STRING, name STRING, description STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DesignedDomainModule(id STRING, name STRING, full_path STRING, description STRING, PRIMARY KEY(id))",
@@ -54,8 +54,7 @@ const SCHEMA_STATEMENTS = [
 
 // Row schemas describe the literal column shape as returned by Cypher queries.
 // They are intentionally separate from the domain contracts, which use nested
-// ChangeSets; mapping between the two happens in rowTo* / applyStringChangeSet
-// / (de)serializeProperties below.
+// ChangeSets; mapping between the two happens in rowTo* and (de)serializeProperties below.
 //
 // Kuzu/lbug quirk: an empty STRING[] is read back as `null` even when written as
 // `[]`. Every STRING[] column therefore goes through `StringArrayRow`, which
@@ -74,7 +73,6 @@ const DesignDocRowSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  source_json: NullableStringRow,
   date: NullableStringRow,
   edited_by_user: z.boolean().nullable().optional(),
   implemented: z.boolean().nullable().optional(),
@@ -203,29 +201,19 @@ export class DesignDocsRepository {
     return this.nodeExists("DesignedActor", actorNodeId(name));
   }
 
-  async applyDesignDoc(doc: DesignDoc, date: string): Promise<void> {
+  async replaceDesignDoc(doc: DesignDoc, date: string): Promise<void> {
+    assertGreenfieldDoc(doc);
+    await this.deleteBoundedContextSubtree(doc.id);
     await this.upsertDesignDocNode(doc, date);
     if (doc.boundedContexts !== undefined) {
-      await this.applyBoundedContextChangeSet(doc.id, doc.boundedContexts);
+      for (const bc of doc.boundedContexts.added) {
+        await this.createBoundedContext(doc.id, bc);
+      }
     }
   }
 
   async deleteDesignDoc(designDocId: string): Promise<void> {
-    const labels = [
-      "DesignedScenario",
-      "DesignedRule",
-      "DesignedBehaviour",
-      "DesignedBuildingBlock",
-      "DesignedDomainModule",
-      "DesignedBoundedContext",
-      "DesignedQualityAttribute",
-    ];
-    for (const label of labels) {
-      await this.db.query(
-        `MATCH (n:${label}) WHERE n.id STARTS WITH $prefix DETACH DELETE n`,
-        { prefix: `${designDocId}|` },
-      );
-    }
+    await this.deleteBoundedContextSubtree(designDocId);
     await this.db.query(
       "MATCH (d:DesignDoc) WHERE d.id = $id DETACH DELETE d",
       { id: designDocId },
@@ -241,7 +229,7 @@ export class DesignDocsRepository {
 
   async listDesignDocs(): Promise<DesignDocOverview[]> {
     const rawRows = await this.db.query<DesignDocRow>(
-      "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date, d.edited_by_user AS edited_by_user, d.implemented AS implemented ORDER BY d.name",
+      "MATCH (d:DesignDoc) RETURN d.id AS id, d.name AS name, d.description AS description, d.date AS date, d.edited_by_user AS edited_by_user, d.implemented AS implemented ORDER BY d.name",
     );
     const rows = z.array(DesignDocRowSchema).parse(rawRows);
     const out: DesignDocOverview[] = [];
@@ -327,15 +315,7 @@ export class DesignDocsRepository {
     };
   }
 
-  async readDesignDocSource(designDocId: string): Promise<DesignDoc | null> {
-    const row = await this.fetchDesignDocRow(designDocId);
-    if (row === null) return null;
-    if (row.source_json === "") return null;
-    const parsed = JSON.parse(row.source_json);
-    return parsed as DesignDoc;
-  }
-
-  async readModelForTargets(
+async readModelForTargets(
     targets: ModelTarget[],
   ): Promise<DesignedBoundedContext[]> {
     const out: DesignedBoundedContext[] = [];
@@ -377,44 +357,9 @@ export class DesignDocsRepository {
     );
   }
 
-  private async applyBoundedContextChangeSet(
-    designDocId: string,
-    changeSet: {
-      added: DesignedBoundedContext[];
-      modified: DesignedBoundedContext[];
-      removed: string[];
-    },
-  ): Promise<void> {
-    for (const name of changeSet.removed) {
-      await this.deleteBoundedContext(designDocId, name);
-    }
-    for (const bc of changeSet.added) {
-      await this.upsertBoundedContext(designDocId, bc, false);
-    }
-    for (const bc of changeSet.modified) {
-      await this.upsertBoundedContext(designDocId, bc, true);
-    }
-  }
+  
 
-  private async applyQualityAttributesAt(
-    parentLabel: QaParentLabel,
-    parentId: string,
-    cs: {
-      added: DesignedQualityAttribute[];
-      modified: DesignedQualityAttribute[];
-      removed: string[];
-    },
-  ): Promise<void> {
-    for (const name of cs.removed) {
-      await this.deleteQualityAttribute(parentId, name);
-    }
-    for (const qa of cs.added) {
-      await this.upsertQualityAttributeAt(parentLabel, parentId, qa, false);
-    }
-    for (const qa of cs.modified) {
-      await this.upsertQualityAttributeAt(parentLabel, parentId, qa, true);
-    }
-  }
+  
 
   private async countChildren(
     designDocId: string,
@@ -428,77 +373,40 @@ export class DesignDocsRepository {
     return rows.length === 0 ? 0 : Number(rows[0].c);
   }
 
-  private async deleteBehaviour(
-    bbId: string,
-    behaviourName: string,
-  ): Promise<void> {
-    const id = behaviourNodeId(bbId, behaviourName);
-    await this.deleteSubtree("DesignedBehaviour", id);
-  }
+  
 
-  private async deleteBoundedContext(
-    designDocId: string,
-    bcName: string,
-  ): Promise<void> {
-    const bcId = boundedContextNodeId(designDocId, bcName);
-    await this.deleteSubtree("DesignedBoundedContext", bcId);
-  }
+  
 
-  private async deleteBuildingBlock(
-    containerId: string,
-    bbName: string,
-  ): Promise<void> {
-    const bbId = buildingBlockNodeId(containerId, bbName);
-    await this.deleteSubtree("DesignedBuildingBlock", bbId);
-  }
+  
 
-  private async deleteModule(bcId: string, moduleName: string): Promise<void> {
-    const rows = await this.db.query<IdRow>(
-      "MATCH (b:DesignedBoundedContext)-[:DBC_HAS_MODULE]->(m:DesignedDomainModule) " +
-        "WHERE b.id = $bcId AND m.name = $name RETURN m.id AS id LIMIT 1",
-      { bcId, name: moduleName },
-    );
-    if (rows.length === 0) return;
-    await this.deleteSubtree("DesignedDomainModule", rows[0].id);
-  }
+  
 
-  private async deleteNodeById(label: string, id: string): Promise<void> {
-    await this.db.query(
-      `MATCH (n:${label}) WHERE n.id = $id DETACH DELETE n`,
-      { id },
-    );
-  }
+  
 
-  private async deleteQualityAttribute(
-    parentId: string,
-    qaName: string,
-  ): Promise<void> {
-    await this.deleteNodeById(
-      "DesignedQualityAttribute",
-      qualityAttributeNodeId(parentId, qaName),
-    );
-  }
+  
 
-  private async deleteRule(parentId: string, ruleName: string): Promise<void> {
-    await this.deleteNodeById("DesignedRule", ruleNodeId(parentId, ruleName));
-  }
+  
 
-  private async deleteScenario(
-    parentId: string,
-    scenarioName: string,
-  ): Promise<void> {
-    await this.deleteNodeById(
+  
+
+  
+
+  private async deleteBoundedContextSubtree(designDocId: string): Promise<void> {
+    const labels = [
       "DesignedScenario",
-      scenarioNodeId(parentId, scenarioName),
-    );
-  }
-
-  private async deleteSubtree(label: string, id: string): Promise<void> {
-    await this.db.query(
-      `MATCH (n:${label})-[*]->(child) WHERE n.id = $id DETACH DELETE child`,
-      { id },
-    );
-    await this.deleteNodeById(label, id);
+      "DesignedRule",
+      "DesignedBehaviour",
+      "DesignedBuildingBlock",
+      "DesignedDomainModule",
+      "DesignedBoundedContext",
+      "DesignedQualityAttribute",
+    ];
+    for (const label of labels) {
+      await this.db.query(
+        `MATCH (n:${label}) WHERE n.id STARTS WITH $prefix DETACH DELETE n`,
+        { prefix: `${designDocId}|` },
+      );
+    }
   }
 
   private async edgeExists(
@@ -651,7 +559,7 @@ export class DesignDocsRepository {
     designDocId: string,
   ): Promise<DesignDocRow | null> {
     const rawRows = await this.db.query<DesignDocRow>(
-      "MATCH (d:DesignDoc) WHERE d.id = $id RETURN d.id AS id, d.name AS name, d.description AS description, d.source_json AS source_json, d.date AS date, d.edited_by_user AS edited_by_user, d.implemented AS implemented LIMIT 1",
+      "MATCH (d:DesignDoc) WHERE d.id = $id RETURN d.id AS id, d.name AS name, d.description AS description, d.date AS date, d.edited_by_user AS edited_by_user, d.implemented AS implemented LIMIT 1",
       { id: designDocId },
     );
     if (rawRows.length === 0) return null;
@@ -844,241 +752,121 @@ export class DesignDocsRepository {
     );
   }
 
-  private async upsertBehaviour(
+  private async createBehaviour(
     bbId: string,
     bh: DesignedBehaviour,
-    isModification: boolean,
   ): Promise<void> {
     const id = behaviourNodeId(bbId, bh.name);
-    const input = applyStringChangeSet(bh.input);
-    const output = applyStringChangeSet(bh.output);
-    const used = applyStringChangeSet(bh.usedBuildingBlocks);
-    if (!(await this.nodeExists("DesignedBehaviour", id))) {
-      await this.db.query(
-        "CREATE (h:DesignedBehaviour {id: $id, name: $name, type: $type, description: $description, is_public: $is_public, input: $input, output: $output, used_building_blocks: $used, actor_name: $actor_name})",
-        {
-          id,
-          name: bh.name,
-          type: bh.type ?? "",
-          description: bh.description ?? "",
-          is_public: bh.isPublic,
-          input,
-          output,
-          used,
-          actor_name: bh.actor ?? "",
-        },
-      );
-      await this.linkParentToChild(
-        "DesignedBuildingBlock",
-        bbId,
-        "DesignedBehaviour",
+    const input = bh.input?.added ?? [];
+    const output = bh.output?.added ?? [];
+    const used = bh.usedBuildingBlocks?.added ?? [];
+    await this.db.query(
+      "CREATE (h:DesignedBehaviour {id: $id, name: $name, type: $type, description: $description, is_public: $is_public, input: $input, output: $output, used_building_blocks: $used, actor_name: $actor_name})",
+      {
         id,
-        "DBB_HAS_BEHAVIOUR",
-      );
-    } else {
-      const fields = isModification
-        ? buildPartialFields({
-            type: bh.type,
-            description: bh.description,
-            is_public: bh.isPublic,
-            input: bh.input === undefined ? undefined : input,
-            output: bh.output === undefined ? undefined : output,
-            used_building_blocks:
-              bh.usedBuildingBlocks === undefined ? undefined : used,
-            actor_name: bh.actor,
-          })
-        : {
-            name: bh.name,
-            type: bh.type ?? "",
-            description: bh.description ?? "",
-            is_public: bh.isPublic,
-            input,
-            output,
-            used_building_blocks: used,
-            actor_name: bh.actor ?? "",
-          };
-      await this.updateNodeFields("DesignedBehaviour", id, fields);
-    }
+        name: bh.name,
+        type: bh.type ?? "",
+        description: bh.description ?? "",
+        is_public: bh.isPublic,
+        input,
+        output,
+        used,
+        actor_name: bh.actor ?? "",
+      },
+    );
+    await this.linkParentToChild(
+      "DesignedBuildingBlock",
+      bbId,
+      "DesignedBehaviour",
+      id,
+      "DBB_HAS_BEHAVIOUR",
+    );
 
-    if (bh.actor !== null && bh.actor !== "") {
+    if (bh.actor !== null && bh.actor !== undefined && bh.actor !== "") {
       await this.linkBehaviourToActor(id, bh.actor);
     }
 
-    if (bh.rules !== undefined) {
-      for (const rName of bh.rules.removed) {
-        await this.deleteRule(id, rName);
-      }
-      for (const r of bh.rules.added) {
-        await this.upsertRule(id, "DesignedBehaviour", r, false);
-      }
-      for (const r of bh.rules.modified) {
-        await this.upsertRule(id, "DesignedBehaviour", r, true);
-      }
+    for (const r of bh.rules?.added ?? []) {
+      await this.createRule(id, "DesignedBehaviour", r);
     }
-
-    if (bh.scenarios !== undefined) {
-      for (const sName of bh.scenarios.removed) {
-        await this.deleteScenario(id, sName);
-      }
-      for (const s of bh.scenarios.added) {
-        await this.upsertScenario(id, "DesignedBehaviour", s, false);
-      }
-      for (const s of bh.scenarios.modified) {
-        await this.upsertScenario(id, "DesignedBehaviour", s, true);
-      }
+    for (const s of bh.scenarios?.added ?? []) {
+      await this.createScenario(id, "DesignedBehaviour", s);
     }
-
-    if (bh.qualityAttributes !== undefined) {
-      await this.applyQualityAttributesAt("DesignedBehaviour", id, bh.qualityAttributes);
+    for (const qa of bh.qualityAttributes?.added ?? []) {
+      await this.createQualityAttributeAt("DesignedBehaviour", id, qa);
     }
   }
 
-  private async upsertBoundedContext(
+  private async createBoundedContext(
     designDocId: string,
     bc: DesignedBoundedContext,
-    isModification: boolean,
   ): Promise<void> {
     const id = boundedContextNodeId(designDocId, bc.name);
-    if (!(await this.nodeExists("DesignedBoundedContext", id))) {
-      await this.db.query(
-        "CREATE (b:DesignedBoundedContext {id: $id, name: $name, description: $description})",
-        { id, name: bc.name, description: bc.description ?? "" },
-      );
-      await this.linkParentToChild(
-        "DesignDoc",
-        designDocId,
-        "DesignedBoundedContext",
-        id,
-        "DD_HAS_BC",
-      );
-    } else {
-      const fields = isModification
-        ? buildPartialFields({ description: bc.description })
-        : { name: bc.name, description: bc.description ?? "" };
-      await this.updateNodeFields("DesignedBoundedContext", id, fields);
-    }
+    await this.db.query(
+      "CREATE (b:DesignedBoundedContext {id: $id, name: $name, description: $description})",
+      { id, name: bc.name, description: bc.description ?? "" },
+    );
+    await this.linkParentToChild(
+      "DesignDoc",
+      designDocId,
+      "DesignedBoundedContext",
+      id,
+      "DD_HAS_BC",
+    );
 
-    if (bc.modules !== undefined) {
-      for (const moduleName of bc.modules.removed) {
-        await this.deleteModule(id, moduleName);
-      }
-      for (const mod of bc.modules.added) {
-        await this.upsertModule(id, mod, bc.name, false);
-      }
-      for (const mod of bc.modules.modified) {
-        await this.upsertModule(id, mod, bc.name, true);
-      }
+    for (const mod of bc.modules?.added ?? []) {
+      await this.createModule(id, mod, bc.name);
     }
-
-    if (bc.buildingBlocks !== undefined) {
-      for (const bbName of bc.buildingBlocks.removed) {
-        await this.deleteBuildingBlock(id, bbName);
-      }
-      for (const bb of bc.buildingBlocks.added) {
-        await this.upsertBuildingBlock(id, "DesignedBoundedContext", bb, false);
-      }
-      for (const bb of bc.buildingBlocks.modified) {
-        await this.upsertBuildingBlock(id, "DesignedBoundedContext", bb, true);
-      }
+    for (const bb of bc.buildingBlocks?.added ?? []) {
+      await this.createBuildingBlock(id, "DesignedBoundedContext", bb);
     }
-
-    if (bc.qualityAttributes !== undefined) {
-      await this.applyQualityAttributesAt(
-        "DesignedBoundedContext",
-        id,
-        bc.qualityAttributes,
-      );
+    for (const qa of bc.qualityAttributes?.added ?? []) {
+      await this.createQualityAttributeAt("DesignedBoundedContext", id, qa);
     }
   }
 
-  private async upsertBuildingBlock(
+  private async createBuildingBlock(
     containerId: string,
     containerLabel: "DesignedBoundedContext" | "DesignedDomainModule",
     bb: DesignedBuildingBlock,
-    isModification: boolean,
   ): Promise<void> {
     const id = buildingBlockNodeId(containerId, bb.name);
     const propertiesJson = serializeProperties(bb.properties);
     const implementsJson = JSON.stringify(bb.implements ?? []);
-    if (!(await this.nodeExists("DesignedBuildingBlock", id))) {
-      await this.db.query(
-        "CREATE (b:DesignedBuildingBlock {id: $id, name: $name, type: $type, description: $description, properties: $properties, implements: $implements})",
-        {
-          id,
-          name: bb.name,
-          type: bb.type ?? "",
-          description: bb.description ?? "",
-          properties: propertiesJson,
-          implements: implementsJson,
-        },
-      );
-      const relName =
-        containerLabel === "DesignedBoundedContext"
-          ? "DBC_HAS_BB"
-          : "DM_HAS_BB";
-      await this.linkParentToChild(
-        containerLabel,
-        containerId,
-        "DesignedBuildingBlock",
+    await this.db.query(
+      "CREATE (b:DesignedBuildingBlock {id: $id, name: $name, type: $type, description: $description, properties: $properties, implements: $implements})",
+      {
         id,
-        relName,
-      );
-    } else {
-      const partialBase = buildPartialFields({
-        type: bb.type,
-        description: bb.description,
-        properties: bb.properties === undefined ? undefined : propertiesJson,
-      });
-      const fields = isModification
-        ? { ...partialBase, implements: implementsJson }
-        : {
-            name: bb.name,
-            type: bb.type ?? "",
-            description: bb.description ?? "",
-            properties: propertiesJson,
-            implements: implementsJson,
-          };
-      await this.updateNodeFields("DesignedBuildingBlock", id, fields);
-    }
+        name: bb.name,
+        type: bb.type ?? "",
+        description: bb.description ?? "",
+        properties: propertiesJson,
+        implements: implementsJson,
+      },
+    );
+    const relName =
+      containerLabel === "DesignedBoundedContext"
+        ? "DBC_HAS_BB"
+        : "DM_HAS_BB";
+    await this.linkParentToChild(
+      containerLabel,
+      containerId,
+      "DesignedBuildingBlock",
+      id,
+      relName,
+    );
 
-    if (bb.behaviours !== undefined) {
-      for (const bhName of bb.behaviours.removed) {
-        await this.deleteBehaviour(id, bhName);
-      }
-      for (const bh of bb.behaviours.added) {
-        await this.upsertBehaviour(id, bh, false);
-      }
-      for (const bh of bb.behaviours.modified) {
-        await this.upsertBehaviour(id, bh, true);
-      }
+    for (const bh of bb.behaviours?.added ?? []) {
+      await this.createBehaviour(id, bh);
     }
-
-    if (bb.rules !== undefined) {
-      for (const rName of bb.rules.removed) {
-        await this.deleteRule(id, rName);
-      }
-      for (const r of bb.rules.added) {
-        await this.upsertRule(id, "DesignedBuildingBlock", r, false);
-      }
-      for (const r of bb.rules.modified) {
-        await this.upsertRule(id, "DesignedBuildingBlock", r, true);
-      }
+    for (const r of bb.rules?.added ?? []) {
+      await this.createRule(id, "DesignedBuildingBlock", r);
     }
-
-    if (bb.scenarios !== undefined) {
-      for (const sName of bb.scenarios.removed) {
-        await this.deleteScenario(id, sName);
-      }
-      for (const s of bb.scenarios.added) {
-        await this.upsertScenario(id, "DesignedBuildingBlock", s, false);
-      }
-      for (const s of bb.scenarios.modified) {
-        await this.upsertScenario(id, "DesignedBuildingBlock", s, true);
-      }
+    for (const s of bb.scenarios?.added ?? []) {
+      await this.createScenario(id, "DesignedBuildingBlock", s);
     }
-
-    if (bb.qualityAttributes !== undefined) {
-      await this.applyQualityAttributesAt("DesignedBuildingBlock", id, bb.qualityAttributes);
+    for (const qa of bb.qualityAttributes?.added ?? []) {
+      await this.createQualityAttributeAt("DesignedBuildingBlock", id, qa);
     }
   }
 
@@ -1086,12 +874,10 @@ export class DesignDocsRepository {
     doc: DesignDoc,
     date: string,
   ): Promise<void> {
-    const sourceJson = JSON.stringify(doc);
     if (await this.nodeExists("DesignDoc", doc.id)) {
       const fields: Record<string, unknown> = {
         name: doc.name,
         description: doc.description,
-        source_json: sourceJson,
         date,
       };
       if (doc.implemented === true) {
@@ -1101,201 +887,129 @@ export class DesignDocsRepository {
       return;
     }
     await this.db.query(
-      "CREATE (d:DesignDoc {id: $id, name: $name, description: $description, source_json: $source_json, date: $date, implemented: $implemented})",
+      "CREATE (d:DesignDoc {id: $id, name: $name, description: $description, date: $date, implemented: $implemented})",
       {
         id: doc.id,
         name: doc.name,
         description: doc.description,
-        source_json: sourceJson,
         date,
         implemented: doc.implemented === true,
       },
     );
   }
 
-  private async upsertModule(
+  private async createModule(
     bcId: string,
     mod: DesignedDomainModule,
     bcName: string,
-    isModification: boolean,
   ): Promise<void> {
     const fullPath = `${bcName}.${mod.name}`;
     const id = moduleNodeId(bcId, fullPath);
-    if (!(await this.nodeExists("DesignedDomainModule", id))) {
-      await this.db.query(
-        "CREATE (m:DesignedDomainModule {id: $id, name: $name, full_path: $full_path, description: $description})",
-        {
-          id,
-          name: mod.name,
-          full_path: fullPath,
-          description: mod.description ?? "",
-        },
-      );
-      await this.linkParentToChild(
-        "DesignedBoundedContext",
-        bcId,
-        "DesignedDomainModule",
+    await this.db.query(
+      "CREATE (m:DesignedDomainModule {id: $id, name: $name, full_path: $full_path, description: $description})",
+      {
         id,
-        "DBC_HAS_MODULE",
-      );
-    } else {
-      const fields = isModification
-        ? buildPartialFields({ description: mod.description })
-        : {
-            name: mod.name,
-            full_path: fullPath,
-            description: mod.description ?? "",
-          };
-      await this.updateNodeFields("DesignedDomainModule", id, fields);
-    }
+        name: mod.name,
+        full_path: fullPath,
+        description: mod.description ?? "",
+      },
+    );
+    await this.linkParentToChild(
+      "DesignedBoundedContext",
+      bcId,
+      "DesignedDomainModule",
+      id,
+      "DBC_HAS_MODULE",
+    );
 
-    if (mod.buildingBlocks !== undefined) {
-      for (const bbName of mod.buildingBlocks.removed) {
-        await this.deleteBuildingBlock(id, bbName);
-      }
-      for (const bb of mod.buildingBlocks.added) {
-        await this.upsertBuildingBlock(id, "DesignedDomainModule", bb, false);
-      }
-      for (const bb of mod.buildingBlocks.modified) {
-        await this.upsertBuildingBlock(id, "DesignedDomainModule", bb, true);
-      }
+    for (const bb of mod.buildingBlocks?.added ?? []) {
+      await this.createBuildingBlock(id, "DesignedDomainModule", bb);
     }
-
-    if (mod.qualityAttributes !== undefined) {
-      await this.applyQualityAttributesAt(
-        "DesignedDomainModule",
-        id,
-        mod.qualityAttributes,
-      );
+    for (const qa of mod.qualityAttributes?.added ?? []) {
+      await this.createQualityAttributeAt("DesignedDomainModule", id, qa);
     }
   }
 
-  private async upsertQualityAttributeAt(
+  private async createQualityAttributeAt(
     parentLabel: QaParentLabel,
     parentId: string,
     qa: DesignedQualityAttribute,
-    isModification: boolean,
   ): Promise<void> {
     const id = qualityAttributeNodeId(parentId, qa.name);
-    if (!(await this.nodeExists("DesignedQualityAttribute", id))) {
-      await this.db.query(
-        "CREATE (q:DesignedQualityAttribute {id: $id, name: $name, type: $type, description: $description})",
-        {
-          id,
-          name: qa.name,
-          type: qa.type ?? "",
-          description: qa.description ?? "",
-        },
-      );
-      await this.linkParentToChild(
-        parentLabel,
-        parentId,
-        "DesignedQualityAttribute",
+    await this.db.query(
+      "CREATE (q:DesignedQualityAttribute {id: $id, name: $name, type: $type, description: $description})",
+      {
         id,
-        QA_REL_BY_PARENT[parentLabel],
-      );
-      return;
-    }
-    const fields = isModification
-      ? buildPartialFields({ type: qa.type, description: qa.description })
-      : {
-          name: qa.name,
-          type: qa.type ?? "",
-          description: qa.description ?? "",
-        };
-    await this.updateNodeFields("DesignedQualityAttribute", id, fields);
+        name: qa.name,
+        type: qa.type ?? "",
+        description: qa.description ?? "",
+      },
+    );
+    await this.linkParentToChild(
+      parentLabel,
+      parentId,
+      "DesignedQualityAttribute",
+      id,
+      QA_REL_BY_PARENT[parentLabel],
+    );
   }
 
-  private async upsertRule(
+  private async createRule(
     parentId: string,
     parentLabel: "DesignedBuildingBlock" | "DesignedBehaviour",
     rule: DesignedRule,
-    isModification: boolean,
   ): Promise<void> {
     const id = ruleNodeId(parentId, rule.name);
-    if (!(await this.nodeExists("DesignedRule", id))) {
-      await this.db.query(
-        "CREATE (r:DesignedRule {id: $id, name: $name, rule_type: $rule_type, description: $description})",
-        {
-          id,
-          name: rule.name,
-          rule_type: rule.ruleType ?? "",
-          description: rule.description ?? "",
-        },
-      );
-      const relName =
-        parentLabel === "DesignedBuildingBlock"
-          ? "DBB_HAS_RULE"
-          : "DBH_HAS_RULE";
-      await this.linkParentToChild(
-        parentLabel,
-        parentId,
-        "DesignedRule",
+    await this.db.query(
+      "CREATE (r:DesignedRule {id: $id, name: $name, rule_type: $rule_type, description: $description})",
+      {
         id,
-        relName,
-      );
-    } else {
-      const fields = isModification
-        ? buildPartialFields({
-            rule_type: rule.ruleType,
-            description: rule.description,
-          })
-        : {
-            name: rule.name,
-            rule_type: rule.ruleType ?? "",
-            description: rule.description ?? "",
-          };
-      await this.updateNodeFields("DesignedRule", id, fields);
-    }
+        name: rule.name,
+        rule_type: rule.ruleType ?? "",
+        description: rule.description ?? "",
+      },
+    );
+    const relName =
+      parentLabel === "DesignedBuildingBlock"
+        ? "DBB_HAS_RULE"
+        : "DBH_HAS_RULE";
+    await this.linkParentToChild(
+      parentLabel,
+      parentId,
+      "DesignedRule",
+      id,
+      relName,
+    );
   }
 
-  private async upsertScenario(
+  private async createScenario(
     parentId: string,
     parentLabel: "DesignedBuildingBlock" | "DesignedBehaviour",
     scenario: DesignedScenario,
-    isModification: boolean,
   ): Promise<void> {
     const id = scenarioNodeId(parentId, scenario.name);
-    if (!(await this.nodeExists("DesignedScenario", id))) {
-      await this.db.query(
-        "CREATE (s:DesignedScenario {id: $id, name: $name, description: $description, given: $given, when_clause: $when_clause, then_clause: $then_clause})",
-        {
-          id,
-          name: scenario.name,
-          description: scenario.description,
-          given: scenario.given,
-          when_clause: scenario.when,
-          then_clause: scenario.then,
-        },
-      );
-      const relName =
-        parentLabel === "DesignedBuildingBlock"
-          ? "DBB_HAS_SCENARIO"
-          : "DBH_HAS_SCENARIO";
-      await this.linkParentToChild(
-        parentLabel,
-        parentId,
-        "DesignedScenario",
+    await this.db.query(
+      "CREATE (s:DesignedScenario {id: $id, name: $name, description: $description, given: $given, when_clause: $when_clause, then_clause: $then_clause})",
+      {
         id,
-        relName,
-      );
-    } else {
-      const fields = isModification
-        ? buildPartialFields({
-            description: scenario.description,
-            given: scenario.given,
-            when_clause: scenario.when,
-            then_clause: scenario.then,
-          })
-        : {
-            name: scenario.name,
-            description: scenario.description,
-            given: scenario.given,
-            when_clause: scenario.when,
-            then_clause: scenario.then,
-          };
-      await this.updateNodeFields("DesignedScenario", id, fields);
-    }
+        name: scenario.name,
+        description: scenario.description,
+        given: scenario.given,
+        when_clause: scenario.when,
+        then_clause: scenario.then,
+      },
+    );
+    const relName =
+      parentLabel === "DesignedBuildingBlock"
+        ? "DBB_HAS_SCENARIO"
+        : "DBH_HAS_SCENARIO";
+    await this.linkParentToChild(
+      parentLabel,
+      parentId,
+      "DesignedScenario",
+      id,
+      relName,
+    );
   }
 }
 
@@ -1334,27 +1048,9 @@ function rowToScenario(r: ScenarioRow): DesignedScenario {
   };
 }
 
-function applyStringChangeSet(
-  cs: { added: string[]; removed: string[]; modified: string[] } | undefined,
-): string[] {
-  if (cs === undefined) return [];
-  const set = new Set<string>(cs.added);
-  for (const m of cs.modified) set.add(m);
-  for (const r of cs.removed) set.delete(r);
-  return Array.from(set);
-}
 
-function buildPartialFields(
-  fields: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if (value !== null && value !== undefined) {
-      out[key] = value;
-    }
-  }
-  return out;
-}
+
+
 
 function serializeProperties(
   properties:
@@ -1362,14 +1058,7 @@ function serializeProperties(
     | undefined,
 ): string {
   if (properties === undefined) return "[]";
-  const map = new Map<string, DesignedProperty>();
-  for (const p of properties.added) map.set(p.name, p);
-  for (const p of properties.modified) {
-    const existing = map.get(p.name);
-    map.set(p.name, existing === undefined ? p : { ...existing, ...p });
-  }
-  for (const r of properties.removed) map.delete(r);
-  return JSON.stringify(Array.from(map.values()));
+  return JSON.stringify(properties.added);
 }
 
 function deserializeProperties(json: string): DesignedProperty[] {
@@ -1394,4 +1083,104 @@ function deserializeImplements(json: string): string[] {
 
 function emptyToNull(value: string): string | null {
   return value === "" ? null : value;
+}
+
+function assertGreenfieldDoc(doc: DesignDoc): void {
+  if (doc.boundedContexts === undefined) return;
+  assertGreenfieldChangeSet(doc.boundedContexts, "boundedContexts");
+  for (const bc of doc.boundedContexts.added) {
+    assertGreenfieldBoundedContext(bc, `boundedContexts/${bc.name}`);
+  }
+}
+
+function assertGreenfieldBoundedContext(
+  bc: DesignedBoundedContext,
+  path: string,
+): void {
+  if (bc.modules !== undefined) {
+    assertGreenfieldChangeSet(bc.modules, `${path}/modules`);
+    for (const mod of bc.modules.added) {
+      assertGreenfieldModule(mod, `${path}/modules/${mod.name}`);
+    }
+  }
+  if (bc.buildingBlocks !== undefined) {
+    assertGreenfieldChangeSet(bc.buildingBlocks, `${path}/buildingBlocks`);
+    for (const bb of bc.buildingBlocks.added) {
+      assertGreenfieldBuildingBlock(bb, `${path}/buildingBlocks/${bb.name}`);
+    }
+  }
+  if (bc.qualityAttributes !== undefined) {
+    assertGreenfieldChangeSet(bc.qualityAttributes, `${path}/qualityAttributes`);
+  }
+}
+
+function assertGreenfieldModule(mod: DesignedDomainModule, path: string): void {
+  if (mod.buildingBlocks !== undefined) {
+    assertGreenfieldChangeSet(mod.buildingBlocks, `${path}/buildingBlocks`);
+    for (const bb of mod.buildingBlocks.added) {
+      assertGreenfieldBuildingBlock(bb, `${path}/buildingBlocks/${bb.name}`);
+    }
+  }
+  if (mod.qualityAttributes !== undefined) {
+    assertGreenfieldChangeSet(mod.qualityAttributes, `${path}/qualityAttributes`);
+  }
+}
+
+function assertGreenfieldBuildingBlock(
+  bb: DesignedBuildingBlock,
+  path: string,
+): void {
+  if (bb.properties !== undefined) {
+    assertGreenfieldChangeSet(bb.properties, `${path}/properties`);
+  }
+  if (bb.behaviours !== undefined) {
+    assertGreenfieldChangeSet(bb.behaviours, `${path}/behaviours`);
+    for (const bh of bb.behaviours.added) {
+      assertGreenfieldBehaviour(bh, `${path}/behaviours/${bh.name}`);
+    }
+  }
+  if (bb.rules !== undefined) {
+    assertGreenfieldChangeSet(bb.rules, `${path}/rules`);
+  }
+  if (bb.scenarios !== undefined) {
+    assertGreenfieldChangeSet(bb.scenarios, `${path}/scenarios`);
+  }
+  if (bb.qualityAttributes !== undefined) {
+    assertGreenfieldChangeSet(bb.qualityAttributes, `${path}/qualityAttributes`);
+  }
+}
+
+function assertGreenfieldBehaviour(
+  bh: DesignedBehaviour,
+  path: string,
+): void {
+  if (bh.input !== undefined) {
+    assertGreenfieldChangeSet(bh.input, `${path}/input`);
+  }
+  if (bh.output !== undefined) {
+    assertGreenfieldChangeSet(bh.output, `${path}/output`);
+  }
+  if (bh.usedBuildingBlocks !== undefined) {
+    assertGreenfieldChangeSet(bh.usedBuildingBlocks, `${path}/usedBuildingBlocks`);
+  }
+  if (bh.rules !== undefined) {
+    assertGreenfieldChangeSet(bh.rules, `${path}/rules`);
+  }
+  if (bh.scenarios !== undefined) {
+    assertGreenfieldChangeSet(bh.scenarios, `${path}/scenarios`);
+  }
+  if (bh.qualityAttributes !== undefined) {
+    assertGreenfieldChangeSet(bh.qualityAttributes, `${path}/qualityAttributes`);
+  }
+}
+
+function assertGreenfieldChangeSet(
+  cs: { added: unknown[]; modified: unknown[]; removed: string[] },
+  path: string,
+): void {
+  if (cs.modified.length > 0 || cs.removed.length > 0) {
+    throw new Error(
+      `ChangeSet at ${path} must have empty 'modified' and 'removed' under green-field semantics; got modified=${cs.modified.length}, removed=${cs.removed.length}`,
+    );
+  }
 }

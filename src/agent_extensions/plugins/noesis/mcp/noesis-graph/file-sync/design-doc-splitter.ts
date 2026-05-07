@@ -30,9 +30,18 @@ export interface CommitDesignDocResult {
 export class UserEditConflictError extends Error {
   constructor(public readonly blockedPaths: string[]) {
     super(
-      `Save blocked: ${blockedPaths.length} user-edited element(s) targeted without confirmation: ${blockedPaths.join(", ")}`,
+      `Save blocked: ${blockedPaths.length} user-edited element(s) would be overwritten without confirmation: ${blockedPaths.join(", ")}`,
     );
     this.name = "UserEditConflictError";
+  }
+}
+
+export class UserDroppedItemsError extends Error {
+  constructor(public readonly droppedPaths: string[]) {
+    super(
+      `Save blocked: ${droppedPaths.length} element(s) present in the prior version are missing from the submitted version without confirmation: ${droppedPaths.join(", ")}`,
+    );
+    this.name = "UserDroppedItemsError";
   }
 }
 
@@ -56,16 +65,20 @@ export function commitDesignDoc(
       ? loadIfExists(renamedFromPath)
       : null;
 
-  const confirmed = options.confirmedEdits ?? new Set<string>();
-  const blocked = collectBlockedEdits(prev, designDoc, confirmed);
+  const confirmedEdits = options.confirmedEdits ?? new Set<string>();
+
+  const blocked = collectBlockedEdits(prev, designDoc, confirmedEdits);
   if (blocked.length > 0) {
     throw new UserEditConflictError(blocked);
   }
 
-  const merged = mergeWithUserEdits(prev, designDoc, confirmed);
-  writeSidecar(target, merged, DesignDocSchema);
+  const cleaned = stripDocFlags(designDoc);
+  if (prev !== null && prev.implemented === true) {
+    cleaned.implemented = true;
+  }
+  writeSidecar(target, cleaned, DesignDocSchema);
 
-  if (renamedFromPath !== null && existsSync(renamedFromPath)) {
+  if (renamedFromPath !== null && renamedFromPath !== target && existsSync(renamedFromPath)) {
     try {
       unlinkSync(renamedFromPath);
     } catch {
@@ -74,6 +87,23 @@ export function commitDesignDoc(
   }
 
   return { canonical_path: target };
+}
+
+export function collectDroppedPaths(
+  prev: DesignDoc | null,
+  next: DesignDoc,
+  confirmed: ReadonlySet<string>,
+): string[] {
+  if (prev === null) return [];
+  const dropped: string[] = [];
+  walkDroppedBoundedContexts(
+    prev.boundedContexts,
+    next.boundedContexts,
+    "boundedContexts",
+    confirmed,
+    dropped,
+  );
+  return dropped;
 }
 
 export function readDesignDocBytesForSha(target: string): Buffer {
@@ -100,6 +130,202 @@ interface ElementWithFlag {
   edited_by_user?: boolean;
 }
 
+function walkDroppedBoundedContexts(
+  prev: ChangeSet<DesignedBoundedContext> | undefined,
+  next: ChangeSet<DesignedBoundedContext> | undefined,
+  basePath: string,
+  confirmed: ReadonlySet<string>,
+  dropped: string[],
+): void {
+  if (prev === undefined) return;
+  const nextByName = nameMap(next?.added ?? []);
+  for (const bc of prev.added) {
+    const path = `${basePath}/${bc.name}`;
+    const nextBC = nextByName.get(bc.name);
+    if (nextBC === undefined) {
+      flagDrop(path, confirmed, dropped);
+      continue;
+    }
+    walkDroppedBCChildren(bc, nextBC, path, confirmed, dropped);
+  }
+}
+
+function walkDroppedBCChildren(
+  prev: DesignedBoundedContext,
+  next: DesignedBoundedContext,
+  basePath: string,
+  confirmed: ReadonlySet<string>,
+  dropped: string[],
+): void {
+  walkDroppedModules(
+    prev.modules,
+    next.modules,
+    `${basePath}/modules`,
+    confirmed,
+    dropped,
+  );
+  walkDroppedBuildingBlocks(
+    prev.buildingBlocks,
+    next.buildingBlocks,
+    `${basePath}/buildingBlocks`,
+    confirmed,
+    dropped,
+  );
+  walkDroppedFlat<DesignedQualityAttribute>(
+    prev.qualityAttributes,
+    next.qualityAttributes,
+    `${basePath}/qualityAttributes`,
+    confirmed,
+    dropped,
+  );
+}
+
+function walkDroppedModules(
+  prev: ChangeSet<DesignedDomainModule> | undefined,
+  next: ChangeSet<DesignedDomainModule> | undefined,
+  basePath: string,
+  confirmed: ReadonlySet<string>,
+  dropped: string[],
+): void {
+  if (prev === undefined) return;
+  const nextByName = nameMap(next?.added ?? []);
+  for (const mod of prev.added) {
+    const path = `${basePath}/${mod.name}`;
+    const nextMod = nextByName.get(mod.name);
+    if (nextMod === undefined) {
+      flagDrop(path, confirmed, dropped);
+      continue;
+    }
+    walkDroppedBuildingBlocks(
+      mod.buildingBlocks,
+      nextMod.buildingBlocks,
+      `${path}/buildingBlocks`,
+      confirmed,
+      dropped,
+    );
+    walkDroppedFlat<DesignedQualityAttribute>(
+      mod.qualityAttributes,
+      nextMod.qualityAttributes,
+      `${path}/qualityAttributes`,
+      confirmed,
+      dropped,
+    );
+  }
+}
+
+function walkDroppedBuildingBlocks(
+  prev: ChangeSet<DesignedBuildingBlock> | undefined,
+  next: ChangeSet<DesignedBuildingBlock> | undefined,
+  basePath: string,
+  confirmed: ReadonlySet<string>,
+  dropped: string[],
+): void {
+  if (prev === undefined) return;
+  const nextByName = nameMap(next?.added ?? []);
+  for (const bb of prev.added) {
+    const path = `${basePath}/${bb.name}`;
+    const nextBB = nextByName.get(bb.name);
+    if (nextBB === undefined) {
+      flagDrop(path, confirmed, dropped);
+      continue;
+    }
+    walkDroppedBehaviours(
+      bb.behaviours,
+      nextBB.behaviours,
+      `${path}/behaviours`,
+      confirmed,
+      dropped,
+    );
+    walkDroppedFlat<DesignedRule>(
+      bb.rules,
+      nextBB.rules,
+      `${path}/rules`,
+      confirmed,
+      dropped,
+    );
+    walkDroppedFlat<DesignedScenario>(
+      bb.scenarios,
+      nextBB.scenarios,
+      `${path}/scenarios`,
+      confirmed,
+      dropped,
+    );
+    walkDroppedFlat<DesignedQualityAttribute>(
+      bb.qualityAttributes,
+      nextBB.qualityAttributes,
+      `${path}/qualityAttributes`,
+      confirmed,
+      dropped,
+    );
+  }
+}
+
+function walkDroppedBehaviours(
+  prev: ChangeSet<DesignedBehaviour> | undefined,
+  next: ChangeSet<DesignedBehaviour> | undefined,
+  basePath: string,
+  confirmed: ReadonlySet<string>,
+  dropped: string[],
+): void {
+  if (prev === undefined) return;
+  const nextByName = nameMap(next?.added ?? []);
+  for (const bh of prev.added) {
+    const path = `${basePath}/${bh.name}`;
+    const nextBH = nextByName.get(bh.name);
+    if (nextBH === undefined) {
+      flagDrop(path, confirmed, dropped);
+      continue;
+    }
+    walkDroppedFlat<DesignedRule>(
+      bh.rules,
+      nextBH.rules,
+      `${path}/rules`,
+      confirmed,
+      dropped,
+    );
+    walkDroppedFlat<DesignedScenario>(
+      bh.scenarios,
+      nextBH.scenarios,
+      `${path}/scenarios`,
+      confirmed,
+      dropped,
+    );
+    walkDroppedFlat<DesignedQualityAttribute>(
+      bh.qualityAttributes,
+      nextBH.qualityAttributes,
+      `${path}/qualityAttributes`,
+      confirmed,
+      dropped,
+    );
+  }
+}
+
+function walkDroppedFlat<T extends ElementWithFlag>(
+  prev: ChangeSet<T> | undefined,
+  next: ChangeSet<T> | undefined,
+  basePath: string,
+  confirmed: ReadonlySet<string>,
+  dropped: string[],
+): void {
+  if (prev === undefined) return;
+  const nextByName = nameMap(next?.added ?? []);
+  for (const item of prev.added) {
+    const path = `${basePath}/${item.name}`;
+    if (!nextByName.has(item.name)) {
+      flagDrop(path, confirmed, dropped);
+    }
+  }
+}
+
+function flagDrop(
+  path: string,
+  confirmed: ReadonlySet<string>,
+  dropped: string[],
+): void {
+  if (confirmed.has(path)) return;
+  dropped.push(path);
+}
+
 function collectBlockedEdits(
   prev: DesignDoc | null,
   next: DesignDoc,
@@ -117,23 +343,6 @@ function collectBlockedEdits(
   return blocked;
 }
 
-function walkBlockedFlat<T extends ElementWithFlag>(
-  prev: ChangeSet<T> | undefined,
-  next: ChangeSet<T> | undefined,
-  basePath: string,
-  confirmed: ReadonlySet<string>,
-  blocked: string[],
-): void {
-  if (next === undefined) return;
-  const prevByName = nameMap(prev?.added ?? []);
-  for (const name of next.removed ?? []) {
-    flagIfBlocked(prevByName.get(name), `${basePath}/${name}`, confirmed, blocked);
-  }
-  for (const item of next.modified ?? []) {
-    flagIfBlocked(prevByName.get(item.name), `${basePath}/${item.name}`, confirmed, blocked);
-  }
-}
-
 function walkBlockedBoundedContexts(
   prev: ChangeSet<DesignedBoundedContext> | undefined,
   next: ChangeSet<DesignedBoundedContext> | undefined,
@@ -141,16 +350,14 @@ function walkBlockedBoundedContexts(
   confirmed: ReadonlySet<string>,
   blocked: string[],
 ): void {
-  if (next === undefined) return;
-  const prevByName = nameMap(prev?.added ?? []);
-  for (const name of next.removed ?? []) {
-    flagIfBlocked(prevByName.get(name), `${basePath}/${name}`, confirmed, blocked);
-  }
-  for (const bc of next.modified ?? []) {
+  if (prev === undefined || next === undefined) return;
+  const nextByName = nameMap(next.added);
+  for (const bc of prev.added) {
+    const nextBC = nextByName.get(bc.name);
+    if (nextBC === undefined) continue;
     const path = `${basePath}/${bc.name}`;
-    flagIfBlocked(prevByName.get(bc.name), path, confirmed, blocked);
-    const prevBC = prevByName.get(bc.name);
-    if (prevBC !== undefined) walkBlockedBCChildren(prevBC, bc, path, confirmed, blocked);
+    flagIfBlocked(bc, path, confirmed, blocked);
+    walkBlockedBCChildren(bc, nextBC, path, confirmed, blocked);
   }
 }
 
@@ -161,7 +368,13 @@ function walkBlockedBCChildren(
   confirmed: ReadonlySet<string>,
   blocked: string[],
 ): void {
-  walkBlockedModules(prev.modules, next.modules, `${basePath}/modules`, confirmed, blocked);
+  walkBlockedModules(
+    prev.modules,
+    next.modules,
+    `${basePath}/modules`,
+    confirmed,
+    blocked,
+  );
   walkBlockedBuildingBlocks(
     prev.buildingBlocks,
     next.buildingBlocks,
@@ -185,31 +398,27 @@ function walkBlockedModules(
   confirmed: ReadonlySet<string>,
   blocked: string[],
 ): void {
-  if (next === undefined) return;
-  const prevByName = nameMap(prev?.added ?? []);
-  for (const name of next.removed ?? []) {
-    flagIfBlocked(prevByName.get(name), `${basePath}/${name}`, confirmed, blocked);
-  }
-  for (const m of next.modified ?? []) {
-    const path = `${basePath}/${m.name}`;
-    flagIfBlocked(prevByName.get(m.name), path, confirmed, blocked);
-    const prevM = prevByName.get(m.name);
-    if (prevM !== undefined) {
-      walkBlockedBuildingBlocks(
-        prevM.buildingBlocks,
-        m.buildingBlocks,
-        `${path}/buildingBlocks`,
-        confirmed,
-        blocked,
-      );
-      walkBlockedFlat<DesignedQualityAttribute>(
-        prevM.qualityAttributes,
-        m.qualityAttributes,
-        `${path}/qualityAttributes`,
-        confirmed,
-        blocked,
-      );
-    }
+  if (prev === undefined || next === undefined) return;
+  const nextByName = nameMap(next.added);
+  for (const mod of prev.added) {
+    const nextMod = nextByName.get(mod.name);
+    if (nextMod === undefined) continue;
+    const path = `${basePath}/${mod.name}`;
+    flagIfBlocked(mod, path, confirmed, blocked);
+    walkBlockedBuildingBlocks(
+      mod.buildingBlocks,
+      nextMod.buildingBlocks,
+      `${path}/buildingBlocks`,
+      confirmed,
+      blocked,
+    );
+    walkBlockedFlat<DesignedQualityAttribute>(
+      mod.qualityAttributes,
+      nextMod.qualityAttributes,
+      `${path}/qualityAttributes`,
+      confirmed,
+      blocked,
+    );
   }
 }
 
@@ -220,36 +429,42 @@ function walkBlockedBuildingBlocks(
   confirmed: ReadonlySet<string>,
   blocked: string[],
 ): void {
-  if (next === undefined) return;
-  const prevByName = nameMap(prev?.added ?? []);
-  for (const name of next.removed ?? []) {
-    flagIfBlocked(prevByName.get(name), `${basePath}/${name}`, confirmed, blocked);
-  }
-  for (const bb of next.modified ?? []) {
+  if (prev === undefined || next === undefined) return;
+  const nextByName = nameMap(next.added);
+  for (const bb of prev.added) {
+    const nextBB = nextByName.get(bb.name);
+    if (nextBB === undefined) continue;
     const path = `${basePath}/${bb.name}`;
-    flagIfBlocked(prevByName.get(bb.name), path, confirmed, blocked);
-    const prevBB = prevByName.get(bb.name);
-    if (prevBB !== undefined) walkBlockedBBChildren(prevBB, bb, path, confirmed, blocked);
+    flagIfBlocked(bb, path, confirmed, blocked);
+    walkBlockedBehaviours(
+      bb.behaviours,
+      nextBB.behaviours,
+      `${path}/behaviours`,
+      confirmed,
+      blocked,
+    );
+    walkBlockedFlat<DesignedRule>(
+      bb.rules,
+      nextBB.rules,
+      `${path}/rules`,
+      confirmed,
+      blocked,
+    );
+    walkBlockedFlat<DesignedScenario>(
+      bb.scenarios,
+      nextBB.scenarios,
+      `${path}/scenarios`,
+      confirmed,
+      blocked,
+    );
+    walkBlockedFlat<DesignedQualityAttribute>(
+      bb.qualityAttributes,
+      nextBB.qualityAttributes,
+      `${path}/qualityAttributes`,
+      confirmed,
+      blocked,
+    );
   }
-}
-
-function walkBlockedBBChildren(
-  prev: DesignedBuildingBlock,
-  next: DesignedBuildingBlock,
-  basePath: string,
-  confirmed: ReadonlySet<string>,
-  blocked: string[],
-): void {
-  walkBlockedBehaviours(prev.behaviours, next.behaviours, `${basePath}/behaviours`, confirmed, blocked);
-  walkBlockedFlat<DesignedRule>(prev.rules, next.rules, `${basePath}/rules`, confirmed, blocked);
-  walkBlockedFlat<DesignedScenario>(prev.scenarios, next.scenarios, `${basePath}/scenarios`, confirmed, blocked);
-  walkBlockedFlat<DesignedQualityAttribute>(
-    prev.qualityAttributes,
-    next.qualityAttributes,
-    `${basePath}/qualityAttributes`,
-    confirmed,
-    blocked,
-  );
 }
 
 function walkBlockedBehaviours(
@@ -259,36 +474,58 @@ function walkBlockedBehaviours(
   confirmed: ReadonlySet<string>,
   blocked: string[],
 ): void {
-  if (next === undefined) return;
-  const prevByName = nameMap(prev?.added ?? []);
-  for (const name of next.removed ?? []) {
-    flagIfBlocked(prevByName.get(name), `${basePath}/${name}`, confirmed, blocked);
-  }
-  for (const bh of next.modified ?? []) {
+  if (prev === undefined || next === undefined) return;
+  const nextByName = nameMap(next.added);
+  for (const bh of prev.added) {
+    const nextBH = nextByName.get(bh.name);
+    if (nextBH === undefined) continue;
     const path = `${basePath}/${bh.name}`;
-    flagIfBlocked(prevByName.get(bh.name), path, confirmed, blocked);
-    const prevBH = prevByName.get(bh.name);
-    if (prevBH !== undefined) {
-      walkBlockedFlat<DesignedRule>(prevBH.rules, bh.rules, `${path}/rules`, confirmed, blocked);
-      walkBlockedFlat<DesignedScenario>(prevBH.scenarios, bh.scenarios, `${path}/scenarios`, confirmed, blocked);
-      walkBlockedFlat<DesignedQualityAttribute>(
-        prevBH.qualityAttributes,
-        bh.qualityAttributes,
-        `${path}/qualityAttributes`,
-        confirmed,
-        blocked,
-      );
-    }
+    flagIfBlocked(bh, path, confirmed, blocked);
+    walkBlockedFlat<DesignedRule>(
+      bh.rules,
+      nextBH.rules,
+      `${path}/rules`,
+      confirmed,
+      blocked,
+    );
+    walkBlockedFlat<DesignedScenario>(
+      bh.scenarios,
+      nextBH.scenarios,
+      `${path}/scenarios`,
+      confirmed,
+      blocked,
+    );
+    walkBlockedFlat<DesignedQualityAttribute>(
+      bh.qualityAttributes,
+      nextBH.qualityAttributes,
+      `${path}/qualityAttributes`,
+      confirmed,
+      blocked,
+    );
+  }
+}
+
+function walkBlockedFlat<T extends ElementWithFlag>(
+  prev: ChangeSet<T> | undefined,
+  next: ChangeSet<T> | undefined,
+  basePath: string,
+  confirmed: ReadonlySet<string>,
+  blocked: string[],
+): void {
+  if (prev === undefined || next === undefined) return;
+  const nextByName = nameMap(next.added);
+  for (const item of prev.added) {
+    if (!nextByName.has(item.name)) continue;
+    flagIfBlocked(item, `${basePath}/${item.name}`, confirmed, blocked);
   }
 }
 
 function flagIfBlocked(
-  prevElement: ElementWithFlag | undefined,
+  prevElement: ElementWithFlag,
   path: string,
   confirmed: ReadonlySet<string>,
   blocked: string[],
 ): void {
-  if (prevElement === undefined) return;
   if (prevElement.edited_by_user !== true) return;
   if (confirmed.has(path)) return;
   blocked.push(path);
@@ -300,269 +537,110 @@ function nameMap<T extends { name: string }>(items: T[]): Map<string, T> {
   return map;
 }
 
-function mergeWithUserEdits(
-  prev: DesignDoc | null,
-  next: DesignDoc,
-  confirmed: ReadonlySet<string>,
-): DesignDoc {
-  if (prev === null) return next;
+function stripDocFlags(doc: DesignDoc): DesignDoc {
   return {
-    ...next,
-    implemented: prev.implemented === true ? true : next.implemented,
-    boundedContexts: mergeBoundedContexts(
-      prev.boundedContexts,
-      next.boundedContexts,
-      "boundedContexts",
-      confirmed,
-    ),
+    ...doc,
+    boundedContexts: stripBCChangeSetFlags(doc.boundedContexts),
   };
 }
 
-function mergeFlatChangeSet<T extends ElementWithFlag>(
-  prev: ChangeSet<T> | undefined,
-  next: ChangeSet<T> | undefined,
-  basePath: string,
-  confirmed: ReadonlySet<string>,
+function stripBCChangeSetFlags(
+  cs: ChangeSet<DesignedBoundedContext> | undefined,
+): ChangeSet<DesignedBoundedContext> | undefined {
+  if (cs === undefined) return undefined;
+  return {
+    added: cs.added.map(stripBoundedContextFlags),
+    modified: cs.modified.map(stripBoundedContextFlags),
+    removed: [...cs.removed],
+  };
+}
+
+function stripBoundedContextFlags(
+  bc: DesignedBoundedContext,
+): DesignedBoundedContext {
+  return {
+    ...stripFlag(bc),
+    modules: stripModuleChangeSetFlags(bc.modules),
+    buildingBlocks: stripBuildingBlockChangeSetFlags(bc.buildingBlocks),
+    qualityAttributes: stripFlatChangeSetFlags(bc.qualityAttributes),
+  };
+}
+
+function stripModuleChangeSetFlags(
+  cs: ChangeSet<DesignedDomainModule> | undefined,
+): ChangeSet<DesignedDomainModule> | undefined {
+  if (cs === undefined) return undefined;
+  return {
+    added: cs.added.map(stripModuleFlags),
+    modified: cs.modified.map(stripModuleFlags),
+    removed: [...cs.removed],
+  };
+}
+
+function stripModuleFlags(mod: DesignedDomainModule): DesignedDomainModule {
+  return {
+    ...stripFlag(mod),
+    buildingBlocks: stripBuildingBlockChangeSetFlags(mod.buildingBlocks),
+    qualityAttributes: stripFlatChangeSetFlags(mod.qualityAttributes),
+  };
+}
+
+function stripBuildingBlockChangeSetFlags(
+  cs: ChangeSet<DesignedBuildingBlock> | undefined,
+): ChangeSet<DesignedBuildingBlock> | undefined {
+  if (cs === undefined) return undefined;
+  return {
+    added: cs.added.map(stripBuildingBlockFlags),
+    modified: cs.modified.map(stripBuildingBlockFlags),
+    removed: [...cs.removed],
+  };
+}
+
+function stripBuildingBlockFlags(
+  bb: DesignedBuildingBlock,
+): DesignedBuildingBlock {
+  return {
+    ...stripFlag(bb),
+    behaviours: stripBehaviourChangeSetFlags(bb.behaviours),
+    rules: stripFlatChangeSetFlags(bb.rules),
+    scenarios: stripFlatChangeSetFlags(bb.scenarios),
+    qualityAttributes: stripFlatChangeSetFlags(bb.qualityAttributes),
+  };
+}
+
+function stripBehaviourChangeSetFlags(
+  cs: ChangeSet<DesignedBehaviour> | undefined,
+): ChangeSet<DesignedBehaviour> | undefined {
+  if (cs === undefined) return undefined;
+  return {
+    added: cs.added.map(stripBehaviourFlags),
+    modified: cs.modified.map(stripBehaviourFlags),
+    removed: [...cs.removed],
+  };
+}
+
+function stripBehaviourFlags(bh: DesignedBehaviour): DesignedBehaviour {
+  return {
+    ...stripFlag(bh),
+    rules: stripFlatChangeSetFlags(bh.rules),
+    scenarios: stripFlatChangeSetFlags(bh.scenarios),
+    qualityAttributes: stripFlatChangeSetFlags(bh.qualityAttributes),
+  };
+}
+
+function stripFlatChangeSetFlags<T extends { edited_by_user?: boolean }>(
+  cs: ChangeSet<T> | undefined,
 ): ChangeSet<T> | undefined {
-  if (next === undefined) return prev;
-  const prevByName = nameMap(prev?.added ?? []);
+  if (cs === undefined) return undefined;
   return {
-    added: (next.added ?? []).map((item) => {
-      const prevItem = prevByName.get(item.name);
-      const path = `${basePath}/${item.name}`;
-      return preserveOrTake(prevItem, item, path, confirmed);
-    }),
-    modified: (next.modified ?? []).map(stripFlag),
-    removed: [...(next.removed ?? [])],
+    added: cs.added.map(stripFlag),
+    modified: cs.modified.map(stripFlag),
+    removed: [...cs.removed],
   };
-}
-
-function preserveOrTake<T extends ElementWithFlag>(
-  prevItem: T | undefined,
-  nextItem: T,
-  path: string,
-  confirmed: ReadonlySet<string>,
-): T {
-  if (
-    prevItem !== undefined &&
-    prevItem.edited_by_user === true &&
-    !confirmed.has(path)
-  ) {
-    return prevItem;
-  }
-  return stripFlag(nextItem);
 }
 
 function stripFlag<T extends { edited_by_user?: boolean }>(item: T): T {
   if (item.edited_by_user === undefined) return item;
   const { edited_by_user: _flag, ...rest } = item;
   return rest as T;
-}
-
-function mergeBoundedContexts(
-  prev: ChangeSet<DesignedBoundedContext> | undefined,
-  next: ChangeSet<DesignedBoundedContext> | undefined,
-  basePath: string,
-  confirmed: ReadonlySet<string>,
-): ChangeSet<DesignedBoundedContext> | undefined {
-  if (next === undefined) return prev;
-  const prevByName = nameMap(prev?.added ?? []);
-  return {
-    added: (next.added ?? []).map((bc) => {
-      const prevBC = prevByName.get(bc.name);
-      const path = `${basePath}/${bc.name}`;
-      if (prevBC === undefined) return stripFlag(bc);
-      return mergeBoundedContext(prevBC, bc, path, confirmed);
-    }),
-    modified: (next.modified ?? []).map(stripFlag),
-    removed: [...(next.removed ?? [])],
-  };
-}
-
-function mergeBoundedContext(
-  prev: DesignedBoundedContext,
-  next: DesignedBoundedContext,
-  path: string,
-  confirmed: ReadonlySet<string>,
-): DesignedBoundedContext {
-  const keepPrev = prev.edited_by_user === true && !confirmed.has(path);
-  const head = keepPrev ? prev : stripFlag(next);
-  return {
-    ...head,
-    name: next.name,
-    modules: mergeModuleChangeSet(
-      prev.modules,
-      next.modules,
-      `${path}/modules`,
-      confirmed,
-    ),
-    buildingBlocks: mergeBuildingBlockChangeSet(
-      prev.buildingBlocks,
-      next.buildingBlocks,
-      `${path}/buildingBlocks`,
-      confirmed,
-    ),
-    qualityAttributes: mergeFlatChangeSet<DesignedQualityAttribute>(
-      prev.qualityAttributes,
-      next.qualityAttributes,
-      `${path}/qualityAttributes`,
-      confirmed,
-    ),
-  };
-}
-
-function mergeModuleChangeSet(
-  prev: ChangeSet<DesignedDomainModule> | undefined,
-  next: ChangeSet<DesignedDomainModule> | undefined,
-  basePath: string,
-  confirmed: ReadonlySet<string>,
-): ChangeSet<DesignedDomainModule> | undefined {
-  if (next === undefined) return prev;
-  const prevByName = nameMap(prev?.added ?? []);
-  return {
-    added: (next.added ?? []).map((m) => {
-      const prevM = prevByName.get(m.name);
-      const path = `${basePath}/${m.name}`;
-      if (prevM === undefined) return stripFlag(m);
-      return mergeModule(prevM, m, path, confirmed);
-    }),
-    modified: (next.modified ?? []).map(stripFlag),
-    removed: [...(next.removed ?? [])],
-  };
-}
-
-function mergeModule(
-  prev: DesignedDomainModule,
-  next: DesignedDomainModule,
-  path: string,
-  confirmed: ReadonlySet<string>,
-): DesignedDomainModule {
-  const keepPrev = prev.edited_by_user === true && !confirmed.has(path);
-  const head = keepPrev ? prev : stripFlag(next);
-  return {
-    ...head,
-    name: next.name,
-    buildingBlocks: mergeBuildingBlockChangeSet(
-      prev.buildingBlocks,
-      next.buildingBlocks,
-      `${path}/buildingBlocks`,
-      confirmed,
-    ),
-    qualityAttributes: mergeFlatChangeSet<DesignedQualityAttribute>(
-      prev.qualityAttributes,
-      next.qualityAttributes,
-      `${path}/qualityAttributes`,
-      confirmed,
-    ),
-  };
-}
-
-function mergeBuildingBlockChangeSet(
-  prev: ChangeSet<DesignedBuildingBlock> | undefined,
-  next: ChangeSet<DesignedBuildingBlock> | undefined,
-  basePath: string,
-  confirmed: ReadonlySet<string>,
-): ChangeSet<DesignedBuildingBlock> | undefined {
-  if (next === undefined) return prev;
-  const prevByName = nameMap(prev?.added ?? []);
-  return {
-    added: (next.added ?? []).map((bb) => {
-      const prevBB = prevByName.get(bb.name);
-      const path = `${basePath}/${bb.name}`;
-      if (prevBB === undefined) return stripFlag(bb);
-      return mergeBuildingBlock(prevBB, bb, path, confirmed);
-    }),
-    modified: (next.modified ?? []).map(stripFlag),
-    removed: [...(next.removed ?? [])],
-  };
-}
-
-function mergeBuildingBlock(
-  prev: DesignedBuildingBlock,
-  next: DesignedBuildingBlock,
-  path: string,
-  confirmed: ReadonlySet<string>,
-): DesignedBuildingBlock {
-  const keepPrev = prev.edited_by_user === true && !confirmed.has(path);
-  const head = keepPrev ? prev : stripFlag(next);
-  return {
-    ...head,
-    name: next.name,
-    behaviours: mergeBehaviourChangeSet(
-      prev.behaviours,
-      next.behaviours,
-      `${path}/behaviours`,
-      confirmed,
-    ),
-    rules: mergeFlatChangeSet<DesignedRule>(
-      prev.rules,
-      next.rules,
-      `${path}/rules`,
-      confirmed,
-    ),
-    scenarios: mergeFlatChangeSet<DesignedScenario>(
-      prev.scenarios,
-      next.scenarios,
-      `${path}/scenarios`,
-      confirmed,
-    ),
-    qualityAttributes: mergeFlatChangeSet<DesignedQualityAttribute>(
-      prev.qualityAttributes,
-      next.qualityAttributes,
-      `${path}/qualityAttributes`,
-      confirmed,
-    ),
-  };
-}
-
-function mergeBehaviourChangeSet(
-  prev: ChangeSet<DesignedBehaviour> | undefined,
-  next: ChangeSet<DesignedBehaviour> | undefined,
-  basePath: string,
-  confirmed: ReadonlySet<string>,
-): ChangeSet<DesignedBehaviour> | undefined {
-  if (next === undefined) return prev;
-  const prevByName = nameMap(prev?.added ?? []);
-  return {
-    added: (next.added ?? []).map((bh) => {
-      const prevBH = prevByName.get(bh.name);
-      const path = `${basePath}/${bh.name}`;
-      if (prevBH === undefined) return stripFlag(bh);
-      return mergeBehaviour(prevBH, bh, path, confirmed);
-    }),
-    modified: (next.modified ?? []).map(stripFlag),
-    removed: [...(next.removed ?? [])],
-  };
-}
-
-function mergeBehaviour(
-  prev: DesignedBehaviour,
-  next: DesignedBehaviour,
-  path: string,
-  confirmed: ReadonlySet<string>,
-): DesignedBehaviour {
-  const keepPrev = prev.edited_by_user === true && !confirmed.has(path);
-  const head = keepPrev ? prev : stripFlag(next);
-  return {
-    ...head,
-    name: next.name,
-    rules: mergeFlatChangeSet<DesignedRule>(
-      prev.rules,
-      next.rules,
-      `${path}/rules`,
-      confirmed,
-    ),
-    scenarios: mergeFlatChangeSet<DesignedScenario>(
-      prev.scenarios,
-      next.scenarios,
-      `${path}/scenarios`,
-      confirmed,
-    ),
-    qualityAttributes: mergeFlatChangeSet<DesignedQualityAttribute>(
-      prev.qualityAttributes,
-      next.qualityAttributes,
-      `${path}/qualityAttributes`,
-      confirmed,
-    ),
-  };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { DesignDoc } from "../../../../shared-contracts/design-doc.js";
-import { validateDesignDocQuality } from "./design-docs.service.js";
+import type { DesignDoc } from "@noesis/shared-contracts/design-doc.js";
+import { validateDesignDocQuality } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.service.js";
 
 function placeholderDescription(minLength: number, hint: string): string {
   let body = `${hint}. `;

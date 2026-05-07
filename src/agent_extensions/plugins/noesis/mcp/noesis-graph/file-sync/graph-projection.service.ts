@@ -130,7 +130,7 @@ export class GraphProjectionService {
   private async projectDesignDoc(req: ProjectionRequest): Promise<void> {
     const doc = loadIfExists(req.absPath, DesignDocSchema);
     if (doc === null) return;
-    await this.designDocs.applyDesignDoc(doc, fileMtimeDate(req.absPath));
+    await this.designDocs.replaceDesignDoc(doc, fileMtimeDate(req.absPath));
     await this.db.query(
       "MATCH (dd:DesignDoc) WHERE dd.id = $id SET dd.source_sha = $sha, dd.edited_by_user = $edited",
       { id: req.id, sha: req.sha, edited: req.editedByUser },

@@ -664,4 +664,301 @@ describe("DesignDocsService — saving, listing, and locking design documents", 
       );
     },
   );
+
+  test(
+    "a second save that omits a previously persisted bounded context is rejected unless confirmed_drops authorizes it",
+    async () => {
+      let firstResult: Awaited<ReturnType<DesignDocsService["saveDesignDocFromFile"]>>;
+      let dropError: Error | null = null;
+      let confirmedResult: Awaited<ReturnType<DesignDocsService["saveDesignDocFromFile"]>>;
+      let detailAfter: Awaited<ReturnType<DesignDocsService["getDesignDocDetail"]>>;
+
+      await given(
+        "a saved design doc whose first version contains two bounded contexts (Sales and Billing)",
+        async () => {
+          await writeDocFile({
+            id: "dd-drop",
+            name: "drops",
+            description: "Drop-detection scenario",
+            boundedContexts: {
+              added: [
+                { name: "Sales", description: "owns orders" },
+                { name: "Billing", description: "owns invoices" },
+              ],
+              modified: [],
+              removed: [],
+            },
+          } as Parameters<typeof writeDocFile>[0]);
+          firstResult = await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-drop", "drops"),
+          );
+        },
+      );
+      await when(
+        "the agent overwrites the file with a second version that re-emits only Sales (Billing missing)",
+        async () => {
+          await writeDocFile({
+            id: "dd-drop",
+            name: "drops",
+            description: "Drop-detection scenario",
+            boundedContexts: {
+              added: [{ name: "Sales", description: "owns orders" }],
+              modified: [],
+              removed: [],
+            },
+          } as Parameters<typeof writeDocFile>[0]);
+          try {
+            await service.saveDesignDocFromFile(
+              designDocCanonicalPath(tmpDir, "dd-drop", "drops"),
+            );
+          } catch (e) {
+            dropError = e as Error;
+          }
+        },
+      );
+      await then(
+        "the first save succeeded and the second save is rejected naming the dropped bounded context path",
+        () => {
+          expect(firstResult.status).toBe("Ok");
+          expect(dropError?.message).toMatch(/boundedContexts\/Billing/);
+          expect(dropError?.message).toMatch(/confirmed_drops/);
+        },
+      );
+      await and(
+        "re-attempting the save with the dropped path in confirmed_drops succeeds and the graph reflects only the surviving bounded context",
+        async () => {
+          confirmedResult = await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-drop", "drops"),
+            [],
+            ["boundedContexts/Billing"],
+          );
+          detailAfter = await service.getDesignDocDetail("dd-drop");
+          expect(confirmedResult.status).toBe("Ok");
+          const bcs = detailAfter.source.boundedContexts?.added ?? [];
+          expect(bcs.map((b) => b.name)).toEqual(["Sales"]);
+        },
+      );
+    },
+  );
+
+  test(
+    "a re-save that re-emits the same bounded context with new content replaces the prior projection wholesale (no orphan nodes)",
+    async () => {
+      let detailV1: Awaited<ReturnType<DesignDocsService["getDesignDocDetail"]>>;
+      let detailV2: Awaited<ReturnType<DesignDocsService["getDesignDocDetail"]>>;
+
+      await given(
+        "a saved design doc with a bounded context Sales containing building blocks Order and PricingPolicy",
+        async () => {
+          await writeDocFile({
+            id: "dd-replace",
+            name: "replace",
+            description: "Wholesale-replace scenario",
+            boundedContexts: {
+              added: [
+                {
+                  name: "Sales",
+                  description: "v1",
+                  buildingBlocks: {
+                    added: [
+                      { name: "Order", type: "aggregate", description: null },
+                      { name: "PricingPolicy", type: "domain_service", description: null },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          } as Parameters<typeof writeDocFile>[0]);
+          await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-replace", "replace"),
+          );
+          detailV1 = await service.getDesignDocDetail("dd-replace");
+        },
+      );
+      await when(
+        "the agent re-saves the doc with PricingPolicy authorized as a drop and Order re-emitted with a refined description",
+        async () => {
+          await writeDocFile({
+            id: "dd-replace",
+            name: "replace",
+            description: "Wholesale-replace scenario v2",
+            boundedContexts: {
+              added: [
+                {
+                  name: "Sales",
+                  description: "v2",
+                  buildingBlocks: {
+                    added: [
+                      {
+                        name: "Order",
+                        type: "aggregate",
+                        description: "Order aggregate root with refined definition.",
+                      },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          } as Parameters<typeof writeDocFile>[0]);
+          await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-replace", "replace"),
+            [],
+            ["boundedContexts/Sales/buildingBlocks/PricingPolicy"],
+          );
+          detailV2 = await service.getDesignDocDetail("dd-replace");
+        },
+      );
+      await then(
+        "the first detail listed both building blocks under Sales",
+        () => {
+          const bbsV1 =
+            detailV1.source.boundedContexts?.added[0].buildingBlocks?.added ?? [];
+          expect(bbsV1.map((b) => b.name).sort()).toEqual([
+            "Order",
+            "PricingPolicy",
+          ]);
+        },
+      );
+      await and(
+        "after the second save the graph contains only Order with the refined description and no orphan PricingPolicy",
+        () => {
+          const bcsV2 = detailV2.source.boundedContexts?.added ?? [];
+          expect(bcsV2).toHaveLength(1);
+          expect(bcsV2[0].name).toBe("Sales");
+          expect(bcsV2[0].description).toBe("v2");
+          const bbsV2 = bcsV2[0].buildingBlocks?.added ?? [];
+          expect(bbsV2.map((b) => b.name)).toEqual(["Order"]);
+          expect(bbsV2[0].description).toBe(
+            "Order aggregate root with refined definition.",
+          );
+        },
+      );
+    },
+  );
+
+  test(
+    "saveDesignDocFromFile rejects a doc whose ChangeSet has non-empty modified or removed (post-implementation diff is not allowed at the save boundary)",
+    async () => {
+      let thrown: Error | null = null;
+
+      await given(
+        "a design doc whose modules ChangeSet contains a modified entry",
+        async () => {
+          await writeDocFile({
+            id: "dd-greenfield",
+            name: "greenfield",
+            description: "Greenfield-only scenario",
+            boundedContexts: {
+              added: [
+                {
+                  name: "Sales",
+                  description: null,
+                  modules: {
+                    added: [],
+                    modified: [{ name: "Orders", description: "modified path" }],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          } as Parameters<typeof writeDocFile>[0]);
+        },
+      );
+      await when("the agent saves the design doc", async () => {
+        try {
+          await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-greenfield", "greenfield"),
+          );
+        } catch (e) {
+          thrown = e as Error;
+        }
+      });
+      await then(
+        "the save is rejected with a green-field violation naming the offending path",
+        () => {
+          expect(thrown?.message).toMatch(/green-field/);
+          expect(thrown?.message).toMatch(/modules/);
+        },
+      );
+    },
+  );
+
+  test(
+    "getDesignDocDetail reads the design doc from the graph and returns it as a ChangeSet tree with everything in 'added'",
+    async () => {
+      let detail: Awaited<ReturnType<DesignDocsService["getDesignDocDetail"]>>;
+
+      await given(
+        "a saved design doc with a bounded context, module, and building block",
+        async () => {
+          await writeDocFile({
+            id: "dd-detail",
+            name: "detail",
+            description: "Detail read scenario",
+            boundedContexts: {
+              added: [
+                {
+                  name: "Sales",
+                  description: "owns orders",
+                  modules: {
+                    added: [
+                      {
+                        name: "Orders",
+                        description: "lifecycle",
+                        buildingBlocks: {
+                          added: [
+                            {
+                              name: "Order",
+                              type: "aggregate",
+                              description: "root",
+                            },
+                          ],
+                          modified: [],
+                          removed: [],
+                        },
+                      },
+                    ],
+                    modified: [],
+                    removed: [],
+                  },
+                },
+              ],
+              modified: [],
+              removed: [],
+            },
+          } as Parameters<typeof writeDocFile>[0]);
+          await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-detail", "detail"),
+          );
+        },
+      );
+      await when("the consumer requests the design doc detail", async () => {
+        detail = await service.getDesignDocDetail("dd-detail");
+      });
+      await then(
+        "the detail returns the full nested tree assembled from the graph projection",
+        () => {
+          const bc = detail.source.boundedContexts?.added[0];
+          expect(bc?.name).toBe("Sales");
+          expect(bc?.description).toBe("owns orders");
+          const mod = bc?.modules?.added[0];
+          expect(mod?.name).toBe("Orders");
+          expect(mod?.description).toBe("lifecycle");
+          const bb = mod?.buildingBlocks?.added[0];
+          expect(bb?.name).toBe("Order");
+          expect(bb?.description).toBe("root");
+        },
+      );
+    },
+  );
 });

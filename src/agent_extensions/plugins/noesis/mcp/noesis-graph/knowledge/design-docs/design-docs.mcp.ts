@@ -84,15 +84,16 @@ function registerSaveDesignDoc(
       description:
         "Persist a DesignDoc into the knowledge graph from a JSON file matching DesignDocSchema. " +
         "Path MUST be the canonical path returned by `prepare_design_doc_path` for the doc's id+name. " +
-        "Tool reads it, validates, and applies ChangeSets recursively (added → upsert, " +
-        "modified → partial update, removed → delete by name). " +
+        "Tool reads the file and replaces the design doc subtree wholesale: each save fully replaces the prior version, both on disk and in the graph (the graph is a pure projection of the on-disk file). " +
+        "ChangeSets at every level must be in green-field shape — `added` populated, `modified` and `removed` empty (the diff is against the implemented codebase, which is empty pre-implementation). " +
         "Quality gate (rejects on save): every `added` Rule needs description ≥80 chars (Trigger / Pre / Algorithm / Post / Edge cases — no tautologies); " +
         "every `added` Quality Attribute needs description ≥80 chars stating a measurable target/threshold/scope; " +
         "every `added` Behaviour needs description ≥400 chars (Input / Validation / numbered Steps / Output); " +
         "behaviours with `actor` set must be hosted by an `application_service` BuildingBlock; " +
         "every behaviour `actor` must reference a name present in the actor catalog (call `upsert_actor` first to register a new actor — `list_actors` shows the catalog). " +
         "Warnings (non-blocking): a Bounded Context with >20 building blocks and 0 modules; an application_service or ≥3-block-using behaviour without an embedded ```mermaid sequence diagram. " +
-        "User-edit gate (fires only when this save renames the doc — different slug than the prior canonical filename): any element in the prior on-disk state with `edited_by_user: true` rejects the save when targeted by `modified` or `removed` unless its element-path appears in `confirmed_edits`. " +
+        "User-edit gate: any element present in the prior on-disk file with `edited_by_user: true` and also present in this submission rejects the save unless its element-path appears in `confirmed_edits`. " +
+        "Drop gate: any element present in the prior on-disk file but missing from this submission rejects the save unless its element-path appears in `confirmed_drops`. " +
         "Implemented-doc gate: when the targeted doc has already been marked implemented (via `mark_design_doc_implemented`), the tool returns `{ status: \"AlreadyImplemented\", design_doc_id, name }` instead of saving — the agent must stop and ask the user whether to create a new doc. " +
         "Returns { status: \"Ok\", design_doc_id, warnings: string[] } on success; " +
         "validation, conflict, or storage failures surface as a tool error.",
@@ -108,15 +109,27 @@ function registerSaveDesignDoc(
           .describe(
             "Element paths the user has explicitly approved overwriting. " +
               "Format: 'boundedContexts/<bc>/buildingBlocks/<bb>/behaviours/<bh>' (or '/rules/<r>', '/scenarios/<s>', '/qualityAttributes/<qa>'). " +
-              "Required for any user-edited element targeted by `modified` or `removed`. Agent must NEVER include a path here without explicit user confirmation.",
+              "Required for any user-edited element re-emitted in this save. Agent must NEVER include a path here without explicit user confirmation.",
+          ),
+        confirmed_drops: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Element paths the user has explicitly approved dropping (present in prior on-disk file, absent from this save). " +
+              "Format identical to `confirmed_edits`. " +
+              "Required for any element absent from this submission that was present in the prior version. Agent must NEVER include a path here without explicit user confirmation.",
           ),
       },
     },
-    async ({ path, confirmed_edits }) =>
+    async ({ path, confirmed_edits, confirmed_drops }) =>
       runInlineJsonTool(() =>
         indexer.gateWrite(async () => {
           try {
-            return await service.saveDesignDocFromFile(path, confirmed_edits ?? []);
+            return await service.saveDesignDocFromFile(
+              path,
+              confirmed_edits ?? [],
+              confirmed_drops ?? [],
+            );
           } catch (err) {
             if (err instanceof DesignDocImplementedError) {
               return {

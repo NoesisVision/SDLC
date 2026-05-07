@@ -330,18 +330,16 @@ const DESIGN_DOC: DesignDoc = {
   },
 };
 
-const DESIGN_DOC_DELTA: DesignDoc = {
+const DESIGN_DOC_V2: DesignDoc = {
   id: "dd-sample-v2",
   name: "Sample design — Pricing iteration",
   description:
-    "Adds bulk-discount logic, modifies the Order aggregate, and tightens the BC-wide availability target.",
+    "Pricing iteration: bulk-discount logic plus an updated Order aggregate that applies discounts.",
   boundedContexts: {
-    added: [],
-    removed: [],
-    modified: [
+    added: [
       {
         name: "Sales",
-        description: "Now also owns bulk discounts.",
+        description: "Owns order placement, pricing, and bulk discounts.",
         modules: {
           added: [
             {
@@ -379,6 +377,11 @@ const DESIGN_DOC_DELTA: DesignDoc = {
                             removed: [],
                             modified: [],
                           },
+                          usedBuildingBlocks: {
+                            added: [],
+                            removed: [],
+                            modified: [],
+                          },
                           rules: {
                             added: [
                               {
@@ -392,6 +395,7 @@ const DESIGN_DOC_DELTA: DesignDoc = {
                             modified: [],
                           },
                           scenarios: { added: [], removed: [], modified: [] },
+                          qualityAttributes: { added: [], removed: [], modified: [] },
                         },
                       ],
                       removed: [],
@@ -399,37 +403,43 @@ const DESIGN_DOC_DELTA: DesignDoc = {
                     },
                     rules: { added: [], removed: [], modified: [] },
                     scenarios: { added: [], removed: [], modified: [] },
+                    qualityAttributes: { added: [], removed: [], modified: [] },
                   },
                 ],
                 removed: [],
                 modified: [],
               },
+              qualityAttributes: { added: [], removed: [], modified: [] },
             },
-          ],
-          removed: [],
-          modified: [
             {
               name: "Orders",
-              description: "Order lifecycle, now applies bulk discounts.",
+              description: "Order lifecycle, applies bulk discounts.",
               buildingBlocks: {
-                added: [],
-                removed: [],
-                modified: [
+                added: [
                   {
                     name: "Order",
-                    type: null,
+                    type: "aggregate",
                     description: "Order aggregate root with discounts.",
-                    behaviours: {
-                      added: [],
+                    properties: {
+                      added: [{ name: "id", type: "OrderId" }],
                       removed: [],
-                      modified: [
+                      modified: [],
+                    },
+                    behaviours: {
+                      added: [
                         {
                           name: "PlaceOrder",
-                          type: null,
-                          actor: null,
+                          type: "Command",
                           description:
                             "Place a new order — applies bulk discounts.",
                           isPublic: true,
+                          actor: "Customer",
+                          input: { added: ["OrderId"], removed: [], modified: [] },
+                          output: {
+                            added: ["OrderPlaced"],
+                            removed: [],
+                            modified: [],
+                          },
                           usedBuildingBlocks: {
                             added: ["BulkDiscount"],
                             removed: [],
@@ -443,22 +453,36 @@ const DESIGN_DOC_DELTA: DesignDoc = {
                                 description: "Order total must exceed $5.",
                               },
                             ],
-                            removed: ["ValidateTotal"],
+                            removed: [],
                             modified: [],
                           },
                           scenarios: { added: [], removed: [], modified: [] },
+                          qualityAttributes: { added: [], removed: [], modified: [] },
                         },
                       ],
+                      removed: [],
+                      modified: [],
                     },
+                    rules: { added: [], removed: [], modified: [] },
+                    scenarios: { added: [], removed: [], modified: [] },
+                    qualityAttributes: { added: [], removed: [], modified: [] },
                   },
                 ],
+                removed: [],
+                modified: [],
               },
+              qualityAttributes: { added: [], removed: [], modified: [] },
             },
           ],
+          removed: [],
+          modified: [],
         },
-        buildingBlocks: { added: [], removed: ["PricingPolicy"], modified: [] },
+        buildingBlocks: { added: [], removed: [], modified: [] },
+        qualityAttributes: { added: [], removed: [], modified: [] },
       },
     ],
+    removed: [],
+    modified: [],
   },
 };
 
@@ -638,8 +662,8 @@ async function seedDesignDocData(
     },
     false,
   );
-  await designDocsRepo.applyDesignDoc(DESIGN_DOC, "2026-04-20");
-  await designDocsRepo.applyDesignDoc(DESIGN_DOC_DELTA, "2026-04-26");
+  await designDocsRepo.replaceDesignDoc(DESIGN_DOC, "2026-04-20");
+  await designDocsRepo.replaceDesignDoc(DESIGN_DOC_V2, "2026-04-26");
   await seedNestedDesignedModule(db);
 }
 

@@ -24,7 +24,9 @@ import {
 import { newUuid } from "../../../../shared-contracts/uuid.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import {
+  collectDroppedPaths,
   commitDesignDoc,
+  UserDroppedItemsError,
   UserEditConflictError,
 } from "../../file-sync/design-doc-splitter.js";
 import { FileSyncService } from "../../file-sync/file-sync.service.js";
@@ -93,7 +95,7 @@ export class DesignDocsService implements OnModuleInit {
     if (overview === null) {
       throw new Error(`DesignDoc not found: ${designDocId}`);
     }
-    const source = await this.repository.readDesignDocSource(designDocId);
+    const source = await this.readDesignDoc(designDocId);
     if (source === null) {
       throw new Error(`DesignDoc source missing: ${designDocId}`);
     }
@@ -202,19 +204,21 @@ export class DesignDocsService implements OnModuleInit {
     doc: DesignDoc,
     date: string,
     confirmedEdits: string[] = [],
+    confirmedDrops: string[] = [],
   ): Promise<SaveDesignDocResult> {
     await this.assertNotImplemented(doc.id);
-    return this.persist(doc, confirmedEdits, date);
+    return this.persist(doc, confirmedEdits, confirmedDrops, date);
   }
 
   async saveDesignDocFromFile(
     path: string,
     confirmedEdits: string[] = [],
+    confirmedDrops: string[] = [],
   ): Promise<SaveDesignDocResult> {
     const doc = await this.readDesignDocFile(path);
     this.assertCanonicalPath(path, doc);
     await this.assertNotImplemented(doc.id);
-    return this.persist(doc, confirmedEdits);
+    return this.persist(doc, confirmedEdits, confirmedDrops);
   }
 
   async updateDesignDocElement(
@@ -258,11 +262,7 @@ export class DesignDocsService implements OnModuleInit {
     if (diskPath !== null && existsSync(diskPath)) {
       return readSidecar(diskPath, DesignDocSchema);
     }
-    const fromDb = await this.repository.readDesignDocSource(designDocId);
-    if (fromDb === null) {
-      throw new Error(`DesignDoc not found: ${designDocId}`);
-    }
-    return DesignDocSchema.parse(fromDb);
+    throw new Error(`DesignDoc on-disk file missing for: ${designDocId}`);
   }
 
   async upsertActor(actor: DesignedActor): Promise<{ status: "Ok"; name: string }> {
@@ -302,6 +302,7 @@ export class DesignDocsService implements OnModuleInit {
   private async persist(
     doc: DesignDoc,
     confirmedEdits: string[],
+    confirmedDrops: string[],
     date: string = todayDate(),
   ): Promise<SaveDesignDocResult> {
     const { errors, warnings } = validateDesignDocQuality(doc);
@@ -309,6 +310,18 @@ export class DesignDocsService implements OnModuleInit {
     const allErrors = [...errors, ...actorErrors];
     if (allErrors.length > 0) {
       throw new Error(formatQualityErrors(allErrors));
+    }
+    const graphPrev = await this.repository.readDesignDoc(doc.id);
+    const dropped = collectDroppedPaths(
+      graphPrev,
+      doc,
+      new Set(confirmedDrops),
+    );
+    if (dropped.length > 0) {
+      const err = new UserDroppedItemsError(dropped);
+      throw new Error(
+        `${err.message}\nPass these paths in 'confirmed_drops' after explicit user approval, or re-emit the elements.`,
+      );
     }
     let commit;
     try {
@@ -324,7 +337,7 @@ export class DesignDocsService implements OnModuleInit {
       }
       throw err;
     }
-    await this.repository.applyDesignDoc(doc, date);
+    await this.repository.replaceDesignDoc(doc, date);
     await this.fileSync.registerWritten(commit.canonical_path);
     this.logger.log(
       `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${commit.canonical_path}`,
