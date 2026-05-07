@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { DATA_DIR, PROJECT_DIR } from "../config/config.module.js";
 import { DatabaseService } from "../database/database.service.js";
-import { FileLoaderService } from "../file-sync/file-loader.service.js";
+import { FileSyncService } from "../file-sync/file-sync.service.js";
 import { SourceFilesRepository } from "../file-sync/source-files.repository.js";
 import { ConversationsRepository } from "./conversations/conversations.repository.js";
 import { ConversationsService } from "./conversations/conversations.service.js";
@@ -50,7 +50,7 @@ export async function createKnowledgeTestModule(): Promise<KnowledgeTestContext>
       DecisionsRepository,
       DesignDocsRepository,
       SourceFilesRepository,
-      FileLoaderService,
+      FileSyncService,
       { provide: DATA_DIR, useValue: tmpDir },
       { provide: PROJECT_DIR, useValue: tmpDir },
     ],

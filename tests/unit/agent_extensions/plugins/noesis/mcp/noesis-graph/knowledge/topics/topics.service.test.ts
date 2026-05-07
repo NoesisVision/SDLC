@@ -393,4 +393,212 @@ describe("TopicsService — managing the topic hierarchy and its supporting item
       expect(thrown?.message).toMatch(/title must not be empty/);
     });
   });
+
+  test("attempting to add items to an unknown topic fails before any link is created", async () => {
+    let thrown: Error | null = null;
+
+    await given("a graph with no topics", () => {});
+    await when(
+      "the caller tries to attach items to a topic id that does not exist",
+      async () => {
+        try {
+          await topics.addItemsToTopic("ghost", []);
+        } catch (e) {
+          thrown = e as Error;
+        }
+      },
+    );
+    await then("the operation fails with a topic-not-found error", () => {
+      expect(thrown?.message).toMatch(/Topic not found/);
+    });
+  });
+
+  test("reparenting a topic to null promotes it to the top level", async () => {
+    let pathBefore: string[];
+    let pathAfter: string[];
+
+    await given("a topic recorded as a child of another topic", async () => {
+      await topics.addTopic({ id: "p", title: "Parent", short_summary: "" });
+      await topics.addSubtopic("p", {
+        id: "c",
+        title: "Child",
+        short_summary: "",
+      });
+      pathBefore = (await topics.readTopic("c"))!.path;
+    });
+    await when("the child is reparented with newParentTopicId=null", async () => {
+      await topics.reparentTopic("c", null);
+      pathAfter = (await topics.readTopic("c"))!.path;
+    });
+    await then(
+      "the child's hierarchical path collapses from [Parent, Child] to [Child]",
+      () => {
+        expect(pathBefore).toEqual(["Parent", "Child"]);
+        expect(pathAfter).toEqual(["Child"]);
+      },
+    );
+  });
+
+  test(
+    "listTopicSummariesForSources merges topics linked to the requested conversations and documents",
+    async () => {
+      let summaries: Awaited<
+        ReturnType<TopicsService["listTopicSummariesForSources"]>
+      >;
+
+      await given(
+        "two topics: one linked to a conversation, the other to a document, plus an unrelated topic",
+        async () => {
+          const convPath = join(ctx.tmpDir, "conv-src.json");
+          await writeFile(
+            convPath,
+            JSON.stringify(sampleConversation("conv-src")),
+          );
+          await conversations.addConversationFromFile(convPath);
+          const docPath = join(ctx.tmpDir, "doc-src.json");
+          await writeFile(
+            docPath,
+            JSON.stringify({
+              id: "doc-src",
+              title: "Doc",
+              date: "2026-04-24",
+              content: "lorem ipsum dolor",
+            }),
+          );
+          await documents.addDocumentFromFile(docPath);
+
+          await topics.addTopic({ id: "t-conv", title: "FromConv", short_summary: "" });
+          await topics.addItemsToTopic("t-conv", [
+            {
+              type: "idea_unit_ref",
+              conversation_id: "conv-src",
+              turn_index: 0,
+              idea_unit_index: 0,
+            },
+          ]);
+          await topics.addTopic({ id: "t-doc", title: "FromDoc", short_summary: "" });
+          await topics.addItemsToTopic("t-doc", [
+            {
+              type: "document_fragment_ref",
+              document_id: "doc-src",
+              start_offset: 0,
+              end_offset: 5,
+            },
+          ]);
+          await topics.addTopic({ id: "t-other", title: "Unrelated", short_summary: "" });
+        },
+      );
+      await when(
+        "the consumer asks for topics tied to the conversation and the document",
+        async () => {
+          summaries = await topics.listTopicSummariesForSources(
+            ["conv-src"],
+            ["doc-src"],
+          );
+        },
+      );
+      await then(
+        "exactly the two source-linked topics are returned, the unrelated one is not",
+        () => {
+          expect(summaries.map((s) => s.id).sort()).toEqual(["t-conv", "t-doc"]);
+        },
+      );
+      await and("each returned topic carries its hierarchical path", () => {
+        for (const s of summaries) {
+          expect(s.path.length).toBeGreaterThanOrEqual(1);
+        }
+      });
+    },
+  );
+
+  test(
+    "listTopicItemsSince filters supporting items by the originating source date",
+    async () => {
+      let allItems: Awaited<ReturnType<TopicsService["listTopicItemsSince"]>>;
+      let recentItems: Awaited<ReturnType<TopicsService["listTopicItemsSince"]>>;
+
+      await given(
+        "a topic linked to two idea units from conversations dated April 1 and April 17",
+        async () => {
+          const oldConv = {
+            conversation_id: "conv-old",
+            time: "2026-04-01T10:00:00Z",
+            main_topic: "Old",
+            turns: [
+              {
+                index: 0,
+                speaker: "alice",
+                time: "2026-04-01T10:00:00Z",
+                idea_units: [
+                  { index: 0, sentences: ["older"], categories: ["Information"] },
+                ],
+              },
+            ],
+            topics: [],
+            decisions: [],
+          };
+          const newConv = {
+            conversation_id: "conv-new",
+            time: "2026-04-17T10:00:00Z",
+            main_topic: "New",
+            turns: [
+              {
+                index: 0,
+                speaker: "bob",
+                time: "2026-04-17T10:00:00Z",
+                idea_units: [
+                  { index: 0, sentences: ["newer"], categories: ["Information"] },
+                ],
+              },
+            ],
+            topics: [],
+            decisions: [],
+          };
+          const oldPath = join(ctx.tmpDir, "conv-old.json");
+          const newPath = join(ctx.tmpDir, "conv-new.json");
+          await writeFile(oldPath, JSON.stringify(oldConv));
+          await writeFile(newPath, JSON.stringify(newConv));
+          await conversations.addConversationFromFile(oldPath);
+          await conversations.addConversationFromFile(newPath);
+
+          await topics.addTopic({ id: "t-since", title: "Since", short_summary: "" });
+          await topics.addItemsToTopic("t-since", [
+            {
+              type: "idea_unit_ref",
+              conversation_id: "conv-old",
+              turn_index: 0,
+              idea_unit_index: 0,
+            },
+            {
+              type: "idea_unit_ref",
+              conversation_id: "conv-new",
+              turn_index: 0,
+              idea_unit_index: 0,
+            },
+          ]);
+        },
+      );
+      await when(
+        "the consumer requests items with no date filter, then with since=April 10",
+        async () => {
+          allItems = await topics.listTopicItemsSince("t-since", null);
+          recentItems = await topics.listTopicItemsSince(
+            "t-since",
+            "2026-04-10T00:00:00Z",
+          );
+        },
+      );
+      await then(
+        "the unfiltered query returns both items while the since filter keeps only the newer one",
+        () => {
+          expect(allItems).toHaveLength(2);
+          expect(recentItems).toHaveLength(1);
+          expect(recentItems[0].type).toBe("idea_unit");
+          if (recentItems[0].type === "idea_unit") {
+            expect(recentItems[0].conversation_id).toBe("conv-new");
+          }
+        },
+      );
+    },
+  );
 });

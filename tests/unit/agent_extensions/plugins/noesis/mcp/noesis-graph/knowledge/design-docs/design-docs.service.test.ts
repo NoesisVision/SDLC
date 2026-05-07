@@ -23,7 +23,7 @@ import {
   DATA_DIR,
   PROJECT_DIR,
 } from "@noesis/mcp/noesis-graph/config/config.module.js";
-import { FileLoaderService } from "@noesis/mcp/noesis-graph/file-sync/file-loader.service.js";
+import { FileSyncService } from "@noesis/mcp/noesis-graph/file-sync/file-sync.service.js";
 import { SourceFilesRepository } from "@noesis/mcp/noesis-graph/file-sync/source-files.repository.js";
 import { SchemaService } from "@noesis/mcp/noesis-graph/knowledge/schema/schema.service.js";
 import { DesignDocsRepository } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.repository.js";
@@ -56,7 +56,7 @@ describe("DesignDocsService — saving, listing, and locking design documents", 
         DesignDocsRepository,
         DesignDocsService,
         SourceFilesRepository,
-        FileLoaderService,
+        FileSyncService,
         { provide: DATA_DIR, useValue: tmpDir },
         { provide: PROJECT_DIR, useValue: tmpDir },
       ],
@@ -307,4 +307,359 @@ describe("DesignDocsService — saving, listing, and locking design documents", 
       expect(thrown?.message).toMatch(/DesignDoc not found/);
     });
   });
+
+  test("prepareDesignDocPath mints a fresh UUID when no id is supplied", async () => {
+    let result: Awaited<ReturnType<DesignDocsService["prepareDesignDocPath"]>>;
+
+    await given("an authoring agent that has no candidate id yet", () => {});
+    await when("the agent asks for a path with id=null", async () => {
+      result = await service.prepareDesignDocPath("brand-new", null);
+    });
+    await then("the response carries a freshly minted UUID id", () => {
+      expect(result.status).toBe("Ok");
+      if (result.status !== "Ok") return;
+      expect(result.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    });
+    await and("the canonical path is rooted at that minted id and the supplied name", () => {
+      if (result.status !== "Ok") return;
+      expect(result.canonical_path).toBe(
+        designDocCanonicalPath(tmpDir, result.id, "brand-new"),
+      );
+    });
+  });
+
+  test("markDesignDocImplemented seals an existing doc as read-only", async () => {
+    let beforeFlag: boolean;
+    let afterFlag: boolean;
+
+    await given("a saved design doc that has not yet been implemented", async () => {
+      await writeDocFile({ id: "dd-seal", name: "seal", description: "x" });
+      await service.saveDesignDocFromFile(
+        designDocCanonicalPath(tmpDir, "dd-seal", "seal"),
+      );
+      beforeFlag = await service.isDesignDocImplemented("dd-seal");
+    });
+    await when("the agent marks the design doc implemented", async () => {
+      await service.markDesignDocImplemented("dd-seal");
+      afterFlag = await service.isDesignDocImplemented("dd-seal");
+    });
+    await then(
+      "the implemented flag flips from false to true so future writes are blocked",
+      () => {
+        expect(beforeFlag).toBe(false);
+        expect(afterFlag).toBe(true);
+      },
+    );
+  });
+
+  test("markDesignDocImplemented rejects unknown design doc ids", async () => {
+    let thrown: Error | null = null;
+
+    await given("an empty design doc catalogue", () => {});
+    await when(
+      "the agent tries to seal a design doc id that does not exist",
+      async () => {
+        try {
+          await service.markDesignDocImplemented("ghost");
+        } catch (e) {
+          thrown = e as Error;
+        }
+      },
+    );
+    await then("the request fails with a not-found error", () => {
+      expect(thrown?.message).toMatch(/DesignDoc not found/);
+    });
+  });
+
+  test("readDesignDoc returns the stored doc, or null when the id is unknown", async () => {
+    let stored: Awaited<ReturnType<DesignDocsService["readDesignDoc"]>>;
+    let missing: Awaited<ReturnType<DesignDocsService["readDesignDoc"]>>;
+
+    await given("a saved design doc with id and name", async () => {
+      await writeDocFile({ id: "dd-read", name: "reader", description: "r" });
+      await service.saveDesignDocFromFile(
+        designDocCanonicalPath(tmpDir, "dd-read", "reader"),
+      );
+    });
+    await when("the consumer reads a known and an unknown id", async () => {
+      stored = await service.readDesignDoc("dd-read");
+      missing = await service.readDesignDoc("ghost");
+    });
+    await then("the known id returns its full record", () => {
+      expect(stored).not.toBeNull();
+      expect(stored!.id).toBe("dd-read");
+      expect(stored!.name).toBe("reader");
+    });
+    await and("the unknown id returns null", () => {
+      expect(missing).toBeNull();
+    });
+  });
+
+  test("deleteDesignDoc removes the doc from the catalogue", async () => {
+    let listBefore: Awaited<ReturnType<DesignDocsService["listDesignDocs"]>>;
+    let listAfter: Awaited<ReturnType<DesignDocsService["listDesignDocs"]>>;
+
+    await given("a single saved design doc in the catalogue", async () => {
+      await writeDocFile({ id: "dd-del", name: "deletable", description: "d" });
+      await service.saveDesignDocFromFile(
+        designDocCanonicalPath(tmpDir, "dd-del", "deletable"),
+      );
+      listBefore = await service.listDesignDocs();
+    });
+    await when("the consumer deletes it by id", async () => {
+      await service.deleteDesignDoc("dd-del");
+      listAfter = await service.listDesignDocs();
+    });
+    await then("the catalogue contained the doc before deletion", () => {
+      expect(listBefore.map((d) => d.id)).toEqual(["dd-del"]);
+    });
+    await and("the catalogue is empty after deletion", () => {
+      expect(listAfter).toEqual([]);
+    });
+  });
+
+  test("the quality gate rejects an added rule whose description is shorter than 80 chars", async () => {
+    let thrown: Error | null = null;
+
+    await given(
+      "a design doc whose only rule has a one-line description (<80 chars)",
+      async () => {
+        const path = designDocCanonicalPath(tmpDir, "dd-rule", "rule-doc");
+        await writeFile(
+          path,
+          JSON.stringify({
+            id: "dd-rule",
+            name: "rule-doc",
+            description: "rule",
+            boundedContexts: {
+              added: [
+                {
+                  name: "BC",
+                  buildingBlocks: {
+                    added: [
+                      {
+                        name: "Order",
+                        type: "aggregate",
+                        rules: {
+                          added: [
+                            { name: "Total positive", description: "too short" },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      },
+    );
+    await when("the agent saves the design doc", async () => {
+      try {
+        await service.saveDesignDocFromFile(
+          designDocCanonicalPath(tmpDir, "dd-rule", "rule-doc"),
+        );
+      } catch (e) {
+        thrown = e as Error;
+      }
+    });
+    await then(
+      "the save is rejected and the error names the offending rule and the 80-char minimum",
+      () => {
+        expect(thrown?.message).toMatch(/Rule.*Total positive/);
+        expect(thrown?.message).toMatch(/80/);
+      },
+    );
+  });
+
+  test(
+    "the quality gate rejects an added behaviour whose description is shorter than 400 chars",
+    async () => {
+      let thrown: Error | null = null;
+
+      await given(
+        "a design doc whose only behaviour has a short description (<400 chars)",
+        async () => {
+          const path = designDocCanonicalPath(tmpDir, "dd-bh", "bh-doc");
+          await writeFile(
+            path,
+            JSON.stringify({
+              id: "dd-bh",
+              name: "bh-doc",
+              description: "bh",
+              boundedContexts: {
+                added: [
+                  {
+                    name: "BC",
+                    buildingBlocks: {
+                      added: [
+                        {
+                          name: "Order",
+                          type: "aggregate",
+                          behaviours: {
+                            added: [
+                              { name: "Place", description: "too short" },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        },
+      );
+      await when("the agent saves the design doc", async () => {
+        try {
+          await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-bh", "bh-doc"),
+          );
+        } catch (e) {
+          thrown = e as Error;
+        }
+      });
+      await then(
+        "the save is rejected with a behaviour-description length error",
+        () => {
+          expect(thrown?.message).toMatch(/Behaviour.*Place/);
+          expect(thrown?.message).toMatch(/400/);
+        },
+      );
+    },
+  );
+
+  test(
+    "the quality gate rejects a behaviour referencing an actor that is not in the catalogue",
+    async () => {
+      let thrown: Error | null = null;
+      const longDescription = "Description ".repeat(50);
+
+      await given(
+        "a design doc with a behaviour whose actor name is not yet registered",
+        async () => {
+          const path = designDocCanonicalPath(
+            tmpDir,
+            "dd-actor",
+            "actor-doc",
+          );
+          await writeFile(
+            path,
+            JSON.stringify({
+              id: "dd-actor",
+              name: "actor-doc",
+              description: "x",
+              boundedContexts: {
+                added: [
+                  {
+                    name: "BC",
+                    buildingBlocks: {
+                      added: [
+                        {
+                          name: "Checkout",
+                          type: "application_service",
+                          behaviours: {
+                            added: [
+                              {
+                                name: "PlaceOrder",
+                                description: longDescription,
+                                actor: "UnknownPersona",
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        },
+      );
+      await when("the agent saves the design doc", async () => {
+        try {
+          await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-actor", "actor-doc"),
+          );
+        } catch (e) {
+          thrown = e as Error;
+        }
+      });
+      await then(
+        "the save is rejected and points the agent at upsert_actor / list_actors",
+        () => {
+          expect(thrown?.message).toMatch(/UnknownPersona/);
+          expect(thrown?.message).toMatch(/upsert_actor/);
+        },
+      );
+    },
+  );
+
+  test(
+    "the quality gate rejects a behaviour with an actor when the host BB is not an application_service",
+    async () => {
+      let thrown: Error | null = null;
+      const longDescription = "Description ".repeat(50);
+
+      await given(
+        "a registered actor and a behaviour with that actor on an aggregate (non-application_service) BB",
+        async () => {
+          await service.upsertActor({ name: "Customer", description: "c" });
+          const path = designDocCanonicalPath(tmpDir, "dd-bbtype", "bbtype");
+          await writeFile(
+            path,
+            JSON.stringify({
+              id: "dd-bbtype",
+              name: "bbtype",
+              description: "x",
+              boundedContexts: {
+                added: [
+                  {
+                    name: "BC",
+                    buildingBlocks: {
+                      added: [
+                        {
+                          name: "Order",
+                          type: "aggregate",
+                          behaviours: {
+                            added: [
+                              {
+                                name: "Place",
+                                description: longDescription,
+                                actor: "Customer",
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        },
+      );
+      await when("the agent saves the design doc", async () => {
+        try {
+          await service.saveDesignDocFromFile(
+            designDocCanonicalPath(tmpDir, "dd-bbtype", "bbtype"),
+          );
+        } catch (e) {
+          thrown = e as Error;
+        }
+      });
+      await then(
+        "the save is rejected because actors are only valid on application_service hosts",
+        () => {
+          expect(thrown?.message).toMatch(/application_service/);
+        },
+      );
+    },
+  );
 });

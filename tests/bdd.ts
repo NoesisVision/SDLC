@@ -1,7 +1,7 @@
 type StepFn = () => void | Promise<void>;
 
 const step = (keyword: string) => async (desc: string, fn: StepFn) => {
-  console.log(`  ${keyword.padEnd(5)} ${desc}`);
+  // console.log(`  ${keyword.padEnd(5)} ${desc}`);
   try {
     await fn();
   } catch (e) {

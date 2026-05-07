@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../database/database.module.js";
-import { FileLoaderService } from "../file-sync/file-loader.service.js";
+import { FileSyncService } from "../file-sync/file-sync.service.js";
 import { SourceFilesRepository } from "../file-sync/source-files.repository.js";
 import { DesignDocsRepository } from "../knowledge/design-docs/design-docs.repository.js";
 import { FileWatcherService } from "./file-watcher.service.js";
@@ -16,14 +16,14 @@ import { IndexerService } from "./indexer.service.js";
     IndexerService,
     FileWatcherService,
     SourceFilesRepository,
-    FileLoaderService,
+    FileSyncService,
     DesignDocsRepository,
   ],
   exports: [
     IndexStateService,
     IndexerService,
     FileWatcherService,
-    FileLoaderService,
+    FileSyncService,
     DesignDocsRepository,
   ],
 })

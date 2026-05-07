@@ -25,7 +25,7 @@ import type {
 } from "../../ui-contracts/conversations/conversations-data.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { splitConversation } from "../../file-sync/conversation-splitter.js";
-import { FileLoaderService } from "../../file-sync/file-loader.service.js";
+import { FileSyncService } from "../../file-sync/file-sync.service.js";
 import { DecisionsService } from "../decisions/decisions.service.js";
 import { DocumentsRepository } from "../documents/documents.repository.js";
 import { TopicsRepository } from "../topics/topics.repository.js";
@@ -60,7 +60,7 @@ export class ConversationsService {
     private readonly topics: TopicsRepository,
     private readonly documents: DocumentsRepository,
     private readonly decisions: DecisionsService,
-    private readonly fileLoader: FileLoaderService,
+    private readonly fileSync: FileSyncService,
     @Inject(PROJECT_DIR) private readonly projectDir: string,
   ) {}
 
@@ -208,9 +208,9 @@ export class ConversationsService {
       ...splitResult.decision_paths,
     ];
     for (const path of allPaths) {
-      await this.fileLoader.registerWritten(path);
+      await this.fileSync.registerWritten(path);
     }
-    await this.fileLoader.refreshStaleFlags();
+    await this.fileSync.refreshStaleFlags();
     const filesWritten =
       2 + splitResult.topic_paths.length + splitResult.decision_paths.length;
 

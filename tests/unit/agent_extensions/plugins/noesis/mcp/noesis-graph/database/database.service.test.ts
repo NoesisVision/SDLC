@@ -9,7 +9,7 @@ import { and, given, then, when } from "@tests/bdd.js";
 import { DatabaseService } from "@noesis/mcp/noesis-graph/database/database.service.js";
 import { DATA_DIR } from "@noesis/mcp/noesis-graph/config/config.module.js";
 
-describe("DatabaseService — local Kuzu graph database access", () => {
+describe("DatabaseService — local Ladybug graph database access", () => {
   let module: TestingModule;
   let service: DatabaseService;
   let tmpDir: string;
@@ -27,7 +27,7 @@ describe("DatabaseService — local Kuzu graph database access", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("an uninitialized service refuses to expose its connection", async () => {
+  test("An uninitialized service refuses to expose its connection", async () => {
     let caught: Error | null = null;
 
     await given("a DatabaseService whose lifecycle hooks have not run", () => {});
@@ -43,7 +43,7 @@ describe("DatabaseService — local Kuzu graph database access", () => {
     });
   });
 
-  test("a freshly initialized service answers cypher round-trips", async () => {
+  test("A freshly initialized service answers cypher round-trips", async () => {
     let rows: Array<{ x: number | bigint }> = [];
 
     await given("a DatabaseService that has just completed its module init", () => {
@@ -57,25 +57,20 @@ describe("DatabaseService — local Kuzu graph database access", () => {
     });
   });
 
-  test("parameterized cypher uses prepared statements transparently", async () => {
+  test("Parameterized cypher uses prepared statements transparently", async () => {
     let rows: Array<{ label: string }> = [];
 
-    await given(
-      "a database holding two rows of a Thing node table",
-      async () => {
-        service.onModuleInit();
-        const conn = service.getConnection();
-        await conn.query(
-          "CREATE NODE TABLE Thing(id STRING, label STRING, PRIMARY KEY(id))",
-        );
-        await conn.query("CREATE (:Thing {id: 'a', label: 'alpha'})");
-        await conn.query("CREATE (:Thing {id: 'b', label: 'beta'})");
-      },
-    );
+    await given("a database holding two rows of a Thing node table", async () => {
+      service.onModuleInit();
+      const conn = service.getConnection();
+      await conn.query("CREATE NODE TABLE Thing(id STRING, label STRING, PRIMARY KEY(id))");
+      await conn.query("CREATE (:Thing {id: 'a', label: 'alpha'})");
+      await conn.query("CREATE (:Thing {id: 'b', label: 'beta'})");
+    });
     await when("a parameterized lookup queries the row by id", async () => {
       rows = await service.query<{ label: string }>(
         "MATCH (t:Thing) WHERE t.id = $id RETURN t.label AS label",
-        { id: "b" },
+        { id: "b" }
       );
     });
     await then("only the matching row is returned with its label", () => {
@@ -83,7 +78,7 @@ describe("DatabaseService — local Kuzu graph database access", () => {
     });
   });
 
-  test("destroying an initialized service releases its connection", async () => {
+  test("Destroying an initialized service releases its connection", async () => {
     let postDestroyError: Error | null = null;
 
     await given("a DatabaseService that has been initialized once", () => {
@@ -92,16 +87,13 @@ describe("DatabaseService — local Kuzu graph database access", () => {
     await when("the module destroy hook tears it down", async () => {
       await service.onModuleDestroy();
     });
-    await then(
-      "further connection access fails with the not-initialized error",
-      () => {
-        try {
-          service.getConnection();
-        } catch (e) {
-          postDestroyError = e as Error;
-        }
-        expect(postDestroyError?.message).toMatch(/Database not initialized/);
-      },
-    );
+    await then("further connection access fails with the not-initialized error", () => {
+      try {
+        service.getConnection();
+      } catch (e) {
+        postDestroyError = e as Error;
+      }
+      expect(postDestroyError?.message).toMatch(/Database not initialized/);
+    });
   });
 });

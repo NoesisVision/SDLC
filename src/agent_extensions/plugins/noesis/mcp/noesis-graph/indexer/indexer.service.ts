@@ -7,7 +7,7 @@ import {
   type SourceFileKind,
 } from "../../../shared-contracts/source-files.js";
 import { PROJECT_DIR } from "../config/config.module.js";
-import { FileLoaderService } from "../file-sync/file-loader.service.js";
+import { FileSyncService } from "../file-sync/file-sync.service.js";
 import { SourceFilesRepository } from "../file-sync/source-files.repository.js";
 import { IndexStateService } from "./index-state.service.js";
 
@@ -28,7 +28,7 @@ export class IndexerService {
   constructor(
     @Inject(PROJECT_DIR) private readonly projectDir: string,
     private readonly state: IndexStateService,
-    private readonly loader: FileLoaderService,
+    private readonly fileSync: FileSyncService,
     private readonly sourceFiles: SourceFilesRepository,
   ) {}
 
@@ -41,7 +41,7 @@ export class IndexerService {
       for (const { path } of discovered) {
         seenPaths.add(path);
         try {
-          await this.loader.loadFile(path);
+          await this.fileSync.loadFile(path);
         } catch (err) {
           this.logger.warn(
             `Failed to load ${path}: ${(err as Error).message}`,
@@ -50,7 +50,7 @@ export class IndexerService {
         this.state.recordFileProcessed();
       }
       await this.removeVanished(seenPaths);
-      const stale = await this.loader.refreshStaleFlags();
+      const stale = await this.fileSync.refreshStaleFlags();
       this.state.markConsistent(stale);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

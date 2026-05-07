@@ -21,7 +21,7 @@ import {
 import { DesignDocSchema } from "../../../../shared-contracts/design-doc.js";
 import { DatabaseService } from "../../database/database.service.js";
 import { DATA_DIR, PROJECT_DIR } from "../../config/config.module.js";
-import { FileLoaderService } from "../../file-sync/file-loader.service.js";
+import { FileSyncService } from "../../file-sync/file-sync.service.js";
 import { SourceFilesRepository } from "../../file-sync/source-files.repository.js";
 import { SchemaService } from "../schema/schema.service.js";
 import { DesignDocsRepository } from "./design-docs.repository.js";
@@ -69,7 +69,7 @@ describe("DesignDocsService", () => {
         DesignDocsRepository,
         DesignDocsService,
         SourceFilesRepository,
-        FileLoaderService,
+        FileSyncService,
         { provide: DATA_DIR, useValue: tmpDir },
         { provide: PROJECT_DIR, useValue: tmpDir },
       ],

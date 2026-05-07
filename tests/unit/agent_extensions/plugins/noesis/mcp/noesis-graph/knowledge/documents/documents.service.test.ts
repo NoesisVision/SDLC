@@ -322,4 +322,151 @@ describe("DocumentsService — recording, merging, and reviewing design document
       }
     },
   );
+
+  test(
+    "getTopicForDocumentReview returns the next unreviewed topic with its fragment markdown",
+    async () => {
+      const workingDir = mkdtempSync(join(tmpdir(), "noesis-doc-review-"));
+      let result: Awaited<ReturnType<DocumentsService["getTopicForDocumentReview"]>>;
+
+      try {
+        await given(
+          "an analyze-design-draft output with one reviewed topic followed by one unreviewed topic",
+          async () => {
+            const output = {
+              document: {
+                id: "doc-rev",
+                title: "Spec",
+                date: "2026-04-24",
+                content: "alpha bravo charlie",
+              },
+              fragments: [
+                {
+                  index: 0,
+                  start_offset: 0,
+                  end_offset: 5,
+                  section_path: [],
+                  kind: "paragraph",
+                  text: "alpha",
+                  categories: ["Information"],
+                },
+              ],
+              section_tree: [],
+              topics: [
+                {
+                  id: "done",
+                  title: "Already reviewed",
+                  short_summary: "",
+                  long_summary: "",
+                  items: [],
+                  decisions: [],
+                  reviewed: true,
+                  decisions_extracted: true,
+                },
+                {
+                  id: "todo",
+                  title: "Up next",
+                  short_summary: "s",
+                  long_summary: "l",
+                  items: [
+                    {
+                      type: "document_fragment_ref",
+                      document_id: "doc-rev",
+                      start_offset: 0,
+                      end_offset: 5,
+                    },
+                  ],
+                  decisions: [],
+                  reviewed: false,
+                  decisions_extracted: false,
+                },
+              ],
+              decision_attachments: [],
+              potential_topics: { topics: [] },
+              design_doc_id: null,
+              design_doc_title: null,
+              design_doc_extracted: false,
+            };
+            await writeFile(
+              join(workingDir, "output.json"),
+              JSON.stringify(output),
+            );
+          },
+        );
+        await when("the agent asks for the next topic to review", async () => {
+          result = await documents.getTopicForDocumentReview(
+            join(workingDir, "output.json"),
+          );
+        });
+        await then(
+          "the response identifies the unreviewed topic and reports one fragment to inspect",
+          () => {
+            expect(result).not.toBeNull();
+            expect(result!.topic_id).toBe("todo");
+            expect(result!.topic_title).toBe("Up next");
+            expect(result!.num_items).toBe(1);
+          },
+        );
+        await and("the rendered markdown contains the fragment text", () => {
+          expect(result!.markdown).toContain("alpha");
+        });
+      } finally {
+        rmSync(workingDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("getTopicForDocumentReview returns null once every topic is marked reviewed", async () => {
+    const workingDir = mkdtempSync(join(tmpdir(), "noesis-doc-review-done-"));
+    let result: Awaited<ReturnType<DocumentsService["getTopicForDocumentReview"]>>;
+
+    try {
+      await given(
+        "an analyze-design-draft output where every topic carries reviewed=true",
+        async () => {
+          const output = {
+            document: {
+              id: "doc-done",
+              title: "Spec",
+              date: "2026-04-24",
+              content: "x",
+            },
+            fragments: [],
+            section_tree: [],
+            topics: [
+              {
+                id: "t-1",
+                title: "T1",
+                short_summary: "",
+                long_summary: "",
+                items: [],
+                decisions: [],
+                reviewed: true,
+                decisions_extracted: true,
+              },
+            ],
+            decision_attachments: [],
+            potential_topics: { topics: [] },
+            design_doc_id: null,
+            design_doc_title: null,
+            design_doc_extracted: false,
+          };
+          await writeFile(
+            join(workingDir, "output.json"),
+            JSON.stringify(output),
+          );
+        },
+      );
+      await when("the agent asks for the next topic to review", async () => {
+        result = await documents.getTopicForDocumentReview(
+          join(workingDir, "output.json"),
+        );
+      });
+      await then("the response is null so the agent can move past the review loop", () => {
+        expect(result).toBeNull();
+      });
+    } finally {
+      rmSync(workingDir, { recursive: true, force: true });
+    }
+  });
 });

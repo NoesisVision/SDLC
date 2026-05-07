@@ -22,7 +22,7 @@ import {
 import { DatabaseService } from "@noesis/mcp/noesis-graph/database/database.service.js";
 import { DesignDocsRepository } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.repository.js";
 import { SchemaService } from "@noesis/mcp/noesis-graph/knowledge/schema/schema.service.js";
-import { FileLoaderService } from "@noesis/mcp/noesis-graph/file-sync/file-loader.service.js";
+import { FileSyncService } from "@noesis/mcp/noesis-graph/file-sync/file-sync.service.js";
 import { SourceFilesRepository } from "@noesis/mcp/noesis-graph/file-sync/source-files.repository.js";
 import { FileWatcherService } from "@noesis/mcp/noesis-graph/indexer/file-watcher.service.js";
 import { IndexStateService } from "@noesis/mcp/noesis-graph/indexer/index-state.service.js";
@@ -55,7 +55,7 @@ async function createCtx(projectDir: string): Promise<Ctx> {
       SchemaService,
       DesignDocsRepository,
       SourceFilesRepository,
-      FileLoaderService,
+      FileSyncService,
       IndexStateService,
       IndexerService,
       FileWatcherService,

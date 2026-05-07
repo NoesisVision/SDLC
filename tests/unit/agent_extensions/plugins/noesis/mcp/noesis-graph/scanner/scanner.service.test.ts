@@ -237,4 +237,41 @@ public class Order
       expect(matches[0].nameOverride).toBe("Customer Order");
     });
   });
+
+  test(
+    "parseAnnotations skips inherited object methods (Equals, GetHashCode, …) so they are not surfaced as behaviours",
+    async () => {
+      let matches: ReturnType<typeof parseAnnotations>;
+
+      const source = `
+namespace MyCompany.Sales;
+
+[DddValueObject]
+public class Money
+{
+    public override bool Equals(object? other) => false;
+    public override int GetHashCode() => 0;
+    public override string ToString() => "";
+
+    public bool IsZero() => true;
+}
+`;
+
+      await given(
+        "a value-object class whose methods include Equals/GetHashCode/ToString and a domain method",
+        () => {},
+      );
+      await when("the source is parsed", () => {
+        matches = parseAnnotations(source);
+      });
+      await then(
+        "only the domain method survives — the inherited object methods are dropped",
+        () => {
+          expect(matches).toHaveLength(1);
+          const methods = matches[0].behaviors.map((b) => b.methodName).sort();
+          expect(methods).toEqual(["IsZero"]);
+        },
+      );
+    },
+  );
 });

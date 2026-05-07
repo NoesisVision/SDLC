@@ -29,17 +29,17 @@ import {
 import { DatabaseService } from "@noesis/mcp/noesis-graph/database/database.service.js";
 import { DesignDocsRepository } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.repository.js";
 import { SchemaService } from "@noesis/mcp/noesis-graph/knowledge/schema/schema.service.js";
-import { FileLoaderService } from "@noesis/mcp/noesis-graph/file-sync/file-loader.service.js";
+import { FileSyncService } from "@noesis/mcp/noesis-graph/file-sync/file-sync.service.js";
 import { SourceFilesRepository } from "@noesis/mcp/noesis-graph/file-sync/source-files.repository.js";
 
-describe("FileLoaderService — registering and reconciling on-disk noesis files", () => {
+describe("FileSyncService — registering and reconciling on-disk noesis files", () => {
   let module: TestingModule;
-  let loader: FileLoaderService;
+  let fileSync: FileSyncService;
   let sourceFiles: SourceFilesRepository;
   let projectDir: string;
 
   beforeAll(async () => {
-    projectDir = mkdtempSync(join(tmpdir(), "noesis-loader-"));
+    projectDir = mkdtempSync(join(tmpdir(), "noesis-file-sync-"));
     ensureNoesisLayout(projectDir);
     module = await Test.createTestingModule({
       providers: [
@@ -47,14 +47,14 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
         SchemaService,
         DesignDocsRepository,
         SourceFilesRepository,
-        FileLoaderService,
+        FileSyncService,
         { provide: DATA_DIR, useValue: projectDir },
         { provide: PROJECT_DIR, useValue: projectDir },
       ],
     }).compile();
     await module.init();
     await module.get(DesignDocsRepository).initSchema();
-    loader = module.get(FileLoaderService);
+    fileSync = module.get(FileSyncService);
     sourceFiles = module.get(SourceFilesRepository);
   });
 
@@ -63,28 +63,25 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
     rmSync(projectDir, { recursive: true, force: true });
   });
 
-  test("loading a conversation sidecar registers the file and upserts the conversation row", async () => {
-    let result: Awaited<ReturnType<FileLoaderService["loadFile"]>>;
-    let sidecarPath: string;
+  test("Loading a structured conversation file (json) registers the file and upserts the conversation row", async () => {
+    let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
+    let jsonPath: string;
 
-    await given(
-      "a freshly written conversation sidecar with no edit flag",
-      () => {
-        sidecarPath = conversationJsonPath(projectDir, "c1");
-        writeFileSync(
-          sidecarPath,
-          JSON.stringify({
-            conversation_id: "c1",
-            time: "2026-04-29",
-            main_topic: "Topic",
-            turns: [],
-            edited_by_user: false,
-          }),
-        );
-      },
-    );
-    await when("the loader processes the sidecar file", async () => {
-      result = await loader.loadFile(sidecarPath);
+    await given("a freshly written structured conversation file with no edit flag", () => {
+      jsonPath = conversationJsonPath(projectDir, "c1");
+      writeFileSync(
+        jsonPath,
+        JSON.stringify({
+          conversation_id: "c1",
+          time: "2026-04-29",
+          main_topic: "Topic",
+          turns: [],
+          edited_by_user: false,
+        })
+      );
+    });
+    await when("the file sync service processes the structured conversation file", async () => {
+      result = await fileSync.loadFile(jsonPath);
     });
     await then("the file is recognised as a conversation with no user edit", () => {
       expect(result?.kind).toBe("conversation");
@@ -93,20 +90,20 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
     await and(
       "a SourceFile row is registered linking the path to the conversation entity id",
       async () => {
-        const row = await sourceFiles.get(sidecarPath);
+        const row = await sourceFiles.get(jsonPath);
         expect(row?.entity_id).toBe("c1");
         expect(row?.kind).toBe("conversation");
       },
     );
   });
 
-  test("a sidecar that drifts on disk is detected as a user edit and self-heals the flag", async () => {
-    let secondLoad: Awaited<ReturnType<FileLoaderService["loadFile"]>>;
+  test("a structured topic file that drifts on disk is detected as a user edit and self-heals the flag", async () => {
+    let secondLoad: Awaited<ReturnType<FileSyncService["loadFile"]>>;
     let onDiskAfter: { edited_by_user: boolean };
     let path: string;
 
     await given(
-      "a topic sidecar that has been previously registered by the loader",
+      "a structured topic file that has been previously registered by the file sync service",
       async () => {
         path = topicJsonPath(projectDir, "t1");
         const initial = {
@@ -118,11 +115,11 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
           edited_by_user: false,
         };
         writeFileSync(path, JSON.stringify(initial));
-        await loader.loadFile(path);
+        await fileSync.loadFile(path);
       },
     );
     await when(
-      "the user mutates the file outside the loader and a re-load is triggered",
+      "the user mutates the file outside the file sync service and a re-load is triggered",
       async () => {
         const edited = {
           id: "t1",
@@ -133,10 +130,10 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
           edited_by_user: false,
         };
         writeFileSync(path, JSON.stringify(edited));
-        secondLoad = await loader.loadFile(path);
+        secondLoad = await fileSync.loadFile(path);
       },
     );
-    await then("the loader reports a user edit so callers can stop overwriting it", () => {
+    await then("the file sync service reports a user edit so callers can stop overwriting it", () => {
       expect(secondLoad?.user_edit_detected).toBe(true);
     });
     await and(
@@ -149,12 +146,12 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
   });
 
   test(
-    "registerWritten records a file the loader itself wrote so a follow-up load does not flag a user edit",
+    "registerWritten records a file the file sync service itself wrote so a follow-up load does not flag a user edit",
     async () => {
-      let result: Awaited<ReturnType<FileLoaderService["loadFile"]>>;
+      let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
 
       await given(
-        "a topic sidecar that the system writes through registerWritten",
+        "a structured topic file that the system writes through registerWritten",
         async () => {
           const path = topicJsonPath(projectDir, "t2");
           writeFileSync(
@@ -168,13 +165,13 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
               edited_by_user: false,
             }),
           );
-          await loader.registerWritten(path);
+          await fileSync.registerWritten(path);
         },
       );
       await when(
         "the watcher's later loadFile callback runs against the same content",
         async () => {
-          result = await loader.loadFile(topicJsonPath(projectDir, "t2"));
+          result = await fileSync.loadFile(topicJsonPath(projectDir, "t2"));
         },
       );
       await then(
@@ -187,20 +184,20 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
   );
 
   test(
-    "refreshStaleFlags flips a topic to stale when the referenced sidecar's sha changes",
+    "refreshStaleFlags flips a topic to stale when the referenced structured conversation file's sha changes",
     async () => {
       let staleBefore: number;
       let staleAfter: number;
-      let sidecarPath: string;
+      let conversationJson: string;
       let topicPath: string;
       let knownSha: string;
 
       await given(
-        "a topic that references one conversation sidecar by its current sha",
+        "a topic that references one structured conversation file by its current sha",
         async () => {
-          sidecarPath = conversationJsonPath(projectDir, "c-ref");
+          conversationJson = conversationJsonPath(projectDir, "c-ref");
           writeFileSync(
-            sidecarPath,
+            conversationJson,
             JSON.stringify({
               conversation_id: "c-ref",
               time: "t",
@@ -209,8 +206,8 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
               edited_by_user: false,
             }),
           );
-          await loader.loadFile(sidecarPath);
-          knownSha = (await sourceFiles.get(sidecarPath))!.sha;
+          await fileSync.loadFile(conversationJson);
+          knownSha = (await sourceFiles.get(conversationJson))!.sha;
 
           topicPath = topicJsonPath(projectDir, "t-stale");
           writeFileSync(
@@ -232,17 +229,17 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
               edited_by_user: false,
             }),
           );
-          await loader.loadFile(topicPath);
+          await fileSync.loadFile(topicPath);
         },
       );
       await when("a first refresh runs while the referenced sha still matches", async () => {
-        staleBefore = await loader.refreshStaleFlags();
+        staleBefore = await fileSync.refreshStaleFlags();
       });
       await and(
-        "the conversation sidecar is then mutated and re-loaded so its sha drifts",
+        "the structured conversation file is then mutated and re-loaded so its sha drifts",
         async () => {
           writeFileSync(
-            sidecarPath,
+            conversationJson,
             JSON.stringify({
               conversation_id: "c-ref",
               time: "t",
@@ -251,8 +248,8 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
               edited_by_user: false,
             }),
           );
-          await loader.loadFile(sidecarPath);
-          staleAfter = await loader.refreshStaleFlags();
+          await fileSync.loadFile(conversationJson);
+          staleAfter = await fileSync.refreshStaleFlags();
         },
       );
       await then(
@@ -268,14 +265,14 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
   test(
     "loading a conversation markdown file detects the entity from the filename and stores its md sha",
     async () => {
-      let result: Awaited<ReturnType<FileLoaderService["loadFile"]>>;
+      let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
 
       await given("a conversation markdown file present on disk", () => {
         const mdPath = conversationMdPath(projectDir, "c-md");
         writeFileSync(mdPath, "<!-- conversation_id: c-md -->\n# hi\n");
       });
-      await when("the loader processes the markdown file", async () => {
-        result = await loader.loadFile(conversationMdPath(projectDir, "c-md"));
+      await when("the file sync service processes the markdown file", async () => {
+        result = await fileSync.loadFile(conversationMdPath(projectDir, "c-md"));
       });
       await then("the kind is 'conversation' and the id matches the filename", () => {
         expect(result?.kind).toBe("conversation");
@@ -285,14 +282,14 @@ describe("FileLoaderService — registering and reconciling on-disk noesis files
   );
 
   test("paths outside the noesis root are not treated as source files", async () => {
-    let detected: ReturnType<FileLoaderService["detect"]>;
-    let result: Awaited<ReturnType<FileLoaderService["loadFile"]>>;
+    let detected: ReturnType<FileSyncService["detect"]>;
+    let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
 
     await given("an arbitrary path that does not live under <projectDir>/noesis/", () => {});
-    await when("the loader is asked to detect and load that path", async () => {
+    await when("the file sync service is asked to detect and load that path", async () => {
       const stray = join(projectDir, "elsewhere", "stray.json");
-      detected = loader.detect(stray);
-      result = await loader.loadFile(stray);
+      detected = fileSync.detect(stray);
+      result = await fileSync.loadFile(stray);
     });
     await then("detection returns null", () => {
       expect(detected).toBeNull();

@@ -27,7 +27,7 @@ import {
   commitDesignDoc,
   UserEditConflictError,
 } from "../../file-sync/design-doc-splitter.js";
-import { FileLoaderService } from "../../file-sync/file-loader.service.js";
+import { FileSyncService } from "../../file-sync/file-sync.service.js";
 import type {
   DesignDocDetailData,
   DesignDocSourceData,
@@ -75,7 +75,7 @@ export class DesignDocsService implements OnModuleInit {
 
   constructor(
     private readonly repository: DesignDocsRepository,
-    private readonly fileLoader: FileLoaderService,
+    private readonly fileSync: FileSyncService,
     @Inject(PROJECT_DIR) private readonly projectDir: string
   ) {}
 
@@ -151,7 +151,7 @@ export class DesignDocsService implements OnModuleInit {
       if (onDisk.implemented !== true) {
         writeSidecar(path, { ...onDisk, implemented: true }, DesignDocSchema);
       }
-      await this.fileLoader.registerWritten(path);
+      await this.fileSync.registerWritten(path);
     }
     await this.repository.markDesignDocImplemented(designDocId);
     this.logger.log(
@@ -246,7 +246,7 @@ export class DesignDocsService implements OnModuleInit {
         // best-effort
       }
     }
-    await this.fileLoader.registerWritten(writePath);
+    await this.fileSync.registerWritten(writePath);
     this.logger.log(`Updated DesignDoc ${designDocId} element ${describePath(path)}`);
     return { ok: true };
   }
@@ -325,7 +325,7 @@ export class DesignDocsService implements OnModuleInit {
       throw err;
     }
     await this.repository.applyDesignDoc(doc, date);
-    await this.fileLoader.registerWritten(commit.canonical_path);
+    await this.fileSync.registerWritten(commit.canonical_path);
     this.logger.log(
       `Saved DesignDoc ${doc.id} (${doc.name}); canonical at ${commit.canonical_path}`,
     );

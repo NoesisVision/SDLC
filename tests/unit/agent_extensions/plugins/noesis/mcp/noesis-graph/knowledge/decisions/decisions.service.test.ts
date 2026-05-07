@@ -396,6 +396,121 @@ describe("DecisionsService — recording decisions, alternatives, and supporting
     });
   });
 
+  test("recording a decision with an id that is already in use is rejected", async () => {
+    let thrown: Error | null = null;
+
+    await given("a topic with one decision already recorded", async () => {
+      await topics.addTopic({ id: "t-dup", title: "T", short_summary: "" });
+      await decisions.addDecision("t-dup", {
+        id: "dec-dup",
+        title: "First",
+        status: "accepted",
+        referenced_items: [],
+        context: { text: "", supporting_item_indices: [] },
+        decision: { text: "", rationale: "", supporting_item_indices: [] },
+        alternative_options: [],
+      });
+    });
+    await when(
+      "the agent tries to add another decision under the same id",
+      async () => {
+        try {
+          await decisions.addDecision("t-dup", {
+            id: "dec-dup",
+            title: "Second",
+            status: "proposed",
+            referenced_items: [],
+            context: { text: "", supporting_item_indices: [] },
+            decision: { text: "", rationale: "", supporting_item_indices: [] },
+            alternative_options: [],
+          });
+        } catch (e) {
+          thrown = e as Error;
+        }
+      },
+    );
+    await then("the operation fails with a duplication error", () => {
+      expect(thrown?.message).toMatch(/already exists/);
+    });
+  });
+
+  test("addItemsToDecisionSlot fails fast when the target decision does not exist", async () => {
+    let thrown: Error | null = null;
+
+    await given("an empty decisions graph", () => {});
+    await when(
+      "the caller tries to attach an item to an unknown decision id",
+      async () => {
+        try {
+          await decisions.addItemsToDecisionSlot(
+            "ghost",
+            { slot: "context" },
+            [],
+          );
+        } catch (e) {
+          thrown = e as Error;
+        }
+      },
+    );
+    await then("the operation fails with a decision-not-found error", () => {
+      expect(thrown?.message).toMatch(/Decision not found/);
+    });
+  });
+
+  test(
+    "listDecisionsForSources returns only decisions whose supporting items reference the given conversations",
+    async () => {
+      let matched: Awaited<
+        ReturnType<DecisionsService["listDecisionsForSources"]>
+      >;
+
+      await given(
+        "two decisions: one references conv-X via its context, the other references nothing",
+        async () => {
+          const convPath = join(ctx.tmpDir, "conv-X.json");
+          await writeFile(convPath, JSON.stringify(sampleConversation("conv-X")));
+          await conversations.addConversationFromFile(convPath);
+          await topics.addTopic({ id: "t-src", title: "T", short_summary: "" });
+
+          const iu = {
+            type: "idea_unit_ref" as const,
+            conversation_id: "conv-X",
+            turn_index: 0,
+            idea_unit_index: 0,
+          };
+          await decisions.addDecision("t-src", {
+            id: "dec-linked",
+            title: "Linked to conv-X",
+            status: "accepted",
+            referenced_items: [iu],
+            context: { text: "", supporting_item_indices: [0] },
+            decision: { text: "", rationale: "", supporting_item_indices: [] },
+            alternative_options: [],
+          });
+          await decisions.addDecision("t-src", {
+            id: "dec-unlinked",
+            title: "No source link",
+            status: "proposed",
+            referenced_items: [],
+            context: { text: "", supporting_item_indices: [] },
+            decision: { text: "", rationale: "", supporting_item_indices: [] },
+            alternative_options: [],
+          });
+        },
+      );
+      await when(
+        "the consumer asks for decisions tied to conversation conv-X",
+        async () => {
+          matched = await decisions.listDecisionsForSources(["conv-X"], []);
+        },
+      );
+      await then("only the linked decision is returned", () => {
+        expect(matched).toHaveLength(1);
+        expect(matched[0].id).toBe("dec-linked");
+      });
+    },
+  );
+
   test("updateDecisionEditableFields rejects an empty title", async () => {
     let thrown: Error | null = null;
 

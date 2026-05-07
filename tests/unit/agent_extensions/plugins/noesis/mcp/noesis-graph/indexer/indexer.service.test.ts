@@ -26,7 +26,7 @@ import {
 import { DatabaseService } from "@noesis/mcp/noesis-graph/database/database.service.js";
 import { DesignDocsRepository } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.repository.js";
 import { SchemaService } from "@noesis/mcp/noesis-graph/knowledge/schema/schema.service.js";
-import { FileLoaderService } from "@noesis/mcp/noesis-graph/file-sync/file-loader.service.js";
+import { FileSyncService } from "@noesis/mcp/noesis-graph/file-sync/file-sync.service.js";
 import { SourceFilesRepository } from "@noesis/mcp/noesis-graph/file-sync/source-files.repository.js";
 import { IndexStateService } from "@noesis/mcp/noesis-graph/indexer/index-state.service.js";
 import { IndexerService } from "@noesis/mcp/noesis-graph/indexer/indexer.service.js";
@@ -46,7 +46,7 @@ async function createCtx(projectDir: string): Promise<Ctx> {
       SchemaService,
       DesignDocsRepository,
       SourceFilesRepository,
-      FileLoaderService,
+      FileSyncService,
       IndexStateService,
       IndexerService,
       { provide: DATA_DIR, useValue: projectDir },
@@ -101,21 +101,21 @@ describe("IndexerService — discovering and reconciling on-disk noesis files", 
     "a single pass discovers conversations, topics, and design docs in the layout",
     async () => {
       let mdPath: string;
-      let sidecarPath: string;
+      let conversationJson: string;
       let topicPath: string;
       let ddPath: string;
 
       await given(
-        "the noesis layout populated with one md, one sidecar, one topic, and one design doc",
+        "the noesis layout populated with one conversation md, one structured conversation file, one topic, and one design doc",
         () => {
           ensureNoesisLayout(projectDir);
           mdPath = conversationMdPath(projectDir, "convo-1");
-          sidecarPath = conversationJsonPath(projectDir, "convo-1");
+          conversationJson = conversationJsonPath(projectDir, "convo-1");
           topicPath = topicJsonPath(projectDir, "topic-1");
           ddPath = designDocJsonPath(projectDir, "dd-1");
           writeFileSync(mdPath, "<!-- conversation_id: convo-1 -->\n# hi\n");
           writeFileSync(
-            sidecarPath,
+            conversationJson,
             JSON.stringify({
               conversation_id: "convo-1",
               time: "t",
@@ -158,7 +158,7 @@ describe("IndexerService — discovering and reconciling on-disk noesis files", 
           expect(entries).toHaveLength(4);
           const byPath = new Map(entries.map((e) => [e.path, e]));
           expect(byPath.get(mdPath)?.kind).toBe("conversation");
-          expect(byPath.get(sidecarPath)?.kind).toBe("conversation");
+          expect(byPath.get(conversationJson)?.kind).toBe("conversation");
           expect(byPath.get(topicPath)?.kind).toBe("topic");
           expect(byPath.get(ddPath)?.kind).toBe("design_doc");
         },

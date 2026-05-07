@@ -14,15 +14,15 @@ import { DATA_DIR, PROJECT_DIR } from "../config/config.module.js";
 import { DatabaseService } from "../database/database.service.js";
 import { DesignDocsRepository } from "../knowledge/design-docs/design-docs.repository.js";
 import { SchemaService } from "../knowledge/schema/schema.service.js";
-import { FileLoaderService } from "./file-loader.service.js";
+import { FileSyncService } from "./file-sync.service.js";
 import { SourceFilesRepository } from "./source-files.repository.js";
 
 let module: TestingModule;
-let loader: FileLoaderService;
+let loader: FileSyncService;
 let sourceFiles: SourceFilesRepository;
 let projectDir: string;
 
-describe("FileLoaderService", () => {
+describe("FileSyncService", () => {
   beforeAll(async () => {
     projectDir = mkdtempSync(join(tmpdir(), "noesis-loader-"));
     ensureNoesisLayout(projectDir);
@@ -32,14 +32,14 @@ describe("FileLoaderService", () => {
         SchemaService,
         DesignDocsRepository,
         SourceFilesRepository,
-        FileLoaderService,
+        FileSyncService,
         { provide: DATA_DIR, useValue: projectDir },
         { provide: PROJECT_DIR, useValue: projectDir },
       ],
     }).compile();
     await module.init();
     await module.get(DesignDocsRepository).initSchema();
-    loader = module.get(FileLoaderService);
+    loader = module.get(FileSyncService);
     sourceFiles = module.get(SourceFilesRepository);
   });
 

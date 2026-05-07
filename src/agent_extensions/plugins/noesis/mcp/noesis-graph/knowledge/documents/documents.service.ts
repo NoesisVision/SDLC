@@ -25,7 +25,7 @@ import type {
 } from "../../ui-contracts/documents/documents-data.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { splitDocument } from "../../file-sync/document-splitter.js";
-import { FileLoaderService } from "../../file-sync/file-loader.service.js";
+import { FileSyncService } from "../../file-sync/file-sync.service.js";
 import {
   DecisionsService,
   type DecisionSupportSlot,
@@ -58,7 +58,7 @@ export class DocumentsService {
     private readonly repository: DocumentsRepository,
     private readonly topics: TopicsRepository,
     private readonly decisions: DecisionsService,
-    private readonly fileLoader: FileLoaderService,
+    private readonly fileSync: FileSyncService,
     @Inject(PROJECT_DIR) private readonly projectDir: string,
   ) {}
 
@@ -287,9 +287,9 @@ export class DocumentsService {
       ...splitResult.decision_paths,
     ];
     for (const path of allPaths) {
-      await this.fileLoader.registerWritten(path);
+      await this.fileSync.registerWritten(path);
     }
-    await this.fileLoader.refreshStaleFlags();
+    await this.fileSync.refreshStaleFlags();
     const filesWritten =
       2 + splitResult.topic_paths.length + splitResult.decision_paths.length;
 

@@ -45,8 +45,8 @@ const SUBDIR_KIND: Record<string, SourceFileKind> = {
 };
 
 @Injectable()
-export class FileLoaderService {
-  private readonly logger = new Logger(FileLoaderService.name);
+export class FileSyncService {
+  private readonly logger = new Logger(FileSyncService.name);
 
   constructor(
     private readonly db: DatabaseService,
