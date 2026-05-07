@@ -1,7 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { IndexStateService } from "../../indexer/index-state.service.js";
-import { gateWriteTool } from "../../indexer/write-gate.js";
+import type { IndexerService } from "../../indexer/indexer.service.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -14,11 +13,11 @@ import {
 export function registerConversationsTools(
   mcp: McpServer,
   conversations: ConversationsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
-  registerAddConversation(mcp, conversations, indexState);
+  registerAddConversation(mcp, conversations, indexer);
   registerHasConversation(mcp, conversations);
-  registerMergeConversation(mcp, conversations, indexState);
+  registerMergeConversation(mcp, conversations, indexer);
   registerPrepareReviewBundle(mcp, conversations);
   registerValidateOutput(mcp, conversations);
 }
@@ -26,7 +25,7 @@ export function registerConversationsTools(
 function registerAddConversation(
   mcp: McpServer,
   conversations: ConversationsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "add_conversation",
@@ -44,7 +43,7 @@ function registerAddConversation(
     },
     async ({ path }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, () => conversations.addConversationFromFile(path)),
+        indexer.gateWrite(() => conversations.addConversationFromFile(path)),
       ),
   );
 }
@@ -73,7 +72,7 @@ function registerHasConversation(
 function registerMergeConversation(
   mcp: McpServer,
   conversations: ConversationsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "merge_conversation",
@@ -95,7 +94,7 @@ function registerMergeConversation(
     },
     async ({ working_dir }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, () => conversations.mergeConversation(working_dir)),
+        indexer.gateWrite(() => conversations.mergeConversation(working_dir)),
       ),
   );
 }

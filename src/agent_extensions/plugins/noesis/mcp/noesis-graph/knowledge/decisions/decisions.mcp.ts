@@ -5,8 +5,7 @@ import {
   TopicItemSchema,
 } from "../../../../shared-contracts/topics.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
-import type { IndexStateService } from "../../indexer/index-state.service.js";
-import { gateWriteTool } from "../../indexer/write-gate.js";
+import type { IndexerService } from "../../indexer/indexer.service.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -30,10 +29,10 @@ const SlotSchema = z
 export function registerDecisionsTools(
   mcp: McpServer,
   decisions: DecisionsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
-  registerAddDecision(mcp, decisions, indexState);
-  registerAddItemsToDecision(mcp, decisions, indexState);
+  registerAddDecision(mcp, decisions, indexer);
+  registerAddItemsToDecision(mcp, decisions, indexer);
   registerListDecisions(mcp, decisions);
   registerReadDecision(mcp, decisions);
   registerListDecisionsForSources(mcp, decisions);
@@ -42,7 +41,7 @@ export function registerDecisionsTools(
 function registerAddDecision(
   mcp: McpServer,
   decisions: DecisionsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "add_decision",
@@ -62,7 +61,7 @@ function registerAddDecision(
     },
     async ({ topic_id, decision }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, () => decisions.addDecision(topic_id, decision)),
+        indexer.gateWrite(() => decisions.addDecision(topic_id, decision)),
       ),
   );
 }
@@ -70,7 +69,7 @@ function registerAddDecision(
 function registerAddItemsToDecision(
   mcp: McpServer,
   decisions: DecisionsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "add_items_to_decision",
@@ -96,7 +95,7 @@ function registerAddItemsToDecision(
     },
     async ({ decision_id, slot, alternative_index, items }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, () => {
+        indexer.gateWrite(() => {
           const resolvedSlot = resolveSlot(slot, alternative_index);
           return decisions.addItemsToDecisionSlot(decision_id, resolvedSlot, items);
         }),

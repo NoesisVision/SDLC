@@ -30,6 +30,7 @@ import { DatabaseService } from "@noesis/mcp/noesis-graph/database/database.serv
 import { DesignDocsRepository } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.repository.js";
 import { SchemaService } from "@noesis/mcp/noesis-graph/knowledge/schema/schema.service.js";
 import { FileSyncService } from "@noesis/mcp/noesis-graph/file-sync/file-sync.service.js";
+import { GraphProjectionService } from "@noesis/mcp/noesis-graph/file-sync/graph-projection.service.js";
 import { SourceFilesRepository } from "@noesis/mcp/noesis-graph/file-sync/source-files.repository.js";
 
 describe("FileSyncService — registering and reconciling on-disk noesis files", () => {
@@ -47,6 +48,7 @@ describe("FileSyncService — registering and reconciling on-disk noesis files",
         SchemaService,
         DesignDocsRepository,
         SourceFilesRepository,
+        GraphProjectionService,
         FileSyncService,
         { provide: DATA_DIR, useValue: projectDir },
         { provide: PROJECT_DIR, useValue: projectDir },
@@ -63,7 +65,7 @@ describe("FileSyncService — registering and reconciling on-disk noesis files",
     rmSync(projectDir, { recursive: true, force: true });
   });
 
-  test("Loading a structured conversation file (json) registers the file and upserts the conversation row", async () => {
+  test("loading a structured conversation file registers the file and upserts the conversation row", async () => {
     let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
     let jsonPath: string;
 
@@ -77,7 +79,7 @@ describe("FileSyncService — registering and reconciling on-disk noesis files",
           main_topic: "Topic",
           turns: [],
           edited_by_user: false,
-        })
+        }),
       );
     });
     await when("the file sync service processes the structured conversation file", async () => {
@@ -145,141 +147,89 @@ describe("FileSyncService — registering and reconciling on-disk noesis files",
     );
   });
 
-  test(
-    "registerWritten records a file the file sync service itself wrote so a follow-up load does not flag a user edit",
-    async () => {
-      let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
+  test("registerWritten records a system-authored file so the next load does not flag a user edit", async () => {
+    let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
 
-      await given(
-        "a structured topic file that the system writes through registerWritten",
-        async () => {
-          const path = topicJsonPath(projectDir, "t2");
-          writeFileSync(
-            path,
-            JSON.stringify({
-              id: "t2",
-              title: "T",
-              short_summary: "s",
-              long_summary: "l",
-              items: [],
-              edited_by_user: false,
-            }),
-          );
-          await fileSync.registerWritten(path);
-        },
-      );
-      await when(
-        "the watcher's later loadFile callback runs against the same content",
-        async () => {
-          result = await fileSync.loadFile(topicJsonPath(projectDir, "t2"));
-        },
-      );
-      await then(
-        "no user edit is reported because the registry sha already matches",
-        () => {
-          expect(result?.user_edit_detected).toBe(false);
-        },
-      );
-    },
-  );
+    await given(
+      "a structured topic file that the system writes through registerWritten",
+      async () => {
+        const path = topicJsonPath(projectDir, "t2");
+        writeFileSync(
+          path,
+          JSON.stringify({
+            id: "t2",
+            title: "T",
+            short_summary: "s",
+            long_summary: "l",
+            items: [],
+            edited_by_user: false,
+          }),
+        );
+        await fileSync.registerWritten(path);
+      },
+    );
+    await when(
+      "the watcher's later loadFile callback runs against the same content",
+      async () => {
+        result = await fileSync.loadFile(topicJsonPath(projectDir, "t2"));
+      },
+    );
+    await then(
+      "no user edit is reported because the registry sha already matches",
+      () => {
+        expect(result?.user_edit_detected).toBe(false);
+      },
+    );
+  });
 
-  test(
-    "refreshStaleFlags flips a topic to stale when the referenced structured conversation file's sha changes",
-    async () => {
-      let staleBefore: number;
-      let staleAfter: number;
-      let conversationJson: string;
-      let topicPath: string;
-      let knownSha: string;
+  test("removing a registered file clears its registry row and returns the prior row", async () => {
+    let removedRow: Awaited<ReturnType<FileSyncService["removeFile"]>>;
+    let path: string;
 
-      await given(
-        "a topic that references one structured conversation file by its current sha",
-        async () => {
-          conversationJson = conversationJsonPath(projectDir, "c-ref");
-          writeFileSync(
-            conversationJson,
-            JSON.stringify({
-              conversation_id: "c-ref",
-              time: "t",
-              main_topic: "m",
-              turns: [],
-              edited_by_user: false,
-            }),
-          );
-          await fileSync.loadFile(conversationJson);
-          knownSha = (await sourceFiles.get(conversationJson))!.sha;
-
-          topicPath = topicJsonPath(projectDir, "t-stale");
-          writeFileSync(
-            topicPath,
-            JSON.stringify({
-              id: "t-stale",
-              title: "T",
-              short_summary: "s",
-              long_summary: "l",
-              items: [
-                {
-                  type: "idea_unit_ref",
-                  conversation_id: "c-ref",
-                  turn_index: 0,
-                  idea_unit_index: 0,
-                  source_sha: knownSha,
-                },
-              ],
-              edited_by_user: false,
-            }),
-          );
-          await fileSync.loadFile(topicPath);
-        },
+    await given("a topic file already registered in the SourceFile catalogue", async () => {
+      path = topicJsonPath(projectDir, "t-remove");
+      writeFileSync(
+        path,
+        JSON.stringify({
+          id: "t-remove",
+          title: "T",
+          short_summary: "s",
+          long_summary: "l",
+          items: [],
+          edited_by_user: false,
+        }),
       );
-      await when("a first refresh runs while the referenced sha still matches", async () => {
-        staleBefore = await fileSync.refreshStaleFlags();
-      });
-      await and(
-        "the structured conversation file is then mutated and re-loaded so its sha drifts",
-        async () => {
-          writeFileSync(
-            conversationJson,
-            JSON.stringify({
-              conversation_id: "c-ref",
-              time: "t",
-              main_topic: "m-changed",
-              turns: [],
-              edited_by_user: false,
-            }),
-          );
-          await fileSync.loadFile(conversationJson);
-          staleAfter = await fileSync.refreshStaleFlags();
-        },
-      );
-      await then(
-        "the topic was not stale before the drift but is stale after it",
-        () => {
-          expect(staleBefore).toBe(0);
-          expect(staleAfter).toBeGreaterThan(0);
-        },
-      );
-    },
-  );
+      await fileSync.loadFile(path);
+    });
+    await when(
+      "the indexer asks the file sync service to forget the file",
+      async () => {
+        removedRow = await fileSync.removeFile(path);
+      },
+    );
+    await then("the prior registry row is returned to the caller", () => {
+      expect(removedRow?.entity_id).toBe("t-remove");
+    });
+    await and("the SourceFile row no longer exists in the registry", async () => {
+      expect(await sourceFiles.get(path)).toBeNull();
+    });
+  });
 
-  test(
-    "loading a conversation markdown file detects the entity from the filename and stores its md sha",
-    async () => {
-      let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
+  test("loading a conversation markdown file detects the entity from the filename", async () => {
+    let result: Awaited<ReturnType<FileSyncService["loadFile"]>>;
 
-      await given("a conversation markdown file present on disk", () => {
-        const mdPath = conversationMdPath(projectDir, "c-md");
-        writeFileSync(mdPath, "<!-- conversation_id: c-md -->\n# hi\n");
-      });
-      await when("the file sync service processes the markdown file", async () => {
-        result = await fileSync.loadFile(conversationMdPath(projectDir, "c-md"));
-      });
-      await then("the kind is 'conversation' and the id matches the filename", () => {
-        expect(result?.kind).toBe("conversation");
-        expect(result?.id).toBe("c-md");
-      });
-    },
-  );
+    await given("a conversation markdown file present on disk", () => {
+      const mdPath = conversationMdPath(projectDir, "c-md");
+      writeFileSync(mdPath, "<!-- conversation_id: c-md -->\n# hi\n");
+    });
+    await when("the file sync service processes the markdown file", async () => {
+      result = await fileSync.loadFile(conversationMdPath(projectDir, "c-md"));
+    });
+    await then("the kind is 'conversation' and the id matches the filename", () => {
+      expect(result?.kind).toBe("conversation");
+      expect(result?.id).toBe("c-md");
+    });
+  });
 
   test("paths outside the noesis root are not treated as source files", async () => {
     let detected: ReturnType<FileSyncService["detect"]>;

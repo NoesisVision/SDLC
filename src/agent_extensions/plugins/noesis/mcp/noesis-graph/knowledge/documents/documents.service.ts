@@ -26,6 +26,7 @@ import type {
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { splitDocument } from "../../file-sync/document-splitter.js";
 import { FileSyncService } from "../../file-sync/file-sync.service.js";
+import { StalenessService } from "../../file-sync/staleness.service.js";
 import {
   DecisionsService,
   type DecisionSupportSlot,
@@ -59,6 +60,7 @@ export class DocumentsService {
     private readonly topics: TopicsRepository,
     private readonly decisions: DecisionsService,
     private readonly fileSync: FileSyncService,
+    private readonly staleness: StalenessService,
     @Inject(PROJECT_DIR) private readonly projectDir: string,
   ) {}
 
@@ -289,7 +291,7 @@ export class DocumentsService {
     for (const path of allPaths) {
       await this.fileSync.registerWritten(path);
     }
-    await this.fileSync.refreshStaleFlags();
+    await this.staleness.refreshStaleFlags();
     const filesWritten =
       2 + splitResult.topic_paths.length + splitResult.decision_paths.length;
 

@@ -27,15 +27,19 @@ import { DatabaseService } from "@noesis/mcp/noesis-graph/database/database.serv
 import { DesignDocsRepository } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.repository.js";
 import { SchemaService } from "@noesis/mcp/noesis-graph/knowledge/schema/schema.service.js";
 import { FileSyncService } from "@noesis/mcp/noesis-graph/file-sync/file-sync.service.js";
+import { GraphProjectionService } from "@noesis/mcp/noesis-graph/file-sync/graph-projection.service.js";
 import { SourceFilesRepository } from "@noesis/mcp/noesis-graph/file-sync/source-files.repository.js";
-import { IndexStateService } from "@noesis/mcp/noesis-graph/indexer/index-state.service.js";
-import { IndexerService } from "@noesis/mcp/noesis-graph/indexer/indexer.service.js";
+import { StalenessService } from "@noesis/mcp/noesis-graph/file-sync/staleness.service.js";
+import {
+  IndexerService,
+  type IndexState,
+  type NotReady,
+} from "@noesis/mcp/noesis-graph/indexer/indexer.service.js";
 
 interface Ctx {
   module: TestingModule;
   db: DatabaseService;
   indexer: IndexerService;
-  state: IndexStateService;
   sourceFiles: SourceFilesRepository;
 }
 
@@ -46,8 +50,9 @@ async function createCtx(projectDir: string): Promise<Ctx> {
       SchemaService,
       DesignDocsRepository,
       SourceFilesRepository,
+      GraphProjectionService,
       FileSyncService,
-      IndexStateService,
+      StalenessService,
       IndexerService,
       { provide: DATA_DIR, useValue: projectDir },
       { provide: PROJECT_DIR, useValue: projectDir },
@@ -59,18 +64,18 @@ async function createCtx(projectDir: string): Promise<Ctx> {
     module,
     db: module.get(DatabaseService),
     indexer: module.get(IndexerService),
-    state: module.get(IndexStateService),
     sourceFiles: module.get(SourceFilesRepository),
   };
 }
 
-describe("IndexerService — discovering and reconciling on-disk noesis files", () => {
+describe("IndexerService — discovering files, broadcasting state, and gating writes", () => {
   let projectDir: string;
   let ctx: Ctx;
 
   beforeAll(async () => {
     projectDir = mkdtempSync(join(tmpdir(), "noesis-indexer-"));
     ctx = await createCtx(projectDir);
+    ctx.indexer.setWriteGateRetryDelayMs(20);
   });
 
   afterAll(async () => {
@@ -89,8 +94,9 @@ describe("IndexerService — discovering and reconciling on-disk noesis files", 
       await ctx.indexer.runFullIndex();
     });
     await then("the index state ends as 'consistent' with zero files seen", () => {
-      expect(ctx.state.get().state).toBe("consistent");
-      expect(ctx.state.get().files_total).toBe(0);
+      const state = ctx.indexer.getState();
+      expect(state.state).toBe("consistent");
+      expect(state.files_total).toBe(0);
     });
     await and("the SourceFile catalogue is empty", async () => {
       expect(await ctx.sourceFiles.listAll()).toEqual([]);
@@ -145,10 +151,10 @@ describe("IndexerService — discovering and reconciling on-disk noesis files", 
       await then(
         "the state ends consistent with all four files counted as processed",
         () => {
-          const s = ctx.state.get();
-          expect(s.state).toBe("consistent");
-          expect(s.files_total).toBe(4);
-          expect(s.files_processed).toBe(4);
+          const state = ctx.indexer.getState();
+          expect(state.state).toBe("consistent");
+          expect(state.files_total).toBe(4);
+          expect(state.files_processed).toBe(4);
         },
       );
       await and(
@@ -263,5 +269,91 @@ describe("IndexerService — discovering and reconciling on-disk noesis files", 
       expect(beforeRemoval).toBe(1);
       expect(afterRemoval).toBe(0);
     });
+  });
+
+  test("subscribers receive every state transition until they unsubscribe", async () => {
+    const events: IndexState[] = [];
+    let unsubscribe: () => void;
+
+    await given("a listener subscribed to the indexer's state stream", () => {
+      ensureNoesisLayout(projectDir);
+      unsubscribe = ctx.indexer.subscribe((s) => events.push({ ...s }));
+    });
+    await when("the indexer runs a full pass and the subscriber stays attached", async () => {
+      await ctx.indexer.runFullIndex();
+      unsubscribe();
+    });
+    await then(
+      "the listener captures both the indexing-start event and the consistent end state",
+      () => {
+        const phases = events.map((e) => e.state);
+        expect(phases[0]).toBe("indexing");
+        expect(phases.at(-1)).toBe("consistent");
+      },
+    );
+  });
+
+  test("write gate forwards the inner function's result when the indexer is consistent", async () => {
+    let result: { id: string } | NotReady;
+
+    await given("an indexer that has reached the consistent state", async () => {
+      await ctx.indexer.runFullIndex();
+      expect(ctx.indexer.isWriteAllowed()).toBe(true);
+    });
+    await when("a write tool runs through gateWrite", async () => {
+      result = await ctx.indexer.gateWrite(async () => ({ id: "ok" }));
+    });
+    await then("the inner function's return value is forwarded unchanged", () => {
+      expect(result).toEqual({ id: "ok" });
+    });
+  });
+
+  test("write gate retries once after the configured delay before returning NotReady", async () => {
+    let result: { id: string } | NotReady;
+    let elapsedMs: number;
+    let originalDelay: number;
+
+    await given(
+      "an indexer that the test forces into a non-consistent phase",
+      async () => {
+        // First reach consistent so the suite is in a known state.
+        await ctx.indexer.runFullIndex();
+        expect(ctx.indexer.isWriteAllowed()).toBe(true);
+        // Drive it into the 'error' phase by triggering a runFullIndex against
+        // a path it cannot scan: replace the noesis subtree with a regular file.
+        const noesisPath = join(projectDir, "noesis");
+        rmSync(noesisPath, { recursive: true, force: true });
+        writeFileSync(noesisPath, "not-a-directory");
+        await ctx.indexer.runFullIndex();
+        expect(ctx.indexer.isWriteAllowed()).toBe(false);
+        originalDelay = 40;
+        ctx.indexer.setWriteGateRetryDelayMs(originalDelay);
+      },
+    );
+    await when(
+      "a write tool calls gateWrite while the indexer is non-consistent",
+      async () => {
+        const startedAt = Date.now();
+        result = await ctx.indexer.gateWrite(async () => ({ id: "should-not-run" }));
+        elapsedMs = Date.now() - startedAt;
+      },
+    );
+    await then(
+      "the gate returns a NotReady payload describing why writes are blocked",
+      () => {
+        const notReady = result as NotReady;
+        expect(notReady.status).toBe("NotReady");
+        expect(typeof notReady.message).toBe("string");
+        expect(notReady.message.length).toBeGreaterThan(0);
+      },
+    );
+    await and(
+      "the gate has waited at least one retry delay before deciding (no instant rejection)",
+      () => {
+        expect(elapsedMs).toBeGreaterThanOrEqual(originalDelay);
+      },
+    );
+    // Restore so subsequent tests get the suite-level retry delay back.
+    ctx.indexer.setWriteGateRetryDelayMs(20);
   });
 });

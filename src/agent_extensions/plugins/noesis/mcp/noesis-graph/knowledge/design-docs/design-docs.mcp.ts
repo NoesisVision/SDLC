@@ -17,8 +17,7 @@ import type {
   BoundedContextMapEntry,
   ModelTarget,
 } from "./design-docs.repository.js";
-import type { IndexStateService } from "../../indexer/index-state.service.js";
-import { gateWriteTool } from "../../indexer/write-gate.js";
+import type { IndexerService } from "../../indexer/indexer.service.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -27,18 +26,18 @@ import {
 export function registerDesignDocsTools(
   mcp: McpServer,
   service: DesignDocsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   registerPrepareDesignDocPath(mcp, service);
-  registerSaveDesignDoc(mcp, service, indexState);
+  registerSaveDesignDoc(mcp, service, indexer);
   registerReadDesignDoc(mcp, service);
   registerListDesignDocs(mcp, service);
-  registerDeleteDesignDoc(mcp, service, indexState);
+  registerDeleteDesignDoc(mcp, service, indexer);
   registerReadBoundedContextMap(mcp, service);
   registerReadModelForModules(mcp, service);
-  registerMarkDesignDocImplemented(mcp, service, indexState);
+  registerMarkDesignDocImplemented(mcp, service, indexer);
   registerListActors(mcp, service);
-  registerUpsertActor(mcp, service, indexState);
+  registerUpsertActor(mcp, service, indexer);
 }
 
 function registerPrepareDesignDocPath(
@@ -77,7 +76,7 @@ function registerPrepareDesignDocPath(
 function registerSaveDesignDoc(
   mcp: McpServer,
   service: DesignDocsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "save_design_doc",
@@ -115,7 +114,7 @@ function registerSaveDesignDoc(
     },
     async ({ path, confirmed_edits }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, async () => {
+        indexer.gateWrite(async () => {
           try {
             return await service.saveDesignDocFromFile(path, confirmed_edits ?? []);
           } catch (err) {
@@ -136,7 +135,7 @@ function registerSaveDesignDoc(
 function registerMarkDesignDocImplemented(
   mcp: McpServer,
   service: DesignDocsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "mark_design_doc_implemented",
@@ -156,7 +155,7 @@ function registerMarkDesignDocImplemented(
     },
     async ({ design_doc_id }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, () =>
+        indexer.gateWrite(() =>
           service.markDesignDocImplemented(design_doc_id),
         ),
       ),
@@ -212,7 +211,7 @@ function registerListDesignDocs(
 function registerDeleteDesignDoc(
   mcp: McpServer,
   service: DesignDocsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "delete_design_doc",
@@ -227,7 +226,7 @@ function registerDeleteDesignDoc(
     },
     async ({ design_doc_id }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, () => service.deleteDesignDoc(design_doc_id)),
+        indexer.gateWrite(() => service.deleteDesignDoc(design_doc_id)),
       ),
   );
 }
@@ -333,7 +332,7 @@ function registerListActors(
 function registerUpsertActor(
   mcp: McpServer,
   service: DesignDocsService,
-  indexState: IndexStateService,
+  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "upsert_actor",
@@ -356,7 +355,7 @@ function registerUpsertActor(
     },
     async ({ name, description }) =>
       runInlineJsonTool(() =>
-        gateWriteTool(indexState, () =>
+        indexer.gateWrite(() =>
           service.upsertActor({
             name,
             description: description ?? null,

@@ -26,6 +26,7 @@ import type {
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { splitConversation } from "../../file-sync/conversation-splitter.js";
 import { FileSyncService } from "../../file-sync/file-sync.service.js";
+import { StalenessService } from "../../file-sync/staleness.service.js";
 import { DecisionsService } from "../decisions/decisions.service.js";
 import { DocumentsRepository } from "../documents/documents.repository.js";
 import { TopicsRepository } from "../topics/topics.repository.js";
@@ -61,6 +62,7 @@ export class ConversationsService {
     private readonly documents: DocumentsRepository,
     private readonly decisions: DecisionsService,
     private readonly fileSync: FileSyncService,
+    private readonly staleness: StalenessService,
     @Inject(PROJECT_DIR) private readonly projectDir: string,
   ) {}
 
@@ -210,7 +212,7 @@ export class ConversationsService {
     for (const path of allPaths) {
       await this.fileSync.registerWritten(path);
     }
-    await this.fileSync.refreshStaleFlags();
+    await this.staleness.refreshStaleFlags();
     const filesWritten =
       2 + splitResult.topic_paths.length + splitResult.decision_paths.length;
 

@@ -1,12 +1,12 @@
 import { Controller, Get } from "@nestjs/common";
-import { type IndexState, IndexStateService } from "./index-state.service.js";
+import { type IndexState, IndexerService } from "./indexer.service.js";
 
 @Controller("api/health")
 export class IndexStateController {
-  constructor(private readonly indexState: IndexStateService) {}
+  constructor(private readonly indexer: IndexerService) {}
 
   @Get("index")
   get(): IndexState {
-    return this.indexState.get();
+    return this.indexer.getState();
   }
 }

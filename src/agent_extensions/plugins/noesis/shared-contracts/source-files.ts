@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, resolve } from "path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { dirname, extname, join, resolve, sep } from "path";
 import { z } from "zod";
 
 const NOESIS_DIR_NAME = "noesis";
@@ -14,12 +14,31 @@ export const SourceFileKindSchema = z.enum([
 ]);
 export type SourceFileKind = z.infer<typeof SourceFileKindSchema>;
 
-const SUBDIR_FOR_KIND: Record<SourceFileKind, string> = {
+export const SOURCE_FILE_KINDS: readonly SourceFileKind[] = [
+  "conversation",
+  "document",
+  "topic",
+  "decision",
+  "design_doc",
+];
+
+export const SOURCE_FILE_EXTENSIONS = [".md", ".json"] as const;
+export type SourceFileExtension = (typeof SOURCE_FILE_EXTENSIONS)[number];
+
+export const SUBDIR_FOR_KIND: Record<SourceFileKind, string> = {
   conversation: "conversations",
   document: "documents",
   topic: "topics",
   decision: "decisions",
   design_doc: "design-docs",
+};
+
+export const KIND_FOR_SUBDIR: Record<string, SourceFileKind> = {
+  conversations: "conversation",
+  documents: "document",
+  topics: "topic",
+  decisions: "decision",
+  "design-docs": "design_doc",
 };
 
 const ID_FIELD_FOR_KIND: Record<SourceFileKind, string> = {
@@ -204,4 +223,52 @@ export function isUnderNoesisRoot(projectDir: string, absPath: string): boolean 
   const root = noesisRoot(projectDir);
   const target = resolve(absPath);
   return target === root || target.startsWith(`${root}/`);
+}
+
+export interface DiscoveredSourceFile {
+  kind: SourceFileKind;
+  path: string;
+}
+
+export function discoverSourceFiles(projectDir: string): DiscoveredSourceFile[] {
+  const out: DiscoveredSourceFile[] = [];
+  for (const kind of SOURCE_FILE_KINDS) {
+    const dir = noesisSubdirPath(projectDir, kind);
+    if (!existsSync(dir)) continue;
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      try {
+        if (!statSync(full).isFile()) continue;
+      } catch {
+        continue;
+      }
+      if (!hasValidSourceFileExtension(entry)) continue;
+      out.push({ kind, path: full });
+    }
+  }
+  return out;
+}
+
+export function classifySourceFilePath(
+  projectDir: string,
+  absPath: string,
+): { kind: SourceFileKind; subdirRelative: string; ext: SourceFileExtension } | null {
+  const root = noesisRoot(projectDir);
+  if (!absPath.startsWith(`${root}${sep}`)) return null;
+  const rel = absPath.slice(root.length + 1);
+  const segments = rel.split(sep);
+  if (segments.length < 2) return null;
+  const kind = KIND_FOR_SUBDIR[segments[0]];
+  if (kind === undefined) return null;
+  const ext = extname(segments[segments.length - 1]);
+  if (!isSourceFileExtension(ext)) return null;
+  return { kind, subdirRelative: segments.slice(1).join(sep), ext };
+}
+
+function hasValidSourceFileExtension(filename: string): boolean {
+  return isSourceFileExtension(extname(filename));
+}
+
+function isSourceFileExtension(ext: string): ext is SourceFileExtension {
+  return (SOURCE_FILE_EXTENSIONS as readonly string[]).includes(ext);
 }

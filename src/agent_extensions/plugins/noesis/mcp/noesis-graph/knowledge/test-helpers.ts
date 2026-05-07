@@ -5,7 +5,9 @@ import { tmpdir } from "os";
 import { DATA_DIR, PROJECT_DIR } from "../config/config.module.js";
 import { DatabaseService } from "../database/database.service.js";
 import { FileSyncService } from "../file-sync/file-sync.service.js";
+import { GraphProjectionService } from "../file-sync/graph-projection.service.js";
 import { SourceFilesRepository } from "../file-sync/source-files.repository.js";
+import { StalenessService } from "../file-sync/staleness.service.js";
 import { ConversationsRepository } from "./conversations/conversations.repository.js";
 import { ConversationsService } from "./conversations/conversations.service.js";
 import { DecisionsRepository } from "./decisions/decisions.repository.js";
@@ -51,6 +53,8 @@ export async function createKnowledgeTestModule(): Promise<KnowledgeTestContext>
       DesignDocsRepository,
       SourceFilesRepository,
       FileSyncService,
+      GraphProjectionService,
+      StalenessService,
       { provide: DATA_DIR, useValue: tmpDir },
       { provide: PROJECT_DIR, useValue: tmpDir },
     ],

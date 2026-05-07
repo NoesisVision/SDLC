@@ -13,7 +13,7 @@ import {
 import { PROJECT_DIR } from "../config/config.module.js";
 import { IndexerService } from "./indexer.service.js";
 
-const DEFAULT_DEBOUNCE_MS = 250;
+const DEFAULT_DEBOUNCE_MS = 1000;
 
 @Injectable()
 export class FileWatcherService
@@ -24,6 +24,8 @@ export class FileWatcherService
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private debounceMs = DEFAULT_DEBOUNCE_MS;
   private autoStart = true;
+  private indexingInProgress = false;
+  private rerunRequested = false;
 
   constructor(
     @Inject(PROJECT_DIR) private readonly projectDir: string,
@@ -32,7 +34,13 @@ export class FileWatcherService
 
   async onApplicationBootstrap(): Promise<void> {
     if (!this.autoStart) return;
-    await this.indexer.runFullIndex();
+    this.indexingInProgress = true;
+    try {
+      await this.indexer.runFullIndex();
+    } finally {
+      this.indexingInProgress = false;
+    }
+    this.start();
   }
 
   disableAutoStart(): void {
@@ -69,12 +77,29 @@ export class FileWatcherService
   }
 
   private scheduleReindex(): void {
+    if (this.indexingInProgress) {
+      this.rerunRequested = true;
+      return;
+    }
     if (this.debounceTimer !== null) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
-      this.indexer.runFullIndex().catch((err) => {
-        this.logger.error(`Re-index failed: ${(err as Error).message}`);
-      });
+      void this.runReindex();
     }, this.debounceMs);
+  }
+
+  private async runReindex(): Promise<void> {
+    this.indexingInProgress = true;
+    try {
+      await this.indexer.runFullIndex();
+    } catch (err) {
+      this.logger.error(`Re-index failed: ${(err as Error).message}`);
+    } finally {
+      this.indexingInProgress = false;
+    }
+    if (this.rerunRequested) {
+      this.rerunRequested = false;
+      this.scheduleReindex();
+    }
   }
 }

@@ -24,6 +24,7 @@ import {
   PROJECT_DIR,
 } from "@noesis/mcp/noesis-graph/config/config.module.js";
 import { FileSyncService } from "@noesis/mcp/noesis-graph/file-sync/file-sync.service.js";
+import { GraphProjectionService } from "@noesis/mcp/noesis-graph/file-sync/graph-projection.service.js";
 import { SourceFilesRepository } from "@noesis/mcp/noesis-graph/file-sync/source-files.repository.js";
 import { SchemaService } from "@noesis/mcp/noesis-graph/knowledge/schema/schema.service.js";
 import { DesignDocsRepository } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.repository.js";
@@ -57,6 +58,7 @@ describe("DesignDocsService — saving, listing, and locking design documents", 
         DesignDocsService,
         SourceFilesRepository,
         FileSyncService,
+        GraphProjectionService,
         { provide: DATA_DIR, useValue: tmpDir },
         { provide: PROJECT_DIR, useValue: tmpDir },
       ],
