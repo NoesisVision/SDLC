@@ -1,0 +1,38 @@
+name = "threshold-discount-extraction-noesis"
+description = "Extract a Design Doc from a Markdown design draft using the noesis:analyze-design-draft skill backed by the noesis-graph MCP server."
+difficulty = "intermediate"
+estimated_time_minutes = 15
+tags = [
+  "design-doc",
+  "model-extraction",
+  "DDD",
+  "noesis-plugin",
+  "noesis-mcp"
+]
+instruction = "./instruction.md"
+
+[environment]
+type = "docker"
+dockerfile = "./environment/Dockerfile"
+
+# Register the noesis-graph MCP server for the agent. Harbor writes this into
+# the sandbox's .claude.json under mcpServers, so the noesis:analyze-design-draft
+# skill can call its MCP tools (list_topics, save_design_doc, …).
+[[environment.mcp_servers]]
+name = "noesis-graph"
+transport = "stdio"
+command = "sh"
+args = [
+  "-c",
+  "export CLAUDE_PROJECT_DIR=/app && export CLAUDE_PLUGIN_DATA=/var/noesis-plugin-data && mkdir -p $CLAUDE_PLUGIN_DATA && cd /opt/noesis-plugin && exec bun run mcp/noesis-graph/server.ts"
+]
+
+[evaluation]
+type = "script"
+script = "./tests/test.sh"
+timeout_seconds = 60
+
+[metadata]
+domain = "Software Architecture"
+draft_language = "English"
+expected_output_dir = "/app/noesis/design-docs/"

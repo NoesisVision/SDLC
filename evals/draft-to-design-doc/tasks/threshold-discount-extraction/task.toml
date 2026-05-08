@@ -1,0 +1,25 @@
+name = "threshold-discount-extraction"
+description = "Extract a Design Doc JSON from a Markdown design draft describing a new threshold-activated discount value object in a Sales pricing model."
+difficulty = "intermediate"
+estimated_time_minutes = 8
+tags = [
+  "design-doc",
+  "model-extraction",
+  "DDD",
+  "noesis-plugin"
+]
+instruction = "./instruction.md"
+
+[environment]
+type = "docker"
+dockerfile = "./environment/Dockerfile"
+
+[evaluation]
+type = "script"
+script = "./tests/test.sh"
+timeout_seconds = 60
+
+[metadata]
+domain = "Software Architecture"
+draft_language = "English"
+expected_output_path = "/app/output/design-doc.json"

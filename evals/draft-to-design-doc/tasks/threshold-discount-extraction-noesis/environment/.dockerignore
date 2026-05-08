@@ -1,0 +1,6 @@
+_plugin-staging/node_modules
+_plugin-staging/.serena
+_plugin-staging/noesis
+_plugin-staging/.git
+_plugin-staging/**/__pycache__
+_plugin-staging/**/.DS_Store
