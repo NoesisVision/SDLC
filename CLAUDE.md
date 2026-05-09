@@ -16,7 +16,8 @@
    - **Types, Interfaces, Enums:** `PascalCase`
    - **Functions, methods, variables:** `camelCase`
    - **Constants:** `UPPER_SNAKE_CASE`
-8. All code, comments, documentation, and commit messages must be in **English**.
+8. Prefer full words in code. Use only commonly used abbreviations.
+9. All code, comments, documentation, and commit messages must be in **English**.
 
 ## TypeScript
 
