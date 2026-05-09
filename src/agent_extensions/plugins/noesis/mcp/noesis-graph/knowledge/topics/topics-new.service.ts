@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { rmSync } from "fs";
 import type { TopicFileNew } from "../../../../shared-contracts/source-file-schemas-new.js";
+import { topicJsonPath } from "../../../../shared-contracts/source-files.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { TopicsRepositoryNew } from "./topics-new.repository.js";
 
@@ -37,6 +39,7 @@ export class TopicsServiceNew {
     if (id === null) return null;
     if (!(await this.repository.exists(id))) return null;
     await this.repository.delete(id);
+    rmSync(topicJsonPath(this.projectDir, id), { force: true });
     return { topic_id: id };
   }
 

@@ -7,7 +7,13 @@ import {
   expect,
   test,
 } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { and, given, then, when } from "@tests/bdd.js";
 import {
@@ -299,12 +305,32 @@ describe("TopicsServiceNew — indexing, editing with locks, staleness, deletion
     });
   });
 
-  test("Deleting a topic by its canonical file path removes the corresponding row from DB", async () => {
+  test("Deleting a topic while its source file is still on disk removes both the DB row and the file", async () => {
     let path = "";
 
-    await given("a topic indexed in DB", async () => {
+    await given("an indexed topic whose source file still lives on disk", async () => {
       path = writeTopicFile(ctx.projectDir, topicFile());
       await ctx.topics.indexFile(path);
+    });
+    await when("deletion is requested for the topic's canonical path", async () => {
+      const result = await ctx.topics.deleteForFile(path);
+      expect(result?.topic_id).toBe("topic-1");
+    });
+    await then("the topic no longer exists in DB", async () => {
+      expect(await ctx.topicsRepository.exists("topic-1")).toBe(false);
+    });
+    await and("the source file is removed from disk", () => {
+      expect(existsSync(path)).toBe(false);
+    });
+  });
+
+  test("Deleting a topic whose source file is already gone still removes the DB row", async () => {
+    let path = "";
+
+    await given("an indexed topic whose source file has been removed from disk", async () => {
+      path = writeTopicFile(ctx.projectDir, topicFile());
+      await ctx.topics.indexFile(path);
+      rmSync(path, { force: true });
     });
     await when("deletion is requested for the topic's canonical path", async () => {
       const result = await ctx.topics.deleteForFile(path);

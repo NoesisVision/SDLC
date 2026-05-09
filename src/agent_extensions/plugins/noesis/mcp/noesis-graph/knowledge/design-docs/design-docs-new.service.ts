@@ -1,11 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, rmSync } from "fs";
 import {
   DesignDocFileNewSchema,
   type DesignDocFileNew,
 } from "../../../../shared-contracts/design-doc-new.js";
 import { ensureNoesisLayout } from "../../../../shared-contracts/source-files.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
+import {
+  detectDesignDocConflicts,
+  resolveDesignDocLockedFields,
+  type ConfirmedEdit,
+} from "../locks-new.js";
 import { DesignDocsRepositoryNew } from "./design-docs-new.repository.js";
 
 export interface IndexFileOutcome {
@@ -48,6 +53,7 @@ export class DesignDocsServiceNew {
     const target = all.find((row) => row.source_path === absPath);
     if (target === undefined) return null;
     await this.repository.delete(target.id);
+    rmSync(absPath, { force: true });
     return { design_doc_id: target.id };
   }
 
@@ -127,8 +133,33 @@ export class DesignDocsServiceNew {
   }
 
   /**
-   * Save an in-memory design-doc file to its canonical location. Used by skills /
-   * tests that already hold the parsed object.
+   * Read + validate a design-doc working file without writing anything. Returned shape
+   * matches the persisted schema. Throws if the working file is missing or malformed.
+   */
+  loadWorkingFile(workingDirPath: string): DesignDocFileNew {
+    if (!existsSync(workingDirPath)) {
+      throw new Error(`Design doc working file not found: ${workingDirPath}`);
+    }
+    return DesignDocFileNewSchema.parse(
+      JSON.parse(readFileSync(workingDirPath, "utf-8")),
+    );
+  }
+
+  /**
+   * Conflict detector for the upload-time lock model. Compares the proposed file against
+   * the current canonical file (if any) and returns one ConfirmedEdit entry per locked
+   * field whose value would change. Empty array when there is no canonical file yet.
+   */
+  detectConflicts(file: DesignDocFileNew): ConfirmedEdit[] {
+    const existing = this.readCanonicalIfExists(file.id);
+    return detectDesignDocConflicts(existing, file);
+  }
+
+  /**
+   * Save an in-memory design-doc file to its canonical location, blindly overwriting
+   * the prior canonical content. Used by editTopFieldsAndLock (which has already
+   * validated locks) and by tests for setup. Lock-aware skill uploads should go
+   * through persistFromWorkingFile instead.
    */
   persistFile(file: DesignDocFileNew): string {
     ensureNoesisLayout(this.projectDir);
@@ -143,17 +174,33 @@ export class DesignDocsServiceNew {
 
   /**
    * DocumentsServiceNew calls this with the working-dir path to the design-doc JSON.
-   * The service reads + validates + writes to the canonical path, removing the prior
-   * canonical file when the rename changes the filename. Returns the final canonical path.
+   * Reads + validates + writes to the canonical path, removing the prior canonical
+   * file when the rename changes the filename. Locked fields whose value would change
+   * are preserved unless the corresponding ConfirmedEdit is present in `confirmed`.
+   * For each cleared lock, the new value is written and the lock flag is reset to false.
    */
-  persistFromWorkingFile(workingDirPath: string): string {
-    if (!existsSync(workingDirPath)) {
-      throw new Error(`Design doc working file not found: ${workingDirPath}`);
-    }
-    const file = DesignDocFileNewSchema.parse(
-      JSON.parse(readFileSync(workingDirPath, "utf-8")),
-    );
-    return this.persistFile(file);
+  persistFromWorkingFile(
+    workingDirPath: string,
+    confirmed: Set<string> = new Set(),
+  ): { path: string; cleared: ConfirmedEdit[] } {
+    const file = this.loadWorkingFile(workingDirPath);
+    const existing = this.readCanonicalIfExists(file.id);
+    const cleared: ConfirmedEdit[] = [];
+    const resolved = resolveDesignDocLockedFields(existing, file, confirmed, cleared);
+    const merged: DesignDocFileNew = {
+      ...file,
+      name: resolved.name,
+      name_locked: resolved.name_locked,
+      description: resolved.description,
+      description_locked: resolved.description_locked,
+    };
+    return { path: this.persistFile(merged), cleared };
+  }
+
+  private readCanonicalIfExists(designDocId: string): DesignDocFileNew | null {
+    const path = this.repository.findFileById(this.projectDir, designDocId);
+    if (path === null) return null;
+    return this.repository.readFile(path);
   }
 
   async prepareDesignDocPath(

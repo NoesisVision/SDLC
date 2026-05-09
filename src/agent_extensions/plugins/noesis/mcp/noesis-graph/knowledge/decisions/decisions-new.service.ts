@@ -1,9 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { rmSync } from "fs";
 import type {
   DecisionFileNew,
   DecisionOptionNew,
   TopicItemRefNew,
 } from "../../../../shared-contracts/source-file-schemas-new.js";
+import { decisionJsonPath } from "../../../../shared-contracts/source-files.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import type { SourceShaSnapshot } from "../topics/topics-new.service.js";
 import { DecisionsRepositoryNew } from "./decisions-new.repository.js";
@@ -77,6 +79,7 @@ export class DecisionsServiceNew {
     if (id === null) return null;
     if (!(await this.repository.exists(id))) return null;
     await this.repository.delete(id);
+    rmSync(decisionJsonPath(this.projectDir, id), { force: true });
     return { decision_id: id };
   }
 

@@ -24,21 +24,24 @@ import {
 } from "../../../../shared-contracts/source-files.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { DecisionsRepositoryNew } from "../decisions/decisions-new.repository.js";
+import {
+  confirmedKey,
+  detectDecisionConflicts,
+  detectTopicConflicts,
+  LockedFieldsBlockedError,
+  resolveDecisionLockedFields,
+  resolveTopicLockedFields,
+  type ConfirmedEdit,
+} from "../locks-new.js";
 import { TopicsRepositoryNew } from "../topics/topics-new.repository.js";
 import { ConversationsRepositoryNew } from "./conversations-new.repository.js";
 
-export type TopicLockedField = "title" | "short_summary" | "long_summary";
-
-export type DecisionLockedField =
-  | "title"
-  | "status"
-  | "context.text"
-  | "decision.text"
-  | "decision.rationale";
-
-export type ConfirmedEdit =
-  | { kind: "topic"; topic_id: string; field: TopicLockedField }
-  | { kind: "decision"; decision_id: string; field: DecisionLockedField };
+export {
+  LockedFieldsBlockedError,
+  type ConfirmedEdit,
+  type DecisionLockedField,
+  type TopicLockedField,
+} from "../locks-new.js";
 
 export interface ConversationAnalysisOutput {
   outputJsonPath: string;
@@ -56,28 +59,6 @@ export interface UploadConversationAnalysisResult {
 export interface IndexFileOutcome {
   status: "indexed" | "unchanged";
   conversation_id: string;
-}
-
-export class LockedFieldsBlockedError extends Error {
-  readonly blocked: ConfirmedEdit[];
-  constructor(blocked: ConfirmedEdit[]) {
-    super(
-      `Upload would overwrite ${blocked.length} locked field(s) without user confirmation: ` +
-        blocked.map(formatConfirmedEdit).join(", "),
-    );
-    this.name = "LockedFieldsBlockedError";
-    this.blocked = blocked;
-  }
-}
-
-function formatConfirmedEdit(edit: ConfirmedEdit): string {
-  return edit.kind === "topic"
-    ? `topic:${edit.topic_id}.${edit.field}`
-    : `decision:${edit.decision_id}.${edit.field}`;
-}
-
-function confirmedKey(edit: ConfirmedEdit): string {
-  return formatConfirmedEdit(edit);
 }
 
 @Injectable()
@@ -188,80 +169,16 @@ export class ConversationsServiceNew {
   ): ConfirmedEdit[] {
     const conflicts: ConfirmedEdit[] = [];
     for (const topic of output.conversation.topics) {
-      const existing = readTopicIfExists(topicJsonPath(this.projectDir, topic.id));
-      if (existing !== null) {
-        if (existing.title_locked && existing.title !== topic.title) {
-          conflicts.push({ kind: "topic", topic_id: topic.id, field: "title" });
-        }
-        if (
-          existing.short_summary_locked &&
-          existing.short_summary !== topic.short_summary
-        ) {
-          conflicts.push({
-            kind: "topic",
-            topic_id: topic.id,
-            field: "short_summary",
-          });
-        }
-        if (
-          existing.long_summary_locked &&
-          existing.long_summary !== topic.long_summary
-        ) {
-          conflicts.push({
-            kind: "topic",
-            topic_id: topic.id,
-            field: "long_summary",
-          });
-        }
-      }
+      const existingTopic = readTopicIfExists(
+        topicJsonPath(this.projectDir, topic.id),
+      );
+      conflicts.push(...detectTopicConflicts(existingTopic, topic));
       for (const decision of topic.decisions) {
         const dpath = decisionJsonPath(this.projectDir, decision.id);
-        if (!this.decisionsRepository.fileExists(dpath)) continue;
-        const dexisting = this.decisionsRepository.readFile(dpath);
-        if (dexisting.title_locked && dexisting.title !== decision.title) {
-          conflicts.push({
-            kind: "decision",
-            decision_id: decision.id,
-            field: "title",
-          });
-        }
-        if (dexisting.status_locked && dexisting.status !== decision.status) {
-          conflicts.push({
-            kind: "decision",
-            decision_id: decision.id,
-            field: "status",
-          });
-        }
-        if (
-          dexisting.context.text_locked &&
-          dexisting.context.text !== decision.context.text
-        ) {
-          conflicts.push({
-            kind: "decision",
-            decision_id: decision.id,
-            field: "context.text",
-          });
-        }
-        if (
-          dexisting.decision.text_locked &&
-          dexisting.decision.text !== decision.decision.text
-        ) {
-          conflicts.push({
-            kind: "decision",
-            decision_id: decision.id,
-            field: "decision.text",
-          });
-        }
-        if (
-          dexisting.decision.rationale_locked &&
-          dexisting.decision.rationale !== decision.decision.rationale
-        ) {
-          conflicts.push({
-            kind: "decision",
-            decision_id: decision.id,
-            field: "decision.rationale",
-          });
-        }
+        const existingDecision = this.decisionsRepository.fileExists(dpath)
+          ? this.decisionsRepository.readFile(dpath)
+          : null;
+        conflicts.push(...detectDecisionConflicts(existingDecision, decision));
       }
     }
     return conflicts;
@@ -476,181 +393,6 @@ function readTopicIfExists(absPath: string): TopicFileNew | null {
   } catch {
     return null;
   }
-}
-
-interface ResolvedTopicFields {
-  title: string;
-  title_locked: boolean;
-  short_summary: string;
-  short_summary_locked: boolean;
-  long_summary: string;
-  long_summary_locked: boolean;
-}
-
-function resolveTopicLockedFields(
-  existing: TopicFileNew | null,
-  proposed: AnalyzeConversationOutput["conversation"]["topics"][number],
-  confirmed: Set<string>,
-  cleared: ConfirmedEdit[],
-): ResolvedTopicFields {
-  if (existing === null) {
-    return {
-      title: proposed.title,
-      title_locked: false,
-      short_summary: proposed.short_summary,
-      short_summary_locked: false,
-      long_summary: proposed.long_summary,
-      long_summary_locked: false,
-    };
-  }
-  return {
-    ...resolveLockableField(
-      { kind: "topic", topic_id: proposed.id, field: "title" },
-      existing.title,
-      existing.title_locked,
-      proposed.title,
-      confirmed,
-      cleared,
-      "title",
-    ),
-    ...resolveLockableField(
-      { kind: "topic", topic_id: proposed.id, field: "short_summary" },
-      existing.short_summary,
-      existing.short_summary_locked,
-      proposed.short_summary,
-      confirmed,
-      cleared,
-      "short_summary",
-    ),
-    ...resolveLockableField(
-      { kind: "topic", topic_id: proposed.id, field: "long_summary" },
-      existing.long_summary,
-      existing.long_summary_locked,
-      proposed.long_summary,
-      confirmed,
-      cleared,
-      "long_summary",
-    ),
-  };
-}
-
-interface ResolvedDecisionFields {
-  title: string;
-  title_locked: boolean;
-  status: DecisionFileNew["status"];
-  status_locked: boolean;
-  context_text: string;
-  context_text_locked: boolean;
-  decision_text: string;
-  decision_text_locked: boolean;
-  decision_rationale: string;
-  decision_rationale_locked: boolean;
-}
-
-function resolveDecisionLockedFields(
-  existing: DecisionFileNew | null,
-  proposed: AnalyzeConversationOutput["conversation"]["topics"][number]["decisions"][number],
-  confirmed: Set<string>,
-  cleared: ConfirmedEdit[],
-): ResolvedDecisionFields {
-  if (existing === null) {
-    return {
-      title: proposed.title,
-      title_locked: false,
-      status: proposed.status,
-      status_locked: false,
-      context_text: proposed.context.text,
-      context_text_locked: false,
-      decision_text: proposed.decision.text,
-      decision_text_locked: false,
-      decision_rationale: proposed.decision.rationale,
-      decision_rationale_locked: false,
-    };
-  }
-  const title = resolveLockableField(
-    { kind: "decision", decision_id: proposed.id, field: "title" },
-    existing.title,
-    existing.title_locked,
-    proposed.title,
-    confirmed,
-    cleared,
-    "title",
-  );
-  const status = resolveLockableField(
-    { kind: "decision", decision_id: proposed.id, field: "status" },
-    existing.status,
-    existing.status_locked,
-    proposed.status,
-    confirmed,
-    cleared,
-    "status",
-  );
-  const contextText = resolveLockableField(
-    { kind: "decision", decision_id: proposed.id, field: "context.text" },
-    existing.context.text,
-    existing.context.text_locked,
-    proposed.context.text,
-    confirmed,
-    cleared,
-    "context_text",
-  );
-  const decisionText = resolveLockableField(
-    { kind: "decision", decision_id: proposed.id, field: "decision.text" },
-    existing.decision.text,
-    existing.decision.text_locked,
-    proposed.decision.text,
-    confirmed,
-    cleared,
-    "decision_text",
-  );
-  const decisionRationale = resolveLockableField(
-    { kind: "decision", decision_id: proposed.id, field: "decision.rationale" },
-    existing.decision.rationale,
-    existing.decision.rationale_locked,
-    proposed.decision.rationale,
-    confirmed,
-    cleared,
-    "decision_rationale",
-  );
-  return {
-    title: title.title,
-    title_locked: title.title_locked,
-    status: status.status,
-    status_locked: status.status_locked,
-    context_text: contextText.context_text,
-    context_text_locked: contextText.context_text_locked,
-    decision_text: decisionText.decision_text,
-    decision_text_locked: decisionText.decision_text_locked,
-    decision_rationale: decisionRationale.decision_rationale,
-    decision_rationale_locked: decisionRationale.decision_rationale_locked,
-  };
-}
-
-function resolveLockableField<TName extends string, TValue>(
-  edit: ConfirmedEdit,
-  existingValue: TValue,
-  existingLocked: boolean,
-  proposedValue: TValue,
-  confirmed: Set<string>,
-  cleared: ConfirmedEdit[],
-  resultName: TName,
-): { [K in TName]: TValue } & { [K in `${TName}_locked`]: boolean } {
-  let value = proposedValue;
-  let locked = existingLocked;
-  if (existingLocked && existingValue !== proposedValue) {
-    if (confirmed.has(confirmedKey(edit))) {
-      value = proposedValue;
-      locked = false;
-      cleared.push(edit);
-    } else {
-      value = existingValue;
-      locked = true;
-    }
-  }
-  return {
-    [resultName]: value,
-    [`${resultName}_locked`]: locked,
-  } as { [K in TName]: TValue } & { [K in `${TName}_locked`]: boolean };
 }
 
 function inferConversationIdFromPath(absPath: string): string | null {

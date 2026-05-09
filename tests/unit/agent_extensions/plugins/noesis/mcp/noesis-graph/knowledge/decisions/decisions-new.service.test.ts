@@ -7,7 +7,13 @@ import {
   expect,
   test,
 } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { and, given, then, when } from "@tests/bdd.js";
 import {
@@ -420,12 +426,32 @@ describe("DecisionsServiceNew — indexing, editing with locks, referenced items
     });
   });
 
-  test("Deleting a decision by its canonical file path removes the corresponding row from DB", async () => {
+  test("Deleting a decision while its source file is still on disk removes both the DB row and the file", async () => {
     let path = "";
 
-    await given("a decision indexed in DB", async () => {
+    await given("an indexed decision whose source file still lives on disk", async () => {
       path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
       await ctx.decisions.indexFile(path);
+    });
+    await when("deletion is requested for the decision's canonical path", async () => {
+      const result = await ctx.decisions.deleteForFile(path);
+      expect(result?.decision_id).toBe("decision-1");
+    });
+    await then("the decision no longer exists in DB", async () => {
+      expect(await ctx.decisionsRepository.exists("decision-1")).toBe(false);
+    });
+    await and("the source file is removed from disk", () => {
+      expect(existsSync(path)).toBe(false);
+    });
+  });
+
+  test("Deleting a decision whose source file is already gone still removes the DB row", async () => {
+    let path = "";
+
+    await given("an indexed decision whose source file has been removed from disk", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+      rmSync(path, { force: true });
     });
     await when("deletion is requested for the decision's canonical path", async () => {
       const result = await ctx.decisions.deleteForFile(path);

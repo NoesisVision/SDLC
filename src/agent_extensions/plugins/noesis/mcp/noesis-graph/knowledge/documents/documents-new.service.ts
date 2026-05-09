@@ -1,10 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, rmSync } from "fs";
 import {
   AnalyzeDesignDraftOutputSchema,
   type AnalyzeDesignDraftOutput,
 } from "../../../../shared-contracts/skills/analyze-design-draft/output.js";
-import { DesignDocFileNewSchema } from "../../../../shared-contracts/design-doc-new.js";
+import { type DesignDocFileNew } from "../../../../shared-contracts/design-doc-new.js";
 import {
   DecisionFileNewSchema,
   TopicFileNewSchema,
@@ -19,26 +19,46 @@ import {
   conversationJsonPath,
   decisionJsonPath,
   documentJsonPath,
+  documentMdPath,
   ensureNoesisLayout,
   topicJsonPath,
 } from "../../../../shared-contracts/source-files.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
 import { DecisionsRepositoryNew } from "../decisions/decisions-new.repository.js";
 import { DesignDocsServiceNew } from "../design-docs/design-docs-new.service.js";
+import {
+  confirmedKey,
+  detectDecisionConflicts,
+  detectTopicConflicts,
+  LockedFieldsBlockedError,
+  resolveDecisionLockedFields,
+  resolveTopicLockedFields,
+  type ConfirmedEdit,
+} from "../locks-new.js";
 import { TopicsRepositoryNew } from "../topics/topics-new.repository.js";
 import { DocumentsRepositoryNew } from "./documents-new.repository.js";
 
-export interface MergeDocumentInput {
+export {
+  LockedFieldsBlockedError,
+  type ConfirmedEdit,
+  type DecisionLockedField,
+  type DesignDocLockedField,
+  type TopicLockedField,
+} from "../locks-new.js";
+
+export interface DocumentAnalysisInput {
   outputJsonPath: string;
   designDocJsonPath: string | null;
+  confirmed_edits?: ConfirmedEdit[];
 }
 
-export interface MergeDocumentResult {
+export interface UploadDocumentAnalysisResult {
   document_id: string;
   topic_paths: string[];
   decision_paths: string[];
   decision_attachments: number;
   design_doc_path: string | null;
+  cleared_locks: ConfirmedEdit[];
 }
 
 export interface IndexFileOutcome {
@@ -63,6 +83,8 @@ export class DocumentsServiceNew {
     if (id === null) return null;
     if (!(await this.repository.exists(id))) return null;
     await this.repository.delete(id);
+    rmSync(documentJsonPath(this.projectDir, id), { force: true });
+    rmSync(documentMdPath(this.projectDir, id), { force: true });
     return { document_id: id };
   }
 
@@ -83,10 +105,23 @@ export class DocumentsServiceNew {
     return this.repository.listAllStoredFiles(this.projectDir);
   }
 
-  async merge(input: MergeDocumentInput): Promise<MergeDocumentResult> {
+  async uploadAnalysis(
+    input: DocumentAnalysisInput,
+  ): Promise<UploadDocumentAnalysisResult> {
     const output = this.loadOutput(input.outputJsonPath);
     this.validate(output, input.designDocJsonPath !== null);
-    return this.split(output, input.designDocJsonPath);
+    const designDocFile =
+      input.designDocJsonPath === null
+        ? null
+        : this.designDocsService.loadWorkingFile(input.designDocJsonPath);
+    const conflicts = this.detectLockedFieldConflicts(output, designDocFile);
+    if (input.confirmed_edits === undefined && conflicts.length > 0) {
+      throw new LockedFieldsBlockedError(conflicts);
+    }
+    const confirmed = new Set(
+      (input.confirmed_edits ?? []).map(confirmedKey),
+    );
+    return this.split(output, input.designDocJsonPath, confirmed);
   }
 
   // ----- private -----
@@ -143,10 +178,35 @@ export class DocumentsServiceNew {
     }
   }
 
+  private detectLockedFieldConflicts(
+    output: AnalyzeDesignDraftOutput,
+    designDocFile: DesignDocFileNew | null,
+  ): ConfirmedEdit[] {
+    const conflicts: ConfirmedEdit[] = [];
+    for (const topic of output.topics) {
+      const existingTopic = readTopicIfExists(
+        topicJsonPath(this.projectDir, topic.id),
+      );
+      conflicts.push(...detectTopicConflicts(existingTopic, topic));
+      for (const decision of topic.decisions) {
+        const dpath = decisionJsonPath(this.projectDir, decision.id);
+        const existingDecision = this.decisionsRepository.fileExists(dpath)
+          ? this.decisionsRepository.readFile(dpath)
+          : null;
+        conflicts.push(...detectDecisionConflicts(existingDecision, decision));
+      }
+    }
+    if (designDocFile !== null) {
+      conflicts.push(...this.designDocsService.detectConflicts(designDocFile));
+    }
+    return conflicts;
+  }
+
   private split(
     output: AnalyzeDesignDraftOutput,
     designDocJsonPath: string | null,
-  ): MergeDocumentResult {
+    confirmed: Set<string>,
+  ): UploadDocumentAnalysisResult {
     ensureNoesisLayout(this.projectDir);
     const docFile: DocumentFileNew = {
       document_id: output.document.id,
@@ -169,38 +229,49 @@ export class DocumentsServiceNew {
     }
 
     const topicPaths: string[] = [];
-    for (const topic of output.topics) {
-      topicPaths.push(
-        this.writeTopicFile(
-          topic,
-          parentLookup.get(topic.id) ?? null,
-          sourceShaCache,
-        ),
-      );
-    }
-
     const decisionPaths: string[] = [];
+    const clearedLocks: ConfirmedEdit[] = [];
+
     for (const topic of output.topics) {
+      const tr = this.writeTopicFile(
+        topic,
+        parentLookup.get(topic.id) ?? null,
+        sourceShaCache,
+        confirmed,
+      );
+      topicPaths.push(tr.path);
+      clearedLocks.push(...tr.cleared);
       for (const decision of topic.decisions) {
-        decisionPaths.push(
-          this.writeDecisionFile(topic.id, decision, sourceShaCache),
+        const dr = this.writeDecisionFile(
+          topic.id,
+          decision,
+          sourceShaCache,
+          confirmed,
         );
+        decisionPaths.push(dr.path);
+        clearedLocks.push(...dr.cleared);
       }
     }
 
     const attached = this.applyDecisionAttachments(output, sourceShaCache);
 
-    const finalDesignDocPath =
-      designDocJsonPath === null
-        ? null
-        : this.designDocsService.persistFromWorkingFile(designDocJsonPath);
+    let designDocPath: string | null = null;
+    if (designDocJsonPath !== null) {
+      const dr = this.designDocsService.persistFromWorkingFile(
+        designDocJsonPath,
+        confirmed,
+      );
+      designDocPath = dr.path;
+      clearedLocks.push(...dr.cleared);
+    }
 
     return {
       document_id: output.document.id,
       topic_paths: topicPaths,
       decision_paths: decisionPaths,
       decision_attachments: attached,
-      design_doc_path: finalDesignDocPath,
+      design_doc_path: designDocPath,
+      cleared_locks: clearedLocks,
     };
   }
 
@@ -208,33 +279,37 @@ export class DocumentsServiceNew {
     topic: AnalyzeDesignDraftOutput["topics"][number],
     parentId: string | null,
     cache: Map<string, string>,
-  ): string {
+    confirmed: Set<string>,
+  ): { path: string; cleared: ConfirmedEdit[] } {
     const path = topicJsonPath(this.projectDir, topic.id);
     const items = withItemShas(topic.items as TopicItemRefNew[], this.projectDir, cache);
     const existing = readTopicIfExists(path);
+    const cleared: ConfirmedEdit[] = [];
+    const resolved = resolveTopicLockedFields(existing, topic, confirmed, cleared);
     const next: TopicFileNew = {
       id: topic.id,
       parent_id: parentId,
-      title: topic.title,
-      title_locked: existing?.title_locked ?? false,
-      short_summary: topic.short_summary,
-      short_summary_locked: existing?.short_summary_locked ?? false,
-      long_summary: topic.long_summary,
-      long_summary_locked: existing?.long_summary_locked ?? false,
+      title: resolved.title,
+      title_locked: resolved.title_locked,
+      short_summary: resolved.short_summary,
+      short_summary_locked: resolved.short_summary_locked,
+      long_summary: resolved.long_summary,
+      long_summary_locked: resolved.long_summary_locked,
       items: existing === null ? items : mergeItems(existing.items, items),
       reviewed: topic.reviewed,
       decisions_extracted: topic.decisions_extracted,
       is_stale: existing?.is_stale ?? false,
     };
-    this.topicsRepository.writeFile(path, mergeLockedTopicFields(existing, next));
-    return path;
+    this.topicsRepository.writeFile(path, next);
+    return { path, cleared };
   }
 
   private writeDecisionFile(
     topicId: string,
     decision: AnalyzeDesignDraftOutput["topics"][number]["decisions"][number],
     cache: Map<string, string>,
-  ): string {
+    confirmed: Set<string>,
+  ): { path: string; cleared: ConfirmedEdit[] } {
     const path = decisionJsonPath(this.projectDir, decision.id);
     const referenced = withItemShas(
       decision.referenced_items as TopicItemRefNew[],
@@ -242,37 +317,45 @@ export class DocumentsServiceNew {
       cache,
     );
     const existing = readDecisionIfExists(path);
+    const cleared: ConfirmedEdit[] = [];
+    const resolved = resolveDecisionLockedFields(
+      existing,
+      decision,
+      confirmed,
+      cleared,
+    );
     const next: DecisionFileNew = {
       id: decision.id,
       topic_id: topicId,
-      title: decision.title,
-      title_locked: existing?.title_locked ?? false,
-      status: decision.status,
-      status_locked: existing?.status_locked ?? false,
+      title: resolved.title,
+      title_locked: resolved.title_locked,
+      status: resolved.status,
+      status_locked: resolved.status_locked,
       referenced_items: referenced,
       context: {
-        text: decision.context.text,
-        text_locked: existing?.context.text_locked ?? false,
+        text: resolved.context_text,
+        text_locked: resolved.context_text_locked,
         supporting_item_indices: decision.context.supporting_item_indices,
       },
       decision: {
-        text: decision.decision.text,
-        text_locked: existing?.decision.text_locked ?? false,
-        rationale: decision.decision.rationale,
-        rationale_locked: existing?.decision.rationale_locked ?? false,
+        text: resolved.decision_text,
+        text_locked: resolved.decision_text_locked,
+        rationale: resolved.decision_rationale,
+        rationale_locked: resolved.decision_rationale_locked,
         supporting_item_indices: decision.decision.supporting_item_indices,
       },
       alternative_options: decision.alternative_options.map((alt, i) => ({
         text: alt.text,
         text_locked: existing?.alternative_options[i]?.text_locked ?? false,
         rationale: alt.rationale,
-        rationale_locked: existing?.alternative_options[i]?.rationale_locked ?? false,
+        rationale_locked:
+          existing?.alternative_options[i]?.rationale_locked ?? false,
         supporting_item_indices: alt.supporting_item_indices,
       })),
       is_stale: existing?.is_stale ?? false,
     };
-    this.decisionsRepository.writeFile(path, applyDecisionLocks(existing, next));
-    return path;
+    this.decisionsRepository.writeFile(path, next);
+    return { path, cleared };
   }
 
   private applyDecisionAttachments(
@@ -401,62 +484,7 @@ function readDecisionIfExists(absPath: string): DecisionFileNew | null {
   }
 }
 
-function mergeLockedTopicFields(
-  existing: TopicFileNew | null,
-  next: TopicFileNew,
-): TopicFileNew {
-  if (existing === null) return next;
-  return {
-    ...next,
-    title: existing.title_locked ? existing.title : next.title,
-    short_summary: existing.short_summary_locked
-      ? existing.short_summary
-      : next.short_summary,
-    long_summary: existing.long_summary_locked
-      ? existing.long_summary
-      : next.long_summary,
-  };
-}
-
-function applyDecisionLocks(
-  existing: DecisionFileNew | null,
-  next: DecisionFileNew,
-): DecisionFileNew {
-  if (existing === null) return next;
-  return {
-    ...next,
-    title: existing.title_locked ? existing.title : next.title,
-    status: existing.status_locked ? existing.status : next.status,
-    context: {
-      ...next.context,
-      text: existing.context.text_locked
-        ? existing.context.text
-        : next.context.text,
-    },
-    decision: {
-      ...next.decision,
-      text: existing.decision.text_locked
-        ? existing.decision.text
-        : next.decision.text,
-      rationale: existing.decision.rationale_locked
-        ? existing.decision.rationale
-        : next.decision.rationale,
-    },
-    alternative_options: next.alternative_options.map((alt, i) => {
-      const prev = existing.alternative_options[i];
-      if (prev === undefined) return alt;
-      return {
-        ...alt,
-        text: prev.text_locked ? prev.text : alt.text,
-        rationale: prev.rationale_locked ? prev.rationale : alt.rationale,
-      };
-    }),
-  };
-}
-
 function inferDocumentIdFromPath(absPath: string): string | null {
   const match = /\/documents\/([^/]+)\.json$/.exec(absPath);
   return match === null ? null : match[1];
 }
-
-void DesignDocFileNewSchema; // ensure schema export used via design-docs service

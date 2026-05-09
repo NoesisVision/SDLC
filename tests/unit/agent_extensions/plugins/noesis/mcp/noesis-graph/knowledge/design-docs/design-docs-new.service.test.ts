@@ -7,7 +7,13 @@ import {
   expect,
   test,
 } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { and, given, then, when } from "@tests/bdd.js";
 import {
@@ -213,10 +219,10 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
     });
   });
 
-  test("Deleting a design doc removes the design doc and prunes actors that have no other references", async () => {
+  test("Deleting a design doc while its source file is still on disk removes the DB row, the file, and prunes orphan actors", async () => {
     let path = "";
 
-    await given("an indexed design doc whose only actor is unique to it", async () => {
+    await given("an indexed design doc whose source file lives on disk and whose only actor is unique to it", async () => {
       path = writeDesignDocFile(
         ctx.projectDir,
         "billing-fff.json",
@@ -237,9 +243,39 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
         ),
       ).toBe(false);
     });
+    await and("the source file is removed from disk", () => {
+      expect(existsSync(path)).toBe(false);
+    });
     await and("the orphan actor is pruned from the catalog", async () => {
       const actors = await ctx.designDocsRepository.listActors();
       expect(actors.find((a) => a.name === "OnlyActor")).toBeUndefined();
+    });
+  });
+
+  test("Deleting a design doc whose source file is already gone still removes the DB row", async () => {
+    let path = "";
+
+    await given("an indexed design doc whose source file has been removed from disk", async () => {
+      path = writeDesignDocFile(
+        ctx.projectDir,
+        "billing-iii.json",
+        designDoc(),
+      );
+      await ctx.designDocs.indexFile(path);
+      rmSync(path, { force: true });
+    });
+    await when("deletion is requested for the design doc's canonical path", async () => {
+      const result = await ctx.designDocs.deleteForFile(path);
+      expect(result?.design_doc_id).toBe(
+        "01928000-0000-7000-8000-000000000001",
+      );
+    });
+    await then("the design doc no longer exists in DB", async () => {
+      expect(
+        await ctx.designDocsRepository.exists(
+          "01928000-0000-7000-8000-000000000001",
+        ),
+      ).toBe(false);
     });
   });
 
@@ -284,6 +320,105 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
     });
 
     void pathB;
+  });
+
+  test("Detecting conflicts on a design doc upload returns one entry per locked field whose proposed value would change", () => {
+    const id = "01928000-0000-7000-8000-cccc00000001";
+
+    let conflicts: Array<{ kind: string; design_doc_id: string; field: string }> = [];
+
+    given("a design doc on disk with a locked name and an unlocked description", () => {
+      ctx.designDocs.persistFile(
+        designDoc({
+          id,
+          name: "billing",
+          name_locked: true,
+          description: "Original description.",
+        }),
+      );
+    });
+    when("conflict detection is asked about a working file proposing both a different name and a different description", () => {
+      conflicts = ctx.designDocs.detectConflicts(
+        designDoc({
+          id,
+          name: "invoicing",
+          description: "Different description.",
+        }),
+      ) as Array<{ kind: string; design_doc_id: string; field: string }>;
+    });
+    then("only the locked-name conflict is reported, since description is not locked", () => {
+      expect(conflicts).toEqual([
+        { kind: "design_doc", design_doc_id: id, field: "name" },
+      ]);
+    });
+  });
+
+  test("Persisting a working file with confirmed_edits for a locked design-doc field overwrites the value and clears the lock", async () => {
+    const id = "01928000-0000-7000-8000-cccc00000002";
+    const workingDir = join(ctx.projectDir, "design-doc-working");
+    let cleared: Array<unknown> = [];
+
+    await given("a design doc on disk with a locked name", () => {
+      ctx.designDocs.persistFile(
+        designDoc({ id, name: "billing", name_locked: true }),
+      );
+    });
+    await when("a working file proposing a different name is persisted with confirmed_edits for the name", () => {
+      mkdirSync(workingDir, { recursive: true });
+      const wpath = join(workingDir, "design-doc.json");
+      writeFileSync(
+        wpath,
+        JSON.stringify(designDoc({ id, name: "invoicing" }), null, 2),
+      );
+      const result = ctx.designDocs.persistFromWorkingFile(
+        wpath,
+        new Set([`design_doc:${id}.name`]),
+      );
+      cleared = result.cleared;
+    });
+    await then("the persisted design doc takes the new name with its lock cleared", () => {
+      const found = ctx.designDocsRepository.findFileById(ctx.projectDir, id);
+      expect(found).not.toBeNull();
+      const persisted = DesignDocFileNewSchema.parse(
+        JSON.parse(readFileSync(found as string, "utf-8")),
+      );
+      expect(persisted.name).toBe("invoicing");
+      expect(persisted.name_locked).toBe(false);
+    });
+    await and("the cleared-locks list reports the design-doc name", () => {
+      expect(cleared).toEqual([
+        { kind: "design_doc", design_doc_id: id, field: "name" },
+      ]);
+    });
+  });
+
+  test("Persisting a working file without confirmed_edits silently preserves a locked field value", () => {
+    const id = "01928000-0000-7000-8000-cccc00000003";
+    const workingDir = join(ctx.projectDir, "design-doc-working-2");
+
+    given("a design doc on disk with a locked name", () => {
+      ctx.designDocs.persistFile(
+        designDoc({ id, name: "billing", name_locked: true }),
+      );
+    });
+    when("a working file proposing a different name is persisted with no confirmed_edits", () => {
+      mkdirSync(workingDir, { recursive: true });
+      const wpath = join(workingDir, "design-doc.json");
+      writeFileSync(
+        wpath,
+        JSON.stringify(designDoc({ id, name: "invoicing" }), null, 2),
+      );
+      ctx.designDocs.persistFromWorkingFile(wpath);
+    });
+    then("the on-disk design doc keeps the user-set name with the lock still set", () => {
+      const found = ctx.designDocsRepository.findFileById(ctx.projectDir, id);
+      expect(found).not.toBeNull();
+      const persisted = DesignDocFileNewSchema.parse(
+        JSON.parse(readFileSync(found as string, "utf-8")),
+      );
+      expect(persisted.name).toBe("billing");
+      expect(persisted.name_locked).toBe(true);
+    });
   });
 });
 
