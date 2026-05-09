@@ -40,7 +40,7 @@ export class TopicsServiceNew {
     return { topic_id: id };
   }
 
-  async editFields(
+  async editFieldsAndLock(
     topicId: string,
     fields: TopicEditableFields,
     confirmedByUser: boolean,
@@ -145,13 +145,13 @@ function applyEdit(
   changes: LockedField[],
 ): TopicFileNew {
   if (file[fieldKey] === newValue) return file;
-  if (file[lockKey] === true && !confirmedByUser) {
+  if (file[lockKey] && !confirmedByUser) {
     throw new Error(
       `Topic ${file.id}: field "${fieldKey}" is locked; pass confirmedByUser=true to override.`,
     );
   }
   changes.push(fieldKey);
-  return { ...file, [fieldKey]: newValue };
+  return { ...file, [fieldKey]: newValue, [lockKey]: true };
 }
 
 function computeStaleFromItems(

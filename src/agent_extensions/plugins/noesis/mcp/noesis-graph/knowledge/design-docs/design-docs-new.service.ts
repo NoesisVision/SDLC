@@ -51,7 +51,7 @@ export class DesignDocsServiceNew {
     return { design_doc_id: target.id };
   }
 
-  async editTopFields(
+  async editTopFieldsAndLock(
     designDocId: string,
     fields: { name?: string; description?: string },
     confirmedByUser: boolean,
@@ -71,7 +71,7 @@ export class DesignDocsServiceNew {
           `DesignDoc ${file.id}: field "name" is locked; pass confirmedByUser=true to override.`,
         );
       }
-      next = { ...next, name: fields.name };
+      next = { ...next, name: fields.name, name_locked: true };
       updated.push("name");
     }
     if (
@@ -83,7 +83,7 @@ export class DesignDocsServiceNew {
           `DesignDoc ${file.id}: field "description" is locked; pass confirmedByUser=true to override.`,
         );
       }
-      next = { ...next, description: fields.description };
+      next = { ...next, description: fields.description, description_locked: true };
       updated.push("description");
     }
     if (updated.length === 0) return { updated: [] };

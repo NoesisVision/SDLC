@@ -21,6 +21,422 @@ import {
 } from "@noesis/shared-contracts/source-file-schemas-new.js";
 import { decisionJsonPath } from "@noesis/shared-contracts/source-files.js";
 
+describe("DecisionsServiceNew — indexing, editing with locks, referenced items, staleness", () => {
+  let ctx: KnowledgeNewTestContext;
+
+  beforeAll(async () => {
+    ctx = await createKnowledgeNewTestModule();
+  });
+
+  afterAll(async () => {
+    await ctx.module.close();
+    rmSync(ctx.projectDir, { recursive: true, force: true });
+  });
+
+  beforeEach(async () => {
+    await clearGraphNew(ctx.db);
+  });
+
+  test("Indexing a brand-new decision file inserts the corresponding Decision row in DB", async () => {
+    let path = "";
+    let outcome: { status: string; decision_id: string } | null = null;
+
+    await given("a decision file present on disk and no record in DB", () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+    });
+    await when("indexing the file", async () => {
+      outcome = await ctx.decisions.indexFile(path);
+    });
+    await then("the operation reports the decision as freshly indexed", () => {
+      expect(outcome?.status).toBe("indexed");
+      expect(outcome?.decision_id).toBe("decision-1");
+    });
+    await and("the persisted Decision carries the file's title and status", async () => {
+      const stored = await ctx.decisionsRepository.read("decision-1");
+      expect(stored?.title).toBe("Use JWTs for sessions");
+      expect(stored?.status).toBe("accepted");
+      expect(stored?.is_stale).toBe(false);
+    });
+  });
+
+  test("Indexing the same decision file twice without disk changes is a no-op", async () => {
+    let path = "";
+    let secondOutcome: { status: string } | null = null;
+
+    await given("a decision indexed once", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("indexing the file a second time without any disk changes", async () => {
+      secondOutcome = await ctx.decisions.indexFile(path);
+    });
+    await then("the operation reports the decision as unchanged", () => {
+      expect(secondOutcome?.status).toBe("unchanged");
+    });
+  });
+
+  test("Indexing a decision whose file content drifted re-projects the changed fields into DB", async () => {
+    let path = "";
+
+    await given("a decision indexed once", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the file is rewritten with a new title and indexed again", async () => {
+      writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({ title: "Adopt JWT for stateless sessions" }),
+      );
+      const outcome = await ctx.decisions.indexFile(path);
+      expect(outcome.status).toBe("indexed");
+    });
+    await then("the persisted Decision reflects the new title", async () => {
+      const stored = await ctx.decisionsRepository.read("decision-1");
+      expect(stored?.title).toBe("Adopt JWT for stateless sessions");
+    });
+  });
+
+  test("Editing a decision rewrites the title when it is unlocked and reports it as updated", async () => {
+    let path = "";
+    let result: { updated: string[] } | null = null;
+
+    await given("a decision with an unlocked title", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the user changes the title", async () => {
+      result = await ctx.decisions.editTopFieldsAndLock(
+        "decision-1",
+        { title: "Adopt JWT for stateless sessions" },
+        false,
+      );
+    });
+    await then("title is reported as updated", () => {
+      expect(result?.updated).toEqual(["title"]);
+    });
+    await and("the new title is written to disk and its lock is now set", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.title).toBe("Adopt JWT for stateless sessions");
+      expect(file.title_locked).toBe(true);
+    });
+  });
+
+  test("Editing a locked context text without user confirmation is refused", async () => {
+    let path = "";
+    let thrown: Error | null = null;
+
+    await given("a decision whose context text is locked", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          context: {
+            text: "Locked context",
+            text_locked: true,
+            supporting_item_indices: [],
+          },
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("an edit tries to overwrite the locked context text without confirmation", async () => {
+      try {
+        await ctx.decisions.editTopFieldsAndLock(
+          "decision-1",
+          { context_text: "Different context" },
+          false,
+        );
+      } catch (e) {
+        thrown = e as Error;
+      }
+    });
+    await then("the service refuses with a lock violation", () => {
+      expect(thrown?.message).toContain("locked");
+    });
+    await and("the on-disk context text is unchanged", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.context.text).toBe("Locked context");
+    });
+  });
+
+  test("Editing a locked decision rationale with explicit user confirmation overwrites the value", async () => {
+    let path = "";
+    let result: { updated: string[] } | null = null;
+
+    await given("a decision with a locked rationale", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          decision: {
+            text: "Use JWT",
+            rationale: "Original rationale",
+            rationale_locked: true,
+            supporting_item_indices: [],
+          },
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the user confirms an override and supplies a new rationale", async () => {
+      result = await ctx.decisions.editTopFieldsAndLock(
+        "decision-1",
+        { decision_rationale: "Updated rationale" },
+        true,
+      );
+    });
+    await then("the rationale is reported as updated", () => {
+      expect(result?.updated).toEqual(["decision.rationale"]);
+    });
+    await and("the file's rationale carries the replacement value", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.decision.rationale).toBe("Updated rationale");
+    });
+  });
+
+  test("Editing a decision with a value identical to the stored one performs no write", async () => {
+    let path = "";
+    let snapshot = "";
+    let result: { updated: string[] } | null = null;
+
+    await given("a decision on disk with known content", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+      snapshot = readFileSync(path, "utf-8");
+    });
+    await when("the user submits a status equal to the current one", async () => {
+      result = await ctx.decisions.editTopFieldsAndLock(
+        "decision-1",
+        { status: "accepted" },
+        false,
+      );
+    });
+    await then("no field is reported as updated", () => {
+      expect(result?.updated).toEqual([]);
+    });
+    await and("the file content is byte-identical to the original snapshot", () => {
+      expect(readFileSync(path, "utf-8")).toBe(snapshot);
+    });
+  });
+
+  test("Editing an alternative option's text touches only the targeted alternative", async () => {
+    let path = "";
+    let result: { updated: string[] } | null = null;
+
+    await given("a decision with two alternatives", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          alternative_options: [
+            {
+              text: "Server sessions",
+              rationale: "Stateful.",
+              supporting_item_indices: [],
+            },
+            {
+              text: "OAuth tokens",
+              rationale: "Delegated.",
+              supporting_item_indices: [],
+            },
+          ],
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the user rewrites the second alternative's text", async () => {
+      result = await ctx.decisions.editAlternativeOptionAndLock(
+        "decision-1",
+        { index: 1, text: "OAuth bearer tokens" },
+        false,
+      );
+    });
+    await then("only the targeted field is reported as updated", () => {
+      expect(result?.updated).toEqual(["alternative_options[1].text"]);
+    });
+    await and("the first alternative is left untouched on disk and the edited alternative's text lock is now set", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.alternative_options[0].text).toBe("Server sessions");
+      expect(file.alternative_options[0].text_locked).toBe(false);
+      expect(file.alternative_options[1].text).toBe("OAuth bearer tokens");
+      expect(file.alternative_options[1].text_locked).toBe(true);
+    });
+  });
+
+  test("Editing an alternative option at a non-existent index is rejected", async () => {
+    let thrown: Error | null = null;
+
+    await given("a decision indexed and on disk", async () => {
+      const path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the user supplies an alternative index that does not exist", async () => {
+      try {
+        await ctx.decisions.editAlternativeOptionAndLock(
+          "decision-1",
+          { index: 5, text: "anything" },
+          false,
+        );
+      } catch (e) {
+        thrown = e as Error;
+      }
+    });
+    await then("the service refuses with an out-of-range error", () => {
+      expect(thrown?.message).toContain("out of range");
+    });
+  });
+
+  test("Appending referenced items adds new entries and de-duplicates by item key", async () => {
+    let path = "";
+    let result: { appended: number } | null = null;
+
+    await given("a decision already referencing one document fragment", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          referenced_items: [
+            {
+              type: "document_fragment_ref",
+              document_id: "doc-1",
+              start_offset: 0,
+              end_offset: 5,
+            },
+          ],
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the same fragment plus a new one are appended", async () => {
+      result = await ctx.decisions.appendReferencedItems("decision-1", [
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-1",
+          start_offset: 0,
+          end_offset: 5,
+        },
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-1",
+          start_offset: 6,
+          end_offset: 12,
+        },
+      ]);
+    });
+    await then("only the brand-new reference is counted as appended", () => {
+      expect(result?.appended).toBe(1);
+    });
+    await and("the file ends up with both unique references", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.referenced_items).toHaveLength(2);
+      expect(file.referenced_items[1]).toMatchObject({
+        document_id: "doc-1",
+        start_offset: 6,
+        end_offset: 12,
+      });
+    });
+  });
+
+  test("Refreshing staleness marks a decision stale when a referenced source has drifted", async () => {
+    let path = "";
+    let staleCount = 0;
+
+    await given("a decision referencing a document fragment with an outdated source sha", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          referenced_items: [
+            {
+              type: "document_fragment_ref",
+              document_id: "doc-1",
+              start_offset: 0,
+              end_offset: 5,
+              source_sha: "old-sha",
+            },
+          ],
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("staleness is refreshed against a snapshot with the document's new sha", async () => {
+      staleCount = await ctx.decisions.refreshStaleFlags({
+        conversation: new Map(),
+        document: new Map([["doc-1", "new-sha"]]),
+      });
+    });
+    await then("the operation reports one decision as stale", () => {
+      expect(staleCount).toBe(1);
+    });
+    await and("both the DB row and the source file record the decision as stale", async () => {
+      const stored = await ctx.decisionsRepository.read("decision-1");
+      expect(stored?.is_stale).toBe(true);
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.is_stale).toBe(true);
+    });
+  });
+
+  test("Refreshing staleness clears the stale flag once a decision's sources are back in sync", async () => {
+    let path = "";
+
+    await given("a decision previously marked stale while referencing a document fragment", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          is_stale: true,
+          referenced_items: [
+            {
+              type: "document_fragment_ref",
+              document_id: "doc-1",
+              start_offset: 0,
+              end_offset: 5,
+              source_sha: "matching-sha",
+            },
+          ],
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("staleness is refreshed against a snapshot whose document sha matches the decision's", async () => {
+      await ctx.decisions.refreshStaleFlags({
+        conversation: new Map(),
+        document: new Map([["doc-1", "matching-sha"]]),
+      });
+    });
+    await then("the decision is no longer stale in DB or on disk", async () => {
+      const stored = await ctx.decisionsRepository.read("decision-1");
+      expect(stored?.is_stale).toBe(false);
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.is_stale).toBe(false);
+    });
+  });
+
+  test("Deleting a decision by its canonical file path removes the corresponding row from DB", async () => {
+    let path = "";
+
+    await given("a decision indexed in DB", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("deletion is requested for the decision's canonical path", async () => {
+      const result = await ctx.decisions.deleteForFile(path);
+      expect(result?.decision_id).toBe("decision-1");
+    });
+    await then("the decision no longer exists in DB", async () => {
+      expect(await ctx.decisionsRepository.exists("decision-1")).toBe(false);
+    });
+  });
+});
+
 function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew {
   return DecisionFileNewSchema.parse({
     id: "decision-1",
@@ -55,358 +471,3 @@ function writeDecisionOnDisk(projectDir: string, file: DecisionFileNew): string 
   writeFileSync(path, JSON.stringify(file, null, 2));
   return path;
 }
-
-describe("DecisionsServiceNew — index, edit with locks, append referenced items, stale", () => {
-  let ctx: KnowledgeNewTestContext;
-
-  beforeAll(async () => {
-    ctx = await createKnowledgeNewTestModule();
-  });
-
-  afterAll(async () => {
-    await ctx.module.close();
-    rmSync(ctx.projectDir, { recursive: true, force: true });
-  });
-
-  beforeEach(async () => {
-    await clearGraphNew(ctx.db);
-  });
-
-  test("indexFile inserts a Decision row when no DB record exists", async () => {
-    let path = "";
-    let outcome: { status: string; decision_id: string } | null = null;
-
-    await given("a decision file present on disk", () => {
-      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
-    });
-    await when("the indexer processes the file", async () => {
-      outcome = await ctx.decisions.indexFile(path);
-    });
-    await then("the service reports it indexed the file", () => {
-      expect(outcome?.status).toBe("indexed");
-      expect(outcome?.decision_id).toBe("decision-1");
-    });
-    await and("the Decision node carries the file's title and status", async () => {
-      const stored = await ctx.decisionsRepository.read("decision-1");
-      expect(stored?.title).toBe("Use JWTs for sessions");
-      expect(stored?.status).toBe("accepted");
-      expect(stored?.is_stale).toBe(false);
-    });
-  });
-
-  test("indexFile is unchanged on a second pass with no disk modifications", async () => {
-    let path = "";
-    let secondOutcome: { status: string } | null = null;
-
-    await given("a decision indexed once", async () => {
-      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
-      await ctx.decisions.indexFile(path);
-    });
-    await when("the indexer runs again on the same file", async () => {
-      secondOutcome = await ctx.decisions.indexFile(path);
-    });
-    await then("the service reports the file as unchanged", () => {
-      expect(secondOutcome?.status).toBe("unchanged");
-    });
-  });
-
-  test("editTopFields rewrites the title when not locked and reports the change", async () => {
-    let path = "";
-    let result: { updated: string[] } | null = null;
-
-    await given("a decision with an unlocked title", async () => {
-      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
-      await ctx.decisions.indexFile(path);
-    });
-    await when("the user edits the title", async () => {
-      result = await ctx.decisions.editTopFields(
-        "decision-1",
-        { title: "Adopt JWT for stateless sessions" },
-        false,
-      );
-    });
-    await then("the service reports title as updated", () => {
-      expect(result?.updated).toEqual(["title"]);
-    });
-    await and("the on-disk title is rewritten", () => {
-      const file = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
-      );
-      expect(file.title).toBe("Adopt JWT for stateless sessions");
-    });
-  });
-
-  test("editTopFields refuses to overwrite a locked context.text without confirmation", async () => {
-    let path = "";
-    let thrown: Error | null = null;
-
-    await given("a decision whose context.text is locked", async () => {
-      path = writeDecisionOnDisk(
-        ctx.projectDir,
-        decisionFile({
-          context: {
-            text: "Locked context",
-            text_locked: true,
-            supporting_item_indices: [],
-          },
-        }),
-      );
-      await ctx.decisions.indexFile(path);
-    });
-    await when("an unconfirmed edit tries to rewrite context.text", async () => {
-      try {
-        await ctx.decisions.editTopFields(
-          "decision-1",
-          { context_text: "Different context" },
-          false,
-        );
-      } catch (e) {
-        thrown = e as Error;
-      }
-    });
-    await then("the service refuses with a lock violation", () => {
-      expect(thrown?.message).toContain("locked");
-    });
-    await and("the on-disk context.text is unchanged", () => {
-      const file = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
-      );
-      expect(file.context.text).toBe("Locked context");
-    });
-  });
-
-  test("editTopFields overrides a locked decision.rationale when confirmedByUser is true", async () => {
-    let path = "";
-    let result: { updated: string[] } | null = null;
-
-    await given("a decision with a locked decision.rationale", async () => {
-      path = writeDecisionOnDisk(
-        ctx.projectDir,
-        decisionFile({
-          decision: {
-            text: "Use JWT",
-            rationale: "Original rationale",
-            rationale_locked: true,
-            supporting_item_indices: [],
-          },
-        }),
-      );
-      await ctx.decisions.indexFile(path);
-    });
-    await when("the user confirms an override of the rationale", async () => {
-      result = await ctx.decisions.editTopFields(
-        "decision-1",
-        { decision_rationale: "Updated rationale" },
-        true,
-      );
-    });
-    await then("decision.rationale is reported as updated", () => {
-      expect(result?.updated).toEqual(["decision.rationale"]);
-    });
-    await and("the on-disk rationale reflects the new value", () => {
-      const file = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
-      );
-      expect(file.decision.rationale).toBe("Updated rationale");
-    });
-  });
-
-  test("editTopFields skips the write when the new value equals the current value", async () => {
-    let path = "";
-    let snapshot = "";
-    let result: { updated: string[] } | null = null;
-
-    await given("a decision on disk with known content", async () => {
-      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
-      await ctx.decisions.indexFile(path);
-      snapshot = readFileSync(path, "utf-8");
-    });
-    await when("the user submits the same status as already stored", async () => {
-      result = await ctx.decisions.editTopFields(
-        "decision-1",
-        { status: "accepted" },
-        false,
-      );
-    });
-    await then("nothing is reported as updated", () => {
-      expect(result?.updated).toEqual([]);
-    });
-    await and("the file content is byte-identical", () => {
-      expect(readFileSync(path, "utf-8")).toBe(snapshot);
-    });
-  });
-
-  test("editAlternativeOption edits text on the requested alternative only", async () => {
-    let path = "";
-    let result: { updated: string[] } | null = null;
-
-    await given("a decision with two alternatives", async () => {
-      path = writeDecisionOnDisk(
-        ctx.projectDir,
-        decisionFile({
-          alternative_options: [
-            {
-              text: "Server sessions",
-              rationale: "Stateful.",
-              supporting_item_indices: [],
-            },
-            {
-              text: "OAuth tokens",
-              rationale: "Delegated.",
-              supporting_item_indices: [],
-            },
-          ],
-        }),
-      );
-      await ctx.decisions.indexFile(path);
-    });
-    await when("the user edits alternative #1's text", async () => {
-      result = await ctx.decisions.editAlternativeOption(
-        "decision-1",
-        { index: 1, text: "OAuth bearer tokens" },
-        false,
-      );
-    });
-    await then("only that field is reported as updated", () => {
-      expect(result?.updated).toEqual(["alternative_options[1].text"]);
-    });
-    await and("the first alternative is untouched on disk", () => {
-      const file = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
-      );
-      expect(file.alternative_options[0].text).toBe("Server sessions");
-      expect(file.alternative_options[1].text).toBe("OAuth bearer tokens");
-    });
-  });
-
-  test("editAlternativeOption rejects out-of-range index", async () => {
-    let thrown: Error | null = null;
-
-    await given("a decision indexed and on disk", async () => {
-      const path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
-      await ctx.decisions.indexFile(path);
-    });
-    await when("the user passes an alternative index that does not exist", async () => {
-      try {
-        await ctx.decisions.editAlternativeOption(
-          "decision-1",
-          { index: 5, text: "anything" },
-          false,
-        );
-      } catch (e) {
-        thrown = e as Error;
-      }
-    });
-    await then("the service rejects with an out-of-range error", () => {
-      expect(thrown?.message).toContain("out of range");
-    });
-  });
-
-  test("appendReferencedItems adds new entries and de-duplicates by item key", async () => {
-    let path = "";
-    let result: { appended: number } | null = null;
-
-    await given("a decision with one referenced fragment", async () => {
-      path = writeDecisionOnDisk(
-        ctx.projectDir,
-        decisionFile({
-          referenced_items: [
-            {
-              type: "document_fragment_ref",
-              document_id: "doc-1",
-              start_offset: 0,
-              end_offset: 5,
-            },
-          ],
-        }),
-      );
-      await ctx.decisions.indexFile(path);
-    });
-    await when("a duplicate plus a new ref are appended", async () => {
-      result = await ctx.decisions.appendReferencedItems("decision-1", [
-        {
-          type: "document_fragment_ref",
-          document_id: "doc-1",
-          start_offset: 0,
-          end_offset: 5,
-        },
-        {
-          type: "document_fragment_ref",
-          document_id: "doc-1",
-          start_offset: 6,
-          end_offset: 12,
-        },
-      ]);
-    });
-    await then("only the new ref is reported as appended", () => {
-      expect(result?.appended).toBe(1);
-    });
-    await and("the file contains both unique refs", () => {
-      const file = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
-      );
-      expect(file.referenced_items).toHaveLength(2);
-      expect(file.referenced_items[1]).toMatchObject({
-        document_id: "doc-1",
-        start_offset: 6,
-        end_offset: 12,
-      });
-    });
-  });
-
-  test("refreshStaleFlags marks decision stale when a referenced fragment's source_sha is outdated", async () => {
-    let path = "";
-    let staleCount = 0;
-
-    await given("a decision referencing a doc fragment with a known source_sha", async () => {
-      path = writeDecisionOnDisk(
-        ctx.projectDir,
-        decisionFile({
-          referenced_items: [
-            {
-              type: "document_fragment_ref",
-              document_id: "doc-1",
-              start_offset: 0,
-              end_offset: 5,
-              source_sha: "old-sha",
-            },
-          ],
-        }),
-      );
-      await ctx.decisions.indexFile(path);
-    });
-    await when("the staleness pass runs with a newer document sha", async () => {
-      staleCount = await ctx.decisions.refreshStaleFlags({
-        conversation: new Map(),
-        document: new Map([["doc-1", "new-sha"]]),
-      });
-    });
-    await then("the staleness count is one", () => {
-      expect(staleCount).toBe(1);
-    });
-    await and("DB and the file both record is_stale=true", async () => {
-      const stored = await ctx.decisionsRepository.read("decision-1");
-      expect(stored?.is_stale).toBe(true);
-      const file = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
-      );
-      expect(file.is_stale).toBe(true);
-    });
-  });
-
-  test("deleteForFile removes the Decision row when given the canonical file path", async () => {
-    let path = "";
-
-    await given("an indexed decision", async () => {
-      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
-      await ctx.decisions.indexFile(path);
-    });
-    await when("deleteForFile is invoked", async () => {
-      const result = await ctx.decisions.deleteForFile(path);
-      expect(result?.decision_id).toBe("decision-1");
-    });
-    await then("the Decision no longer exists in DB", async () => {
-      expect(await ctx.decisionsRepository.exists("decision-1")).toBe(false);
-    });
-  });
-});

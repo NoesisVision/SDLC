@@ -80,7 +80,7 @@ export class DecisionsServiceNew {
     return { decision_id: id };
   }
 
-  async editAlternativeOption(
+  async editAlternativeOptionAndLock(
     decisionId: string,
     edit: AlternativeOptionEdit,
     confirmedByUser: boolean,
@@ -105,7 +105,7 @@ export class DecisionsServiceNew {
             `Decision ${decisionId}: alternative_options[${i}].text is locked; pass confirmedByUser=true to override.`,
           );
         }
-        next = { ...next, text: edit.text };
+        next = { ...next, text: edit.text, text_locked: true };
         updated.push(`alternative_options[${i}].text`);
       }
       if (edit.rationale !== undefined && next.rationale !== edit.rationale) {
@@ -114,7 +114,7 @@ export class DecisionsServiceNew {
             `Decision ${decisionId}: alternative_options[${i}].rationale is locked; pass confirmedByUser=true to override.`,
           );
         }
-        next = { ...next, rationale: edit.rationale };
+        next = { ...next, rationale: edit.rationale, rationale_locked: true };
         updated.push(`alternative_options[${i}].rationale`);
       }
       return next;
@@ -128,7 +128,7 @@ export class DecisionsServiceNew {
     return { updated };
   }
 
-  async editTopFields(
+  async editTopFieldsAndLock(
     decisionId: string,
     fields: DecisionEditableTopFields,
     confirmedByUser: boolean,
@@ -146,7 +146,7 @@ export class DecisionsServiceNew {
           `Decision ${file.id}: field "title" is locked; pass confirmedByUser=true to override.`,
         );
       }
-      next = { ...next, title: fields.title };
+      next = { ...next, title: fields.title, title_locked: true };
       updated.push("title");
     }
     if (fields.status !== undefined && file.status !== fields.status) {
@@ -155,7 +155,7 @@ export class DecisionsServiceNew {
           `Decision ${file.id}: field "status" is locked; pass confirmedByUser=true to override.`,
         );
       }
-      next = { ...next, status: fields.status };
+      next = { ...next, status: fields.status, status_locked: true };
       updated.push("status");
     }
     if (fields.context_text !== undefined) {
@@ -238,7 +238,7 @@ function applyContextEdit(
   updated.push("context.text");
   return {
     ...file,
-    context: { ...file.context, text: newText },
+    context: { ...file.context, text: newText, text_locked: true },
   };
 }
 
@@ -293,7 +293,7 @@ function applyDecisionOptionEdit(
     );
   }
   updated.push(reportKey);
-  return { ...file, decision: { ...opt, [fieldKey]: newValue } };
+  return { ...file, decision: { ...opt, [fieldKey]: newValue, [lockKey]: true } };
 }
 
 function computeStale(

@@ -20,30 +20,7 @@ import {
   type DesignDocFileNew,
 } from "@noesis/shared-contracts/design-doc-new.js";
 
-function designDoc(overrides: Partial<DesignDocFileNew> = {}): DesignDocFileNew {
-  return DesignDocFileNewSchema.parse({
-    id: "01928000-0000-7000-8000-000000000001",
-    name: "billing",
-    description: "Billing context.",
-    actors: [],
-    boundedContexts: { added: [], removed: [], modified: [] },
-    implemented: false,
-    ...overrides,
-  });
-}
-
-function writeDesignDocFile(
-  projectDir: string,
-  filename: string,
-  file: DesignDocFileNew,
-): string {
-  const path = join(projectDir, "noesis", "design-docs", filename);
-  mkdirSync(join(projectDir, "noesis", "design-docs"), { recursive: true });
-  writeFileSync(path, JSON.stringify(file, null, 2));
-  return path;
-}
-
-describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, actor dedup", () => {
+describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemented, actor lifecycle", () => {
   let ctx: KnowledgeNewTestContext;
 
   beforeAll(async () => {
@@ -59,7 +36,7 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
     await clearGraphNew(ctx.db);
   });
 
-  test("prepareDesignDocPath mints a UUID and returns the canonical path when no id is supplied", async () => {
+  test("Preparing a design doc path mints a UUID and a canonical path when no id is supplied", async () => {
     const result = await ctx.designDocs.prepareDesignDocPath({ name: "auth" });
     expect(result.status).toBe("Ok");
     if (result.status !== "Ok") return;
@@ -68,7 +45,7 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
     expect(result.canonical_path).toMatch(/-[0-9a-f]{8}\.json$/);
   });
 
-  test("prepareDesignDocPath returns AlreadyImplemented when the id was sealed", async () => {
+  test("Preparing a design doc path for an already-implemented doc is rejected as sealed", async () => {
     await given("an implemented design doc in DB", async () => {
       const file = designDoc({ implemented: true });
       const path = writeDesignDocFile(ctx.projectDir, "billing-doc.json", file);
@@ -83,11 +60,11 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
     expect(result.status).toBe("AlreadyImplemented");
   });
 
-  test("persistFile writes to the canonical path and removes a renamed-from file", async () => {
+  test("Persisting a renamed design doc writes the new canonical path and removes the previous file", async () => {
     let firstPath = "";
     let secondPath = "";
 
-    await given("a design doc persisted under name 'billing'", () => {
+    await given("a design doc persisted under the name 'billing'", () => {
       firstPath = ctx.designDocs.persistFile(
         designDoc({ name: "billing" }),
       );
@@ -97,7 +74,7 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
         designDoc({ name: "invoicing" }),
       );
     });
-    await then("the new path differs from the previous one", () => {
+    await then("the new canonical path is distinct and reflects the new name", () => {
       expect(secondPath).not.toBe(firstPath);
       expect(secondPath).toContain("/invoicing-");
     });
@@ -112,7 +89,7 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
     });
   });
 
-  test("indexFile inserts DesignDoc and registers actors deduped by name", async () => {
+  test("Indexing a design doc inserts it and registers each declared actor in the catalog", async () => {
     let path = "";
 
     await given("a design doc file referencing two actors", () => {
@@ -128,20 +105,20 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
       );
     });
     let outcome: { status: string } | null = null;
-    await when("the indexer projects the design doc", async () => {
+    await when("indexing the design doc", async () => {
       outcome = await ctx.designDocs.indexFile(path);
     });
-    await then("the design doc is reported as indexed", () => {
+    await then("the operation reports the design doc as indexed", () => {
       expect(outcome?.status).toBe("indexed");
     });
-    await and("the actor catalog contains both names", async () => {
+    await and("the actor catalog contains both declared names", async () => {
       const actors = await ctx.designDocsRepository.listActors();
       expect(actors.map((a) => a.name).sort()).toEqual(["Approver", "Customer"]);
     });
   });
 
-  test("indexing two design docs that share an actor name produces a single Actor node", async () => {
-    await given("two design docs that both define a Customer actor", async () => {
+  test("Two design docs declaring the same actor name share a single Actor node", async () => {
+    await given("two design docs that both declare a Customer actor", async () => {
       const a = writeDesignDocFile(
         ctx.projectDir,
         "billing-bbb.json",
@@ -169,7 +146,7 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
     });
   });
 
-  test("editTopFields rejects a write to a locked name without confirmation", async () => {
+  test("Editing a locked design doc name without user confirmation is refused", async () => {
     let thrown: Error | null = null;
 
     await given("a design doc whose name is locked", async () => {
@@ -177,9 +154,9 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
       const path = writeDesignDocFile(ctx.projectDir, "billing-ddd.json", file);
       await ctx.designDocs.indexFile(path);
     });
-    await when("an unconfirmed update tries to rename the doc", async () => {
+    await when("an edit tries to rename the design doc without confirmation", async () => {
       try {
-        await ctx.designDocs.editTopFields(
+        await ctx.designDocs.editTopFieldsAndLock(
           "01928000-0000-7000-8000-000000000001",
           { name: "Different" },
           false,
@@ -188,12 +165,12 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
         thrown = e as Error;
       }
     });
-    await then("the service refuses the write", () => {
+    await then("the service refuses with a lock violation", () => {
       expect(thrown?.message).toContain("locked");
     });
   });
 
-  test("markImplemented seals the file and DB so subsequent edits are rejected", async () => {
+  test("Marking a design doc as implemented seals it from further edits", async () => {
     let path = "";
 
     await given("an indexed design doc", async () => {
@@ -204,27 +181,27 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
       );
       await ctx.designDocs.indexFile(path);
     });
-    await when("the service marks the doc as implemented", async () => {
+    await when("the design doc is marked as implemented", async () => {
       await ctx.designDocs.markImplemented(
         "01928000-0000-7000-8000-000000000001",
       );
     });
-    await then("the file's implemented flag is true", () => {
+    await then("the on-disk file records the implemented flag as true", () => {
       const file = DesignDocFileNewSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.implemented).toBe(true);
     });
-    await and("the DB's implemented flag is true", async () => {
+    await and("the persisted record records the implemented flag as true", async () => {
       const flag = await ctx.designDocsRepository.readImplementedFlag(
         "01928000-0000-7000-8000-000000000001",
       );
       expect(flag).toBe(true);
     });
-    await and("further edits are rejected", async () => {
+    await and("further edits to the sealed design doc are refused", async () => {
       let thrown: Error | null = null;
       try {
-        await ctx.designDocs.editTopFields(
+        await ctx.designDocs.editTopFieldsAndLock(
           "01928000-0000-7000-8000-000000000001",
           { description: "Anything" },
           true,
@@ -236,10 +213,10 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
     });
   });
 
-  test("deleteForFile removes the design doc and prunes orphan actors", async () => {
+  test("Deleting a design doc removes the design doc and prunes actors that have no other references", async () => {
     let path = "";
 
-    await given("an indexed design doc with one unique actor", async () => {
+    await given("an indexed design doc whose only actor is unique to it", async () => {
       path = writeDesignDocFile(
         ctx.projectDir,
         "billing-fff.json",
@@ -247,7 +224,7 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
       );
       await ctx.designDocs.indexFile(path);
     });
-    await when("the file is removed and deleteForFile is called", async () => {
+    await when("deletion is requested for the design doc's canonical path", async () => {
       const result = await ctx.designDocs.deleteForFile(path);
       expect(result?.design_doc_id).toBe(
         "01928000-0000-7000-8000-000000000001",
@@ -260,17 +237,17 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
         ),
       ).toBe(false);
     });
-    await and("the orphan Actor was pruned", async () => {
+    await and("the orphan actor is pruned from the catalog", async () => {
       const actors = await ctx.designDocsRepository.listActors();
       expect(actors.find((a) => a.name === "OnlyActor")).toBeUndefined();
     });
   });
 
-  test("removing an actor from one of two docs keeps the actor when the other doc still references it", async () => {
+  test("Removing an actor from one design doc keeps the actor when another design doc still references it", async () => {
     let pathA = "";
     let pathB = "";
 
-    await given("two design docs that both reference Customer", async () => {
+    await given("two design docs that both declare the same Customer actor", async () => {
       pathA = writeDesignDocFile(
         ctx.projectDir,
         "billing-ggg.json",
@@ -292,7 +269,7 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
       await ctx.designDocs.indexFile(pathA);
       await ctx.designDocs.indexFile(pathB);
     });
-    await when("design doc A is re-indexed without the Customer actor", async () => {
+    await when("the first design doc is re-indexed without the Customer actor", async () => {
       const updated = designDoc({
         id: "01928000-0000-7000-8000-aaaa00000001",
         name: "billing-shared",
@@ -301,7 +278,7 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
       writeDesignDocFile(ctx.projectDir, "billing-ggg.json", updated);
       await ctx.designDocs.indexFile(pathA);
     });
-    await then("the Customer actor remains because design doc B still references it", async () => {
+    await then("the Customer actor is preserved because the second design doc still references it", async () => {
       const actors = await ctx.designDocsRepository.listActors();
       expect(actors.find((a) => a.name === "Customer")).toBeDefined();
     });
@@ -309,3 +286,26 @@ describe("DesignDocsServiceNew — canonical paths, locks, mark implemented, act
     void pathB;
   });
 });
+
+function designDoc(overrides: Partial<DesignDocFileNew> = {}): DesignDocFileNew {
+  return DesignDocFileNewSchema.parse({
+    id: "01928000-0000-7000-8000-000000000001",
+    name: "billing",
+    description: "Billing context.",
+    actors: [],
+    boundedContexts: { added: [], removed: [], modified: [] },
+    implemented: false,
+    ...overrides,
+  });
+}
+
+function writeDesignDocFile(
+  projectDir: string,
+  filename: string,
+  file: DesignDocFileNew,
+): string {
+  const path = join(projectDir, "noesis", "design-docs", filename);
+  mkdirSync(join(projectDir, "noesis", "design-docs"), { recursive: true });
+  writeFileSync(path, JSON.stringify(file, null, 2));
+  return path;
+}
