@@ -6,16 +6,9 @@ import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { ensureNoesisLayout } from "../../../shared-contracts/source-files.js";
 import { AppModule } from "../app.module.js";
-import { DatabaseService } from "../database/database.service.js";
-import { ScannerRepository } from "../scanner/scanner.repository.js";
-import { InvocationsRepository } from "../scanner/invocations/invocations.repository.js";
-import { ConversationsRepository } from "../knowledge/conversations/conversations.repository.js";
-import { DecisionsRepository } from "../knowledge/decisions/decisions.repository.js";
-import { DesignDocsRepository } from "../knowledge/design-docs/design-docs.repository.js";
-import { DocumentsRepository } from "../knowledge/documents/documents.repository.js";
-import { TopicsRepository } from "../knowledge/topics/topics.repository.js";
-import { seedDevDatabase } from "./dev-seed.js";
+import { IndexerService } from "../indexer/indexer.service.js";
 import { clearDiscovery, writeDiscovery } from "./dev-discovery.js";
+import { seedDevDatabase } from "./dev-seed.js";
 
 export async function startDevServer(): Promise<void> {
   const logger = new Logger("DevServer");
@@ -23,7 +16,8 @@ export async function startDevServer(): Promise<void> {
   const dataDir = externalDataDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-"));
   const ownsDataDir = externalDataDir === null;
   const externalProjectDir = resolveExternalDir("NOESIS_DEV_PROJECT_DIR");
-  const projectDir = externalProjectDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-project-"));
+  const projectDir =
+    externalProjectDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-project-"));
   const ownsProjectDir = externalProjectDir === null;
   ensureNoesisLayout(projectDir);
   const skipSeed = process.env["NOESIS_DEV_NO_SEED"] === "1";
@@ -39,16 +33,7 @@ export async function startDevServer(): Promise<void> {
   if (skipSeed) {
     logger.log("NOESIS_DEV_NO_SEED=1 — skipping fixture seeding");
   } else {
-    await seedDevDatabase({
-      scanner: app.get(ScannerRepository),
-      invocations: app.get(InvocationsRepository),
-      topics: app.get(TopicsRepository),
-      documents: app.get(DocumentsRepository),
-      conversations: app.get(ConversationsRepository),
-      decisions: app.get(DecisionsRepository),
-      designDocs: app.get(DesignDocsRepository),
-      db: app.get(DatabaseService),
-    });
+    await seedDevDatabase(projectDir, app.get(IndexerService));
   }
 
   await app.listen(0);
@@ -59,7 +44,9 @@ export async function startDevServer(): Promise<void> {
     startedAt: new Date().toISOString(),
   });
   logger.log(`Noesis Graph dev backend ready at ${url}`);
-  logger.log("Vite dev server (bun run dev in ui/) will pick this up automatically.");
+  logger.log(
+    "Vite dev server (bun run dev in ui/) will pick this up automatically.",
+  );
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.log(`Received ${signal}, shutting down...`);
@@ -67,7 +54,9 @@ export async function startDevServer(): Promise<void> {
     try {
       await app.close();
     } catch (err) {
-      logger.error(`Error closing app: ${err instanceof Error ? err.message : String(err)}`);
+      logger.error(
+        `Error closing app: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     if (ownsDataDir) {
       try {

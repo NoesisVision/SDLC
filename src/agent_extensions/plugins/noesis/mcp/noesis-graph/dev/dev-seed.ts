@@ -1,733 +1,1173 @@
+import { mkdirSync, writeFileSync } from "fs";
 import { Logger } from "@nestjs/common";
-import { ScannerRepository } from "../scanner/scanner.repository.js";
-import { InvocationsRepository } from "../scanner/invocations/invocations.repository.js";
-import { TopicsRepository } from "../knowledge/topics/topics.repository.js";
-import { DocumentsRepository } from "../knowledge/documents/documents.repository.js";
-import { ConversationsRepository } from "../knowledge/conversations/conversations.repository.js";
-import { DecisionsRepository } from "../knowledge/decisions/decisions.repository.js";
-import { DesignDocsRepository } from "../knowledge/design-docs/design-docs.repository.js";
-import { DatabaseService } from "../database/database.service.js";
-import type { Conversation } from "../../../shared-contracts/conversation.js";
-import type { DesignDoc } from "../../../shared-contracts/design-doc.js";
-import { ideaUnitNodeId } from "../knowledge/conversations/node-ids.js";
-import { alternativeOptionNodeId } from "../knowledge/decisions/node-ids.js";
+import type {
+  DesignDocFileNew,
+  DesignedActorNew,
+  DesignedBehaviourNew,
+  DesignedBoundedContextNew,
+  DesignedBuildingBlockNew,
+  DesignedDomainModuleNew,
+  DesignedPropertyNew,
+  DesignedQualityAttributeNew,
+  DesignedRuleNew,
+  DesignedScenarioNew,
+  StringChangeSet,
+} from "../../../shared-contracts/design-doc-new.js";
 import {
-  boundedContextNodeId,
-  moduleNodeId,
-} from "../knowledge/design-docs/node-ids.js";
+  ConversationFileNewSchema,
+  DecisionFileNewSchema,
+  DocumentFileNewSchema,
+  TopicFileNewSchema,
+  type ConversationFileNew,
+  type DecisionFileNew,
+  type DocumentFileNew,
+  type TopicFileNew,
+} from "../../../shared-contracts/source-file-schemas.js";
+import {
+  conversationJsonPath,
+  conversationMdPath,
+  decisionJsonPath,
+  designDocCanonicalPath,
+  documentJsonPath,
+  ensureNoesisLayout,
+  topicJsonPath,
+} from "../../../shared-contracts/source-files.js";
+import { IndexerService } from "../indexer/indexer.service.js";
 
-interface BuildingBlockFixture {
-  id: string;
-  name: string;
-  type: string;
-  containerPath: string;
-  csharpTypeId: string;
+/**
+ * Writes a curated set of conversation, document, topic, decision and design-doc
+ * files to `<projectDir>/noesis/`, then triggers a full re-index so the dev UI
+ * has data to render.
+ *
+ * Coverage rule (mirrored in the noesis CLAUDE.md): every optional / nullable
+ * field on the file-first models gets at least one fixture item with that field
+ * set to null or omitted, and at least one with the field populated. Indexers
+ * and UI views must cope with both shapes.
+ */
+export async function seedDevDatabase(
+  projectDir: string,
+  indexer: IndexerService,
+): Promise<void> {
+  const logger = new Logger("DevSeed");
+  ensureNoesisLayout(projectDir);
+
+  for (const conversation of seedConversations()) {
+    writeConversation(projectDir, conversation);
+  }
+  for (const document of seedDocuments()) {
+    writeDocument(projectDir, document);
+  }
+  for (const topic of seedTopics()) {
+    writeTopic(projectDir, topic);
+  }
+  for (const decision of seedDecisions()) {
+    writeDecision(projectDir, decision);
+  }
+  for (const doc of seedDesignDocs()) {
+    writeDesignDoc(projectDir, doc);
+  }
+
+  const result = await indexer.runFullIndex();
+  logger.log(
+    `Seeded fixtures: ${result.files_processed}/${result.files_total} files indexed ` +
+      `(${result.stale_topics} stale topics, ${result.stale_decisions} stale decisions)`,
+  );
 }
 
-interface BehaviorFixture {
-  id: string;
-  name: string;
-  buildingBlockId: string;
-}
+// ---------- conversations ----------
 
-interface NamespaceFixture {
-  name: string;
-  fullName: string;
-}
-
-interface CSharpTypeFixture {
-  id: string;
-  name: string;
-  fullName: string;
-  filePath: string;
-  namespaceFullName: string;
-}
-
-interface ModuleFixture {
-  name: string;
-  fullPath: string;
-}
-
-export interface SeedRepositories {
-  scanner: ScannerRepository;
-  invocations: InvocationsRepository;
-  topics: TopicsRepository;
-  documents: DocumentsRepository;
-  conversations: ConversationsRepository;
-  decisions: DecisionsRepository;
-  designDocs: DesignDocsRepository;
-  db: DatabaseService;
-}
-
-const BOUNDED_CONTEXTS: ReadonlyArray<{ name: string; namespaceFullName: string }> = [
-  { name: "Sales", namespaceFullName: "Acme.Sales" },
-  { name: "Inventory", namespaceFullName: "Acme.Inventory" },
-];
-
-const MODULES: ReadonlyArray<ModuleFixture & { namespaceFullName: string }> = [
-  { name: "Orders", fullPath: "Sales.Orders", namespaceFullName: "Acme.Sales.Orders" },
-  { name: "Customers", fullPath: "Sales.Customers", namespaceFullName: "Acme.Sales.Customers" },
-  { name: "Pricing", fullPath: "Sales.Orders.Pricing", namespaceFullName: "Acme.Sales.Orders.Pricing" },
-  { name: "Catalog", fullPath: "Inventory.Catalog", namespaceFullName: "Acme.Inventory.Catalog" },
-];
-
-const NAMESPACES: ReadonlyArray<NamespaceFixture> = [
-  { name: "Sales", fullName: "Acme.Sales" },
-  { name: "Inventory", fullName: "Acme.Inventory" },
-  { name: "Orders", fullName: "Acme.Sales.Orders" },
-  { name: "Customers", fullName: "Acme.Sales.Customers" },
-  { name: "Pricing", fullName: "Acme.Sales.Orders.Pricing" },
-  { name: "Catalog", fullName: "Acme.Inventory.Catalog" },
-];
-
-const CSHARP_TYPES: ReadonlyArray<CSharpTypeFixture> = [
-  cs("Order", "Acme.Sales.Orders", "Sales/Orders/Order.cs"),
-  cs("OrderLine", "Acme.Sales.Orders", "Sales/Orders/OrderLine.cs"),
-  cs("OrderPlaced", "Acme.Sales.Orders", "Sales/Orders/OrderPlaced.cs"),
-  cs("OrderRepository", "Acme.Sales.Orders", "Sales/Orders/OrderRepository.cs"),
-  cs("PriceCalculator", "Acme.Sales.Orders.Pricing", "Sales/Orders/Pricing/PriceCalculator.cs"),
-  cs("Customer", "Acme.Sales.Customers", "Sales/Customers/Customer.cs"),
-  cs("CustomerId", "Acme.Sales.Customers", "Sales/Customers/CustomerId.cs"),
-  cs("Product", "Acme.Inventory.Catalog", "Inventory/Catalog/Product.cs"),
-  cs("Sku", "Acme.Inventory.Catalog", "Inventory/Catalog/Sku.cs"),
-  cs("ProductFactory", "Acme.Inventory.Catalog", "Inventory/Catalog/ProductFactory.cs"),
-];
-
-const BUILDING_BLOCKS: ReadonlyArray<BuildingBlockFixture> = [
-  bb("Order", "Aggregate", "Sales.Orders"),
-  bb("OrderLine", "Entity", "Sales.Orders"),
-  bb("OrderPlaced", "DomainEvent", "Sales.Orders"),
-  bb("OrderRepository", "Repository", "Sales.Orders"),
-  bb("PriceCalculator", "DomainService", "Sales.Orders.Pricing"),
-  bb("Customer", "Aggregate", "Sales.Customers"),
-  bb("CustomerId", "ValueObject", "Sales.Customers"),
-  bb("Product", "Aggregate", "Inventory.Catalog"),
-  bb("Sku", "ValueObject", "Inventory.Catalog"),
-  bb("ProductFactory", "Factory", "Inventory.Catalog"),
-];
-
-const BEHAVIORS: ReadonlyArray<BehaviorFixture> = [
-  bh("Order", "PlaceOrder"),
-  bh("Order", "CancelOrder"),
-  bh("OrderLine", "UpdateQuantity"),
-  bh("OrderRepository", "Save"),
-  bh("OrderRepository", "FindById"),
-  bh("PriceCalculator", "Calculate"),
-  bh("Customer", "RegisterEmail"),
-  bh("Product", "Restock"),
-  bh("Product", "MarkUnavailable"),
-  bh("ProductFactory", "CreateProduct"),
-];
-
-const INVOCATIONS: ReadonlyArray<{ source: string; destination: string }> = [
-  invocation("Order", "PlaceOrder", "OrderRepository", "Save"),
-  invocation("Order", "PlaceOrder", "PriceCalculator", "Calculate"),
-  invocation("Order", "PlaceOrder", "Product", "Restock"),
-  invocation("Order", "CancelOrder", "OrderRepository", "Save"),
-  invocation("ProductFactory", "CreateProduct", "Product", "Restock"),
-];
-
-const DOCUMENT_ID = "doc-handbook";
-const DOCUMENT_CONTENT =
-  "Repositories should hide persistence details from domain code. " +
-  "Aggregates protect their own invariants and emit domain events. " +
-  "Domain events let other modules react without coupling.";
-const DOCUMENT_FRAGMENTS: ReadonlyArray<{ start: number; end: number }> = [
-  { start: 0, end: 62 },
-  { start: 63, end: 125 },
-  { start: 126, end: DOCUMENT_CONTENT.length },
-];
-
-const CONVERSATION: Conversation = {
-  conversation_id: "conv-architecture",
-  time: "2026-02-10T10:00:00Z",
-  main_topic: "Architecture review",
-  turns: [
-    {
-      index: 0,
-      speaker: "Alice",
-      time: "2026-02-10T10:00:30Z",
-      idea_units: [
+function seedConversations(): ConversationFileNew[] {
+  return [
+    ConversationFileNewSchema.parse({
+      conversation_id: "conv-kickoff",
+      time: "2026-02-04T10:00:00Z",
+      main_topic: "Auth strategy kickoff",
+      turns: [
         {
           index: 0,
-          sentences: ["We should encapsulate persistence behind repositories."],
+          speaker: "Alice",
+          time: "2026-02-04T10:00:00Z",
+          idea_units: [
+            {
+              index: 0,
+              sentences: ["We need passwordless login as the default."],
+              categories: ["Position"],
+            },
+            {
+              index: 1,
+              sentences: ["The mobile team requested support for SSO too."],
+              categories: ["Information"],
+            },
+            {
+              index: 2,
+              sentences: ["Let's not get distracted by the QA tooling."],
+              categories: ["Irrelevant"],
+            },
+          ],
+        },
+        {
+          index: 1,
+          speaker: "Bob",
+          time: "2026-02-04T10:05:00Z",
+          idea_units: [
+            {
+              index: 0,
+              sentences: [
+                "OAuth2 with PKCE feels like the right default.",
+                "It plays well with both web and mobile.",
+              ],
+              categories: ["Argument"],
+            },
+            {
+              index: 1,
+              sentences: ["Decision: we go with OAuth2 PKCE."],
+              categories: ["Decision"],
+            },
+          ],
+        },
+      ],
+    }),
+    ConversationFileNewSchema.parse({
+      conversation_id: "conv-followup",
+      time: "2026-03-12T14:30:00Z",
+      main_topic: "Auth follow-up",
+      turns: [
+        {
+          index: 0,
+          speaker: "Alice",
+          time: "2026-03-12T14:30:00Z",
+          idea_units: [
+            {
+              index: 0,
+              sentences: ["Are we revisiting the OAuth provider choice?"],
+              categories: ["Position"],
+            },
+            {
+              index: 1,
+              sentences: ["No, the constraints from last quarter still hold."],
+              categories: ["Argument"],
+            },
+          ],
+        },
+      ],
+    }),
+  ];
+}
+
+// ---------- documents ----------
+
+function seedDocuments(): DocumentFileNew[] {
+  const visionContent = [
+    "Auth Vision\n",
+    "Passwordless is the default; SSO is a follow-up.",
+  ].join("\n");
+  return [
+    DocumentFileNewSchema.parse({
+      document_id: "doc-vision",
+      title: "Auth vision",
+      date: "2026-01-20",
+      content: visionContent,
+      fragments: [
+        {
+          index: 0,
+          start_offset: 0,
+          end_offset: 11,
+          section_path: ["Auth Vision"],
+          kind: "paragraph",
+          text: "Auth Vision",
+          categories: ["Information"],
+        },
+        {
+          index: 1,
+          start_offset: 13,
+          end_offset: visionContent.length,
+          section_path: ["Auth Vision"],
+          kind: "paragraph",
+          text: "Passwordless is the default; SSO is a follow-up.",
           categories: ["Position"],
         },
+      ],
+      section_tree: [
         {
-          index: 1,
-          sentences: ["That keeps aggregates pure and testable."],
-          categories: ["Argument"],
+          level: 1,
+          title: "Auth Vision",
+          path: ["Auth Vision"],
+          fragment_indices: [0, 1],
+          children: [],
         },
       ],
-    },
-    {
-      index: 1,
-      speaker: "Bob",
-      time: "2026-02-10T10:02:00Z",
-      idea_units: [
+    }),
+    DocumentFileNewSchema.parse({
+      document_id: "doc-checkout-rfc",
+      title: "Checkout RFC",
+      date: "2026-02-15",
+      content: "Checkout RFC: cart, totals, payment.",
+      fragments: [
         {
           index: 0,
-          sentences: ["Agreed — let's adopt the repository pattern."],
-          categories: ["Decision"],
-        },
-        {
-          index: 1,
-          sentences: ["Off-topic chatter."],
-          categories: ["Irrelevant"],
+          start_offset: 0,
+          end_offset: 36,
+          section_path: ["Checkout RFC"],
+          kind: "paragraph",
+          text: "Checkout RFC: cart, totals, payment.",
+          categories: ["Information"],
         },
       ],
-    },
-  ],
-  topics: [],
-};
-
-const ROOT_TOPIC_ID = "topic-architecture";
-const SUB_TOPIC_ID = "topic-persistence";
-const DECISION_ID = "dec-use-repositories";
-
-const DESIGN_DOC: DesignDoc = {
-  id: "dd-sample",
-  name: "Sample design",
-  description: "Demo design doc covering all design-side node and edge tables.",
-  boundedContexts: {
-    added: [
-      {
-        name: "Sales",
-        description: "Owns order placement and pricing.",
-        modules: {
-          added: [
-            {
-              name: "Orders",
-              description: "Order lifecycle.",
-              buildingBlocks: {
-                added: [
-                  {
-                    name: "Order",
-                    type: "aggregate",
-                    description: "Order aggregate root.",
-                    properties: {
-                      added: [{ name: "id", type: "OrderId" }],
-                      removed: [],
-                      modified: [],
-                    },
-                    behaviours: {
-                      added: [
-                        {
-                          name: "PlaceOrder",
-                          type: "Command",
-                          description: "Place a new order.",
-                          isPublic: true,
-                          actor: "Customer",
-                          input: {
-                            added: ["OrderId"],
-                            removed: [],
-                            modified: [],
-                          },
-                          output: {
-                            added: ["OrderPlaced"],
-                            removed: [],
-                            modified: [],
-                          },
-                          usedBuildingBlocks: {
-                            added: [],
-                            removed: [],
-                            modified: [],
-                          },
-                          rules: {
-                            added: [
-                              {
-                                name: "ValidateTotal",
-                                ruleType: "Computation",
-                                description: "Order total must be positive.",
-                              },
-                            ],
-                            removed: [],
-                            modified: [],
-                          },
-                          scenarios: {
-                            added: [
-                              {
-                                name: "Happy path",
-                                description: "Customer places a valid order.",
-                                given: "A customer with a non-empty cart.",
-                                when: "PlaceOrder is invoked.",
-                                then: "OrderPlaced event is emitted.",
-                              },
-                            ],
-                            removed: [],
-                            modified: [],
-                          },
-                          qualityAttributes: {
-                            added: [
-                              {
-                                name: "Performance:PlaceOrderLatency",
-                                type: "performance",
-                                description:
-                                  "p99 order placement under 200 ms at 100 RPS sustained, measured at the API boundary.",
-                              },
-                            ],
-                            removed: [],
-                            modified: [],
-                          },
-                        },
-                      ],
-                      removed: [],
-                      modified: [],
-                    },
-                    rules: { added: [], removed: [], modified: [] },
-                    scenarios: { added: [], removed: [], modified: [] },
-                  },
-                ],
-                removed: [],
-                modified: [],
-              },
-            },
-          ],
-          removed: [],
-          modified: [],
+      section_tree: [
+        {
+          level: 1,
+          title: "Checkout RFC",
+          path: ["Checkout RFC"],
+          fragment_indices: [0],
+          children: [],
         },
-        buildingBlocks: {
-          added: [
-            {
-              name: "PricingPolicy",
-              type: "domain_service",
-              description: "BC-level pricing rules.",
-              properties: { added: [], removed: [], modified: [] },
-              behaviours: { added: [], removed: [], modified: [] },
-              rules: {
-                added: [
-                  {
-                    name: "MinPrice",
-                    ruleType: "Consistency",
-                    description: "Prices cannot be negative.",
-                  },
-                ],
-                removed: [],
-                modified: [],
-              },
-              scenarios: {
-                added: [
-                  {
-                    name: "Reject negative",
-                    description: "Negative prices are rejected.",
-                    given: "A price update with value -1.",
-                    when: "PricingPolicy validates the update.",
-                    then: "Validation fails.",
-                  },
-                ],
-                removed: [],
-                modified: [],
-              },
-            },
-          ],
-          removed: [],
-          modified: [],
+      ],
+    }),
+  ];
+}
+
+// ---------- topics ----------
+
+function seedTopics(): TopicFileNew[] {
+  // parent_id = null: covered by "topic-auth" and "topic-checkout" (root topics).
+  // parent_id != null: covered by "topic-auth-mobile" (child of "topic-auth").
+  return [
+    TopicFileNewSchema.parse({
+      id: "topic-auth",
+      parent_id: null,
+      title: "Authentication",
+      short_summary: "Sign-in, sign-up, session lifecycle.",
+      long_summary:
+        "Covers passwordless login, SSO, and session management for web and mobile clients.",
+      items: [
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-kickoff",
+          turn_index: 0,
+          idea_unit_index: 0,
         },
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-kickoff",
+          turn_index: 0,
+          idea_unit_index: 1,
+        },
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-kickoff",
+          turn_index: 1,
+          idea_unit_index: 0,
+        },
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-followup",
+          turn_index: 0,
+          idea_unit_index: 1,
+        },
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-vision",
+          start_offset: 13,
+          end_offset: visionContentLength(),
+        },
+      ],
+      reviewed: true,
+      decisions_extracted: true,
+    }),
+    TopicFileNewSchema.parse({
+      id: "topic-auth-mobile",
+      parent_id: "topic-auth",
+      title: "Mobile auth",
+      short_summary: "Mobile-specific auth concerns.",
+      long_summary: "PKCE, biometric prompts, refresh handling.",
+      items: [
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-kickoff",
+          turn_index: 1,
+          idea_unit_index: 0,
+        },
+      ],
+      reviewed: true,
+      decisions_extracted: false,
+    }),
+    TopicFileNewSchema.parse({
+      id: "topic-checkout",
+      parent_id: null,
+      title: "Checkout",
+      short_summary: "Cart and order completion.",
+      long_summary: "Covers cart state, totals, payment hand-off.",
+      items: [
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-checkout-rfc",
+          start_offset: 0,
+          end_offset: 36,
+        },
+      ],
+      reviewed: true,
+      decisions_extracted: false,
+    }),
+  ];
+}
+
+function visionContentLength(): number {
+  return ["Auth Vision\n", "Passwordless is the default; SSO is a follow-up."]
+    .join("\n").length;
+}
+
+// ---------- decisions ----------
+
+function seedDecisions(): DecisionFileNew[] {
+  return [
+    DecisionFileNewSchema.parse({
+      id: "decision-oauth2",
+      topic_id: "topic-auth",
+      title: "Adopt OAuth2 with PKCE",
+      status: "accepted",
+      referenced_items: [
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-kickoff",
+          turn_index: 1,
+          idea_unit_index: 0,
+        },
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-kickoff",
+          turn_index: 1,
+          idea_unit_index: 1,
+        },
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-vision",
+          start_offset: 13,
+          end_offset: visionContentLength(),
+        },
+      ],
+      context: {
+        text:
+          "We need a unified auth protocol that works for web and mobile, and " +
+          "supports SSO follow-on work without redesign.",
+        supporting_item_indices: [2],
       },
-    ],
-    removed: [],
-    modified: [],
-  },
-};
-
-const DESIGN_DOC_V2: DesignDoc = {
-  id: "dd-sample-v2",
-  name: "Sample design — Pricing iteration",
-  description:
-    "Pricing iteration: bulk-discount logic plus an updated Order aggregate that applies discounts.",
-  boundedContexts: {
-    added: [
-      {
-        name: "Sales",
-        description: "Owns order placement, pricing, and bulk discounts.",
-        modules: {
-          added: [
-            {
-              name: "Discounts",
-              description: "Promotional and bulk pricing.",
-              buildingBlocks: {
-                added: [
-                  {
-                    name: "BulkDiscount",
-                    type: "value_object",
-                    description: "Tiered discount applied to order totals.",
-                    properties: {
-                      added: [
-                        { name: "minQty", type: "Quantity" },
-                        { name: "percentage", type: "Percent" },
-                      ],
-                      removed: [],
-                      modified: [],
-                    },
-                    behaviours: {
-                      added: [
-                        {
-                          name: "Apply",
-                          type: "Command",
-                          description: "Apply the discount to a subtotal.",
-                          isPublic: false,
-                          actor: null,
-                          input: {
-                            added: ["Subtotal"],
-                            removed: [],
-                            modified: [],
-                          },
-                          output: {
-                            added: ["DiscountedTotal"],
-                            removed: [],
-                            modified: [],
-                          },
-                          usedBuildingBlocks: {
-                            added: [],
-                            removed: [],
-                            modified: [],
-                          },
-                          rules: {
-                            added: [
-                              {
-                                name: "TierMonotonicity",
-                                ruleType: "Computation",
-                                description:
-                                  "Higher quantities never get a smaller discount.",
-                              },
-                            ],
-                            removed: [],
-                            modified: [],
-                          },
-                          scenarios: { added: [], removed: [], modified: [] },
-                          qualityAttributes: { added: [], removed: [], modified: [] },
-                        },
-                      ],
-                      removed: [],
-                      modified: [],
-                    },
-                    rules: { added: [], removed: [], modified: [] },
-                    scenarios: { added: [], removed: [], modified: [] },
-                    qualityAttributes: { added: [], removed: [], modified: [] },
-                  },
-                ],
-                removed: [],
-                modified: [],
-              },
-              qualityAttributes: { added: [], removed: [], modified: [] },
-            },
-            {
-              name: "Orders",
-              description: "Order lifecycle, applies bulk discounts.",
-              buildingBlocks: {
-                added: [
-                  {
-                    name: "Order",
-                    type: "aggregate",
-                    description: "Order aggregate root with discounts.",
-                    properties: {
-                      added: [{ name: "id", type: "OrderId" }],
-                      removed: [],
-                      modified: [],
-                    },
-                    behaviours: {
-                      added: [
-                        {
-                          name: "PlaceOrder",
-                          type: "Command",
-                          description:
-                            "Place a new order — applies bulk discounts.",
-                          isPublic: true,
-                          actor: "Customer",
-                          input: { added: ["OrderId"], removed: [], modified: [] },
-                          output: {
-                            added: ["OrderPlaced"],
-                            removed: [],
-                            modified: [],
-                          },
-                          usedBuildingBlocks: {
-                            added: ["BulkDiscount"],
-                            removed: [],
-                            modified: [],
-                          },
-                          rules: {
-                            added: [
-                              {
-                                name: "MinOrderValue",
-                                ruleType: "Consistency",
-                                description: "Order total must exceed $5.",
-                              },
-                            ],
-                            removed: [],
-                            modified: [],
-                          },
-                          scenarios: { added: [], removed: [], modified: [] },
-                          qualityAttributes: { added: [], removed: [], modified: [] },
-                        },
-                      ],
-                      removed: [],
-                      modified: [],
-                    },
-                    rules: { added: [], removed: [], modified: [] },
-                    scenarios: { added: [], removed: [], modified: [] },
-                    qualityAttributes: { added: [], removed: [], modified: [] },
-                  },
-                ],
-                removed: [],
-                modified: [],
-              },
-              qualityAttributes: { added: [], removed: [], modified: [] },
-            },
-          ],
-          removed: [],
-          modified: [],
-        },
-        buildingBlocks: { added: [], removed: [], modified: [] },
-        qualityAttributes: { added: [], removed: [], modified: [] },
+      decision: {
+        text: "Use OAuth2 with PKCE for all first-party clients.",
+        rationale:
+          "PKCE handles native clients safely; PKCE + OAuth2 is the industry default and unblocks SSO.",
+        supporting_item_indices: [0, 1],
       },
-    ],
-    removed: [],
-    modified: [],
-  },
-};
-
-export async function seedDevDatabase(repos: SeedRepositories): Promise<void> {
-  const logger = new Logger("DevSeed");
-  await seedScannerData(repos.scanner, repos.invocations);
-  await seedKnowledgeData(
-    repos.topics,
-    repos.documents,
-    repos.conversations,
-    repos.decisions,
-  );
-  await seedDesignDocData(repos.designDocs, repos.db);
-  logger.log("Dev database seeded across scanner, knowledge, and design-doc graphs");
+      alternative_options: [
+        {
+          text: "Custom session cookies + CSRF tokens.",
+          rationale:
+            "Simpler to bootstrap but doesn't generalise to mobile or third-party SSO.",
+          supporting_item_indices: [0],
+        },
+      ],
+    }),
+    // Second decision exercises empty alternative_options + minimal supporting indices.
+    DecisionFileNewSchema.parse({
+      id: "decision-no-vendor-lock",
+      topic_id: "topic-auth",
+      title: "No vendor-lock for the IdP",
+      status: "proposed",
+      referenced_items: [
+        {
+          type: "idea_unit_ref",
+          conversation_id: "conv-followup",
+          turn_index: 0,
+          idea_unit_index: 1,
+        },
+      ],
+      context: {
+        text: "We may revisit IdP later; keep the abstraction provider-neutral.",
+        supporting_item_indices: [0],
+      },
+      decision: {
+        text: "Wrap the IdP behind an internal interface; no SDK leaks into app code.",
+        rationale: "Lets us swap IdP without touching application services.",
+        supporting_item_indices: [0],
+      },
+      alternative_options: [],
+    }),
+  ];
 }
 
-async function seedScannerData(
-  scannerRepo: ScannerRepository,
-  invocationsRepo: InvocationsRepository,
-): Promise<void> {
-  await scannerRepo.clearModel();
-  await invocationsRepo.clearInvocations();
+// ---------- design docs ----------
 
-  for (const ns of NAMESPACES) {
-    await scannerRepo.insertCSharpNamespace(ns);
-  }
-  for (const t of CSHARP_TYPES) {
-    await scannerRepo.insertCSharpType(
-      { id: t.id, name: t.name, fullName: t.fullName, filePath: t.filePath },
-      t.namespaceFullName,
-    );
-  }
-
-  for (const bc of BOUNDED_CONTEXTS) {
-    await scannerRepo.insertBoundedContext({ name: bc.name });
-    await scannerRepo.linkBoundedContextToCSharpNamespace(
-      bc.name,
-      bc.namespaceFullName,
-    );
-  }
-
-  const sortedModules = [...MODULES].sort(
-    (a, b) => a.fullPath.split(".").length - b.fullPath.split(".").length,
-  );
-  for (const mod of sortedModules) {
-    await scannerRepo.insertModule({ name: mod.name, fullPath: mod.fullPath });
-    await scannerRepo.linkModuleToCSharpNamespace(
-      mod.fullPath,
-      mod.namespaceFullName,
-    );
-  }
-
-  for (const block of BUILDING_BLOCKS) {
-    await scannerRepo.insertBuildingBlock(
-      { id: block.id, name: block.name, type: block.type },
-      block.containerPath,
-      block.csharpTypeId,
-    );
-  }
-
-  for (const behavior of BEHAVIORS) {
-    await scannerRepo.insertBehavior(
-      { id: behavior.id, name: behavior.name, actor: null },
-      behavior.buildingBlockId,
-    );
-  }
-
-  for (const inv of INVOCATIONS) {
-    await invocationsRepo.insertInvocation(inv);
-  }
+function seedDesignDocs(): DesignDocFileNew[] {
+  return [greenfieldDesignDoc(), tierExpansionDesignDoc(), draftDesignDoc()];
 }
 
-async function seedKnowledgeData(
-  topicsRepo: TopicsRepository,
-  documentsRepo: DocumentsRepository,
-  conversationsRepo: ConversationsRepository,
-  decisionsRepo: DecisionsRepository,
-): Promise<void> {
-  await documentsRepo.insertDocument({
-    id: DOCUMENT_ID,
-    title: "Engineering Handbook",
-    date: "2026-01-15",
-    content: DOCUMENT_CONTENT,
-  });
-  const fragmentIds: string[] = [];
-  for (const frag of DOCUMENT_FRAGMENTS) {
-    fragmentIds.push(
-      await documentsRepo.ensureFragmentNode(DOCUMENT_ID, frag.start, frag.end),
-    );
-  }
-
-  await conversationsRepo.insertConversation(CONVERSATION);
-  const ideaUnitT0I0 = ideaUnitNodeId(CONVERSATION.conversation_id, 0, 0);
-  const ideaUnitT0I1 = ideaUnitNodeId(CONVERSATION.conversation_id, 0, 1);
-  const ideaUnitT1I0 = ideaUnitNodeId(CONVERSATION.conversation_id, 1, 0);
-
-  await topicsRepo.insertTopicNode({
-    id: ROOT_TOPIC_ID,
-    title: "Architecture",
-    short_summary: "Architecture concerns",
-    long_summary: "Top-level container for architecture topics.",
-  });
-  await topicsRepo.insertTopicNode({
-    id: SUB_TOPIC_ID,
-    title: "Persistence",
-    short_summary: "How aggregates are stored",
-    long_summary: "Discussion around repositories vs direct DB access.",
-  });
-  await topicsRepo.linkSubtopic(ROOT_TOPIC_ID, SUB_TOPIC_ID);
-  await topicsRepo.linkToIdeaUnit(SUB_TOPIC_ID, ideaUnitT0I0);
-  await topicsRepo.linkToIdeaUnit(SUB_TOPIC_ID, ideaUnitT0I1);
-  await topicsRepo.linkToDocumentFragment(SUB_TOPIC_ID, fragmentIds[0]);
-  await topicsRepo.linkToDocumentFragment(SUB_TOPIC_ID, fragmentIds[1]);
-
-  await decisionsRepo.insertDecisionNode({
-    id: DECISION_ID,
-    title: "Adopt repository pattern",
-    status: "accepted",
-    referenced_items: [],
-    context: {
-      text: "Aggregates currently leak persistence concerns into the domain layer.",
-      supporting_item_indices: [],
-    },
-    decision: {
-      text: "Introduce a repository per aggregate.",
-      rationale: "Keeps aggregates pure and easier to test.",
-      supporting_item_indices: [],
-    },
-    alternative_options: [],
-  });
-  await decisionsRepo.linkTopicToDecision(SUB_TOPIC_ID, DECISION_ID);
-
-  const altId = alternativeOptionNodeId(DECISION_ID, 0);
-  await decisionsRepo.insertAlternativeOption(altId, 0, {
-    text: "Inline ORM calls inside aggregates.",
-    rationale: "Less indirection but couples domain to persistence.",
-    supporting_item_indices: [],
-  });
-  await decisionsRepo.linkDecisionToAlternative(DECISION_ID, altId);
-
-  await decisionsRepo.linkDecisionSlotToIdeaUnit(
-    DECISION_ID,
-    { slot: "context" },
-    ideaUnitT0I0,
-  );
-  await decisionsRepo.linkDecisionSlotToFragment(
-    DECISION_ID,
-    { slot: "context" },
-    fragmentIds[0],
-  );
-  await decisionsRepo.linkDecisionSlotToIdeaUnit(
-    DECISION_ID,
-    { slot: "decision" },
-    ideaUnitT1I0,
-  );
-  await decisionsRepo.linkDecisionSlotToFragment(
-    DECISION_ID,
-    { slot: "decision" },
-    fragmentIds[1],
-  );
-  await decisionsRepo.linkAlternativeToIdeaUnit(altId, ideaUnitT0I1);
-  await decisionsRepo.linkAlternativeToFragment(altId, fragmentIds[2]);
-}
-
-async function seedDesignDocData(
-  designDocsRepo: DesignDocsRepository,
-  db: DatabaseService,
-): Promise<void> {
-  await designDocsRepo.upsertActor(
-    { name: "Customer", description: "End user placing orders." },
-    false,
-  );
-  await designDocsRepo.upsertActor(
-    {
-      name: "Warehouse Operator",
-      description: "Fulfils orders from the warehouse floor.",
-    },
-    false,
-  );
-  await designDocsRepo.replaceDesignDoc(DESIGN_DOC, "2026-04-20");
-  await designDocsRepo.replaceDesignDoc(DESIGN_DOC_V2, "2026-04-26");
-  await seedNestedDesignedModule(db);
-}
-
-async function seedNestedDesignedModule(db: DatabaseService): Promise<void> {
-  // applyDesignDoc never creates DM_HAS_MODULE because DesignedDomainModule
-  // has no nested-module field. Insert one synthetic child module + edge so
-  // the rel table is non-empty and visible in the schema explorer.
-  const bcId = boundedContextNodeId(DESIGN_DOC.id, "Sales");
-  const parentModuleId = moduleNodeId(bcId, "Sales.Orders");
-  const childModuleId = `${parentModuleId}|M:Sales.Orders.Fulfillment`;
-  await db.query(
-    "CREATE (m:DesignedDomainModule {id: $id, name: $name, full_path: $full_path, description: $description})",
-    {
-      id: childModuleId,
-      name: "Fulfillment",
-      full_path: "Sales.Orders.Fulfillment",
-      description: "Nested module under Orders for shipment handling.",
-    },
-  );
-  await db.query(
-    "MATCH (parent:DesignedDomainModule), (child:DesignedDomainModule) " +
-      "WHERE parent.id = $parentId AND child.id = $childId " +
-      "CREATE (parent)-[:DM_HAS_MODULE]->(child)",
-    { parentId: parentModuleId, childId: childModuleId },
-  );
-}
-
-function cs(name: string, namespaceFullName: string, filePath: string): CSharpTypeFixture {
+/**
+ * Greenfield doc: covers every optional/nullable field with both a populated
+ * variant and a null-or-missing variant. ChangeSets only exercise `added`,
+ * which is the contract for green-field docs.
+ *
+ * Two bounded contexts are deliberately shaped as polar opposites:
+ *
+ *   - "Sales"      — fully populated: description set, modules + buildingBlocks
+ *                    + qualityAttributes all present, every nested entity has
+ *                    its optional fields populated.
+ *   - "Reporting"  — minimal: description null, modules/buildingBlocks/
+ *                    qualityAttributes all omitted.
+ */
+function greenfieldDesignDoc(): DesignDocFileNew {
   return {
-    id: `${namespaceFullName}.${name}`,
-    name,
-    fullName: `${namespaceFullName}.${name}`,
-    filePath,
-    namespaceFullName,
+    id: "ddoc-sales-platform",
+    name: "Sales platform",
+    name_locked: false,
+    description: "Greenfield design for the sales platform.",
+    description_locked: false,
+    date: "2026-01-25",
+    actors: [actorRich(), actorMinimal()],
+    boundedContexts: {
+      added: [salesBoundedContext(), reportingBoundedContext()],
+      modified: [],
+      removed: [],
+    },
+    implemented: false,
   };
 }
 
-function bb(name: string, type: string, containerPath: string): BuildingBlockFixture {
-  const namespaceFullName = `Acme.${containerPath}`;
+/**
+ * Tier-expansion doc: a follow-up evolution of the Sales platform that
+ * demonstrates the full ChangeSet shape (`added` + `modified` + `removed`) at
+ * every nesting level — bounded contexts, modules, building blocks, behaviours,
+ * rules, scenarios, quality attributes, properties, and the string change-sets
+ * on behaviours (input, output, usedBuildingBlocks). This is the fixture that
+ * exercises modify and remove rendering paths in the UI.
+ */
+function tierExpansionDesignDoc(): DesignDocFileNew {
   return {
-    id: name,
-    name,
-    type,
-    containerPath,
-    csharpTypeId: `${namespaceFullName}.${name}`,
+    id: "ddoc-sales-tier-expansion",
+    name: "Sales platform: tier expansion",
+    name_locked: false,
+    description:
+      "Follow-up to the Sales platform doc — introduces customer tiers, " +
+      "reshapes pricing, and retires the placeholder modules.",
+    description_locked: false,
+    date: "2026-04-20",
+    actors: [actorRich()],
+    boundedContexts: {
+      added: [catalogBoundedContext()],
+      modified: [salesBoundedContextDiff()],
+      removed: ["Reporting"],
+    },
+    implemented: false,
   };
 }
 
-function bh(buildingBlockId: string, methodName: string): BehaviorFixture {
+/** Covers DesignDocFileNew.boundedContexts being undefined. */
+function draftDesignDoc(): DesignDocFileNew {
   return {
-    id: `${buildingBlockId}:${methodName}`,
-    name: methodName,
-    buildingBlockId,
+    id: "ddoc-onboarding-draft",
+    name: "Onboarding draft",
+    name_locked: false,
+    description: "Stub doc — bounded contexts not yet sketched.",
+    description_locked: false,
+    date: "2026-02-10",
+    actors: [],
+    implemented: false,
   };
 }
 
-function invocation(
-  sourceBb: string,
-  sourceMethod: string,
-  destBb: string,
-  destMethod: string,
-): { source: string; destination: string } {
+// ----- tier-expansion building blocks (added/modified/removed at every level) -----
+
+/** New bounded context introduced by the v2 doc. */
+function catalogBoundedContext(): DesignedBoundedContextNew {
   return {
-    source: `${sourceBb}:${sourceMethod}`,
-    destination: `${destBb}:${destMethod}`,
+    name: "Catalog",
+    name_locked: false,
+    description: "Product browsing and tier-aware listings.",
+    description_locked: false,
+    modules: {
+      added: [
+        {
+          name: "Browse",
+          name_locked: false,
+          description: "Tier-filtered product views.",
+          description_locked: false,
+        },
+      ],
+      modified: [],
+      removed: [],
+    },
   };
+}
+
+/**
+ * Modified shape of the existing "Sales" bounded context. Demonstrates each
+ * inner change-set populating all three slots: added/modified/removed.
+ */
+function salesBoundedContextDiff(): DesignedBoundedContextNew {
+  return {
+    name: "Sales",
+    name_locked: false,
+    description: "Order capture, tier-aware pricing, fulfilment hand-off.",
+    description_locked: false,
+    modules: {
+      added: [
+        {
+          name: "Promotions",
+          name_locked: false,
+          description: "Time-bound tier promotions.",
+          description_locked: false,
+        },
+      ],
+      modified: [pricingModuleDiff()],
+      removed: ["Fulfilment"],
+    },
+  };
+}
+
+/** Modified shape of the existing "Pricing" module. */
+function pricingModuleDiff(): DesignedDomainModuleNew {
+  return {
+    name: "Pricing",
+    name_locked: false,
+    description:
+      "Discount rules, list prices, currency conversion, customer-tier overrides.",
+    description_locked: false,
+    buildingBlocks: {
+      added: [
+        {
+          name: "DiscountChain",
+          name_locked: false,
+          type: "domain_service",
+          type_locked: false,
+          description: "Composes discount rules in priority order.",
+          description_locked: false,
+        },
+      ],
+      modified: [priceCalculatorBuildingBlockDiff()],
+      removed: ["Money"],
+    },
+  };
+}
+
+/**
+ * Modified shape of "PriceCalculator". Every inner ChangeSet (properties,
+ * behaviours, rules, scenarios, qualityAttributes) populates all three slots,
+ * and `implements` shows the array-update shape.
+ */
+function priceCalculatorBuildingBlockDiff(): DesignedBuildingBlockNew {
+  return {
+    name: "PriceCalculator",
+    name_locked: false,
+    type: "domain_service",
+    type_locked: false,
+    description:
+      "Computes tier-aware order totals from cart items and the active discount chain.",
+    description_locked: false,
+    implements: ["IPricingPort", "ITierAware"],
+    properties: {
+      added: [
+        {
+          name: "currentTier",
+          name_locked: false,
+          type: "TierLevel",
+          type_locked: false,
+          description: "Tier in effect at calculation time.",
+          description_locked: false,
+          nullable: false,
+          collection: false,
+        },
+      ],
+      modified: [
+        {
+          name: "rules",
+          name_locked: false,
+          type: "DiscountRule",
+          type_locked: false,
+          description:
+            "Active discount rules, ordered by priority and tier compatibility.",
+          description_locked: false,
+          nullable: false,
+          collection: true,
+        },
+      ],
+      removed: ["lastBackfilledAt"],
+    },
+    behaviours: {
+      added: [
+        {
+          name: "recalculateForTier",
+          name_locked: false,
+          description:
+            "Input: an existing OrderTotals plus a TierLevel. Validation: tier known. " +
+            "Steps: 1. Reapply chain with new tier weight. 2. Diff totals. " +
+            "Output: OrderTotals reflecting the tier change.",
+          description_locked: false,
+          type: "Command",
+          type_locked: false,
+          input: changeSet(["TierLevel"]),
+          output: changeSet(["OrderTotals"]),
+          usedBuildingBlocks: changeSet(["DiscountChain", "TierLookup"]),
+          rules: { added: [ruleRich()], modified: [], removed: [] },
+          scenarios: { added: [scenarioRich()], modified: [], removed: [] },
+          qualityAttributes: {
+            added: [qualityAttributeRich()],
+            modified: [],
+            removed: [],
+          },
+          isPublic: true,
+          actor: "Customer",
+          actor_locked: false,
+        },
+      ],
+      modified: [calculateBehaviourDiff()],
+      removed: ["warmCache"],
+    },
+    rules: {
+      added: [
+        {
+          name: "tier-applied-once",
+          name_locked: false,
+          ruleType: "Computation",
+          description:
+            "A tier override must be applied exactly once per calculation pass.",
+          description_locked: false,
+        },
+      ],
+      modified: [
+        {
+          name: "priorities-are-unique",
+          name_locked: false,
+          ruleType: "Structure",
+          description:
+            "Two active rules cannot share the same priority value within a tier.",
+          description_locked: false,
+        },
+      ],
+      removed: ["tbd-rule"],
+    },
+    scenarios: {
+      added: [
+        {
+          name: "recalculates after tier change",
+          name_locked: false,
+          description:
+            "When a customer is promoted mid-session, totals reflect the new tier on next calculate.",
+          description_locked: false,
+          given: "an OrderTotals computed at tier Bronze",
+          given_locked: false,
+          when: "recalculateForTier is invoked with TierLevel=Gold",
+          when_locked: false,
+          then: "totals reflect the Gold tier discounts",
+          then_locked: false,
+        },
+      ],
+      modified: [
+        {
+          name: "applies the highest-priority discount first",
+          name_locked: false,
+          description:
+            "When two discounts apply within the active tier, the lower priority number wins.",
+          description_locked: false,
+          given:
+            "a cart with two applicable discounts at priorities 1 and 5 within the active tier",
+          given_locked: false,
+          when: "calculate is invoked",
+          when_locked: false,
+          then:
+            "the priority-1 discount is applied first and totals reflect it",
+          then_locked: false,
+        },
+      ],
+      removed: ["legacy-flat-discount"],
+    },
+    qualityAttributes: {
+      added: [
+        {
+          name: "tier-cache-hit-rate",
+          name_locked: false,
+          type: "performance",
+          description:
+            "Tier lookup cache must keep ≥95% hit rate at p99 latency budget.",
+          description_locked: false,
+        },
+      ],
+      modified: [
+        {
+          name: "p99-under-100ms",
+          name_locked: false,
+          type: "performance",
+          description:
+            "p99 latency for calculate must stay under 100ms at 200 RPS, including tier lookup.",
+          description_locked: false,
+        },
+      ],
+      removed: ["tbd-quality"],
+    },
+  };
+}
+
+/**
+ * Modified shape of "calculate". Each StringChangeSet (input, output,
+ * usedBuildingBlocks) populates all three slots, and rules / scenarios /
+ * qualityAttributes do too.
+ */
+function calculateBehaviourDiff(): DesignedBehaviourNew {
+  return {
+    name: "calculate",
+    name_locked: false,
+    description:
+      "Input: cart with line items, customer id, and active TierLevel. " +
+      "Validation: line items non-empty, tier resolvable. " +
+      "Steps: 1. Resolve tier. 2. Apply rule chain in priority order. " +
+      "3. Round to currency precision. Output: OrderTotals broken down by line.",
+    description_locked: false,
+    type: "Command",
+    type_locked: false,
+    input: {
+      added: ["TierLevel"],
+      modified: ["Cart"],
+      removed: ["LegacyCustomer"],
+    },
+    output: {
+      added: ["OrderTotals"],
+      modified: ["LineBreakdown"],
+      removed: ["DeprecatedSummary"],
+    },
+    usedBuildingBlocks: {
+      added: ["DiscountChain", "TierLookup"],
+      modified: ["DiscountRule"],
+      removed: ["LegacyDiscountHelper"],
+    },
+    rules: {
+      added: [
+        {
+          name: "tier-applied-once",
+          name_locked: false,
+          ruleType: "Computation",
+          description:
+            "A tier override must be applied exactly once per calculation pass.",
+          description_locked: false,
+        },
+      ],
+      modified: [
+        {
+          name: "priorities-are-unique",
+          name_locked: false,
+          ruleType: "Structure",
+          description:
+            "Two active rules cannot share the same priority value within a tier.",
+          description_locked: false,
+        },
+      ],
+      removed: ["legacy-rounding"],
+    },
+    scenarios: {
+      added: [
+        {
+          name: "applies the active tier override",
+          name_locked: false,
+          description: "Tier override is applied to the resolved chain.",
+          description_locked: false,
+          given: "a Gold-tier customer with two applicable discounts",
+          given_locked: false,
+          when: "calculate is invoked",
+          when_locked: false,
+          then: "the Gold-tier override price is used",
+          then_locked: false,
+        },
+      ],
+      modified: [
+        {
+          name: "applies the highest-priority discount first",
+          name_locked: false,
+          description:
+            "When two discounts apply within the active tier, the lower priority number wins.",
+          description_locked: false,
+          given:
+            "a cart with two applicable discounts at priorities 1 and 5 within the active tier",
+          given_locked: false,
+          when: "calculate is invoked",
+          when_locked: false,
+          then:
+            "the priority-1 discount is applied first and totals reflect it",
+          then_locked: false,
+        },
+      ],
+      removed: ["legacy-no-discount"],
+    },
+    qualityAttributes: {
+      added: [
+        {
+          name: "tier-cache-hit-rate",
+          name_locked: false,
+          type: "performance",
+          description:
+            "Tier lookup cache must keep ≥95% hit rate at p99 latency budget.",
+          description_locked: false,
+        },
+      ],
+      modified: [
+        {
+          name: "p99-under-100ms",
+          name_locked: false,
+          type: "performance",
+          description:
+            "p99 latency for calculate must stay under 100ms at 200 RPS, including tier lookup.",
+          description_locked: false,
+        },
+      ],
+      removed: ["legacy-throughput-budget"],
+    },
+    isPublic: true,
+    actor: "Customer",
+    actor_locked: false,
+  };
+}
+
+function actorRich(): DesignedActorNew {
+  return {
+    name: "Customer",
+    name_locked: false,
+    description: "End user paying for the service.",
+    description_locked: false,
+  };
+}
+
+/** Covers DesignedActorNew.description = null. */
+function actorMinimal(): DesignedActorNew {
+  return {
+    name: "Operator",
+    name_locked: false,
+    description: null,
+    description_locked: false,
+  };
+}
+
+function salesBoundedContext(): DesignedBoundedContextNew {
+  return {
+    name: "Sales",
+    name_locked: false,
+    description: "Order capture, pricing, fulfilment hand-off.",
+    description_locked: false,
+    modules: {
+      added: [pricingModuleRich(), fulfilmentModuleMinimal()],
+      modified: [],
+      removed: [],
+    },
+    buildingBlocks: {
+      added: [bcLevelBuildingBlock()],
+      modified: [],
+      removed: [],
+    },
+    qualityAttributes: {
+      added: [qualityAttributeRich(), qualityAttributeMinimal()],
+      modified: [],
+      removed: [],
+    },
+  };
+}
+
+/**
+ * Covers: BoundedContext.description = null and
+ * modules/buildingBlocks/qualityAttributes all omitted.
+ */
+function reportingBoundedContext(): DesignedBoundedContextNew {
+  return {
+    name: "Reporting",
+    name_locked: false,
+    description: null,
+    description_locked: false,
+  };
+}
+
+function pricingModuleRich(): DesignedDomainModuleNew {
+  return {
+    name: "Pricing",
+    name_locked: false,
+    description: "Discount rules, list prices, currency conversion.",
+    description_locked: false,
+    buildingBlocks: {
+      added: [priceCalculatorBuildingBlock(), valueObjectBuildingBlock()],
+      modified: [],
+      removed: [],
+    },
+    qualityAttributes: {
+      added: [qualityAttributeRich()],
+      modified: [],
+      removed: [],
+    },
+  };
+}
+
+/**
+ * Covers: DomainModule.description = null and
+ * buildingBlocks/qualityAttributes both omitted.
+ */
+function fulfilmentModuleMinimal(): DesignedDomainModuleNew {
+  return {
+    name: "Fulfilment",
+    name_locked: false,
+    description: null,
+    description_locked: false,
+  };
+}
+
+/**
+ * BC-level building block. Covers BuildingBlock.{type, description} = null and
+ * implements/properties/behaviours/rules/scenarios/qualityAttributes all omitted.
+ */
+function bcLevelBuildingBlock(): DesignedBuildingBlockNew {
+  return {
+    name: "OrderId",
+    name_locked: false,
+    type: null,
+    type_locked: false,
+    description: null,
+    description_locked: false,
+  };
+}
+
+function priceCalculatorBuildingBlock(): DesignedBuildingBlockNew {
+  return {
+    name: "PriceCalculator",
+    name_locked: false,
+    type: "domain_service",
+    type_locked: false,
+    description: "Computes order totals from cart items and active discounts.",
+    description_locked: false,
+    implements: ["IPricingPort"],
+    properties: {
+      added: [propertyRich(), propertyMinimal()],
+      modified: [],
+      removed: [],
+    },
+    behaviours: {
+      added: [behaviourRich(), behaviourMinimal()],
+      modified: [],
+      removed: [],
+    },
+    rules: {
+      added: [ruleRich(), ruleMinimal()],
+      modified: [],
+      removed: [],
+    },
+    scenarios: {
+      added: [scenarioRich()],
+      modified: [],
+      removed: [],
+    },
+    qualityAttributes: {
+      added: [qualityAttributeRich()],
+      modified: [],
+      removed: [],
+    },
+  };
+}
+
+/**
+ * Covers BuildingBlock with type/description set but every other optional
+ * (implements, properties, behaviours, rules, scenarios, qualityAttributes)
+ * intentionally omitted.
+ */
+function valueObjectBuildingBlock(): DesignedBuildingBlockNew {
+  return {
+    name: "Money",
+    name_locked: false,
+    type: "value_object",
+    type_locked: false,
+    description: "Amount + currency code, immutable.",
+    description_locked: false,
+  };
+}
+
+function propertyRich(): DesignedPropertyNew {
+  return {
+    name: "rules",
+    name_locked: false,
+    type: "DiscountRule",
+    type_locked: false,
+    description: "Active discount rules, ordered by priority.",
+    description_locked: false,
+    nullable: false,
+    collection: true,
+  };
+}
+
+/**
+ * Covers Property.{type, description} = null and nullable/collection both
+ * omitted (so consumers must treat them as undefined, not false).
+ */
+function propertyMinimal(): DesignedPropertyNew {
+  return {
+    name: "lastBackfilledAt",
+    name_locked: false,
+    type: null,
+    type_locked: false,
+    description: null,
+    description_locked: false,
+  };
+}
+
+function behaviourRich(): DesignedBehaviourNew {
+  return {
+    name: "calculate",
+    name_locked: false,
+    description:
+      "Input: cart with line items and customer id. Validation: line items non-empty. " +
+      "Steps: 1. Fetch customer tier. 2. Apply rule chain in priority order. " +
+      "3. Round to currency precision. Output: totals broken down by line.",
+    description_locked: false,
+    type: "Command",
+    type_locked: false,
+    input: changeSet(["Cart", "CustomerId"]),
+    output: changeSet(["OrderTotals"]),
+    usedBuildingBlocks: changeSet(["DiscountRule", "Money"]),
+    rules: { added: [ruleRich()], modified: [], removed: [] },
+    scenarios: { added: [scenarioRich()], modified: [], removed: [] },
+    qualityAttributes: {
+      added: [qualityAttributeRich()],
+      modified: [],
+      removed: [],
+    },
+    isPublic: true,
+    actor: "Customer",
+    actor_locked: false,
+  };
+}
+
+/**
+ * Covers Behaviour.{description, type} = null, actor = null, and every
+ * optional collection (input, output, usedBuildingBlocks, rules, scenarios,
+ * qualityAttributes) omitted.
+ */
+function behaviourMinimal(): DesignedBehaviourNew {
+  return {
+    name: "warmCache",
+    name_locked: false,
+    description: null,
+    description_locked: false,
+    type: null,
+    type_locked: false,
+    isPublic: false,
+    actor: null,
+    actor_locked: false,
+  };
+}
+
+function ruleRich(): DesignedRuleNew {
+  return {
+    name: "priorities-are-unique",
+    name_locked: false,
+    ruleType: "Structure",
+    description: "Two active rules cannot share the same priority value.",
+    description_locked: false,
+  };
+}
+
+/** Covers Rule.{ruleType, description} = null. */
+function ruleMinimal(): DesignedRuleNew {
+  return {
+    name: "tbd-rule",
+    name_locked: false,
+    ruleType: null,
+    description: null,
+    description_locked: false,
+  };
+}
+
+function scenarioRich(): DesignedScenarioNew {
+  return {
+    name: "applies the highest-priority discount first",
+    name_locked: false,
+    description:
+      "When two discounts apply, the one with the lower priority number wins.",
+    description_locked: false,
+    given: "a cart with two applicable discounts at priorities 1 and 5",
+    given_locked: false,
+    when: "calculate is invoked",
+    when_locked: false,
+    then: "the priority-1 discount is applied first and totals reflect it",
+    then_locked: false,
+  };
+}
+
+function qualityAttributeRich(): DesignedQualityAttributeNew {
+  return {
+    name: "p99-under-100ms",
+    name_locked: false,
+    type: "performance",
+    description:
+      "p99 latency for calculate must stay under 100ms at 200 RPS for a single tenant.",
+    description_locked: false,
+  };
+}
+
+/** Covers QualityAttribute.{type, description} = null. */
+function qualityAttributeMinimal(): DesignedQualityAttributeNew {
+  return {
+    name: "tbd-quality",
+    name_locked: false,
+    type: null,
+    description: null,
+    description_locked: false,
+  };
+}
+
+function changeSet(items: string[]): StringChangeSet {
+  return { added: items, modified: [], removed: [] };
+}
+
+// ---------- file writes ----------
+
+function writeConversation(projectDir: string, file: ConversationFileNew): void {
+  const jsonPath = conversationJsonPath(projectDir, file.conversation_id);
+  writeJson(jsonPath, file);
+
+  const mdPath = conversationMdPath(projectDir, file.conversation_id);
+  const md = renderConversationMarkdown(file);
+  writeText(mdPath, md);
+}
+
+function writeDocument(projectDir: string, file: DocumentFileNew): void {
+  writeJson(documentJsonPath(projectDir, file.document_id), file);
+}
+
+function writeTopic(projectDir: string, file: TopicFileNew): void {
+  writeJson(topicJsonPath(projectDir, file.id), file);
+}
+
+function writeDecision(projectDir: string, file: DecisionFileNew): void {
+  writeJson(decisionJsonPath(projectDir, file.id), file);
+}
+
+function writeDesignDoc(projectDir: string, file: DesignDocFileNew): void {
+  writeJson(designDocCanonicalPath(projectDir, file.id, file.name), file);
+}
+
+function writeJson(path: string, value: unknown): void {
+  ensureDir(path);
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+}
+
+function writeText(path: string, contents: string): void {
+  ensureDir(path);
+  writeFileSync(path, contents, "utf-8");
+}
+
+function ensureDir(path: string): void {
+  const dir = path.slice(0, path.lastIndexOf("/"));
+  if (dir.length > 0) mkdirSync(dir, { recursive: true });
+}
+
+function renderConversationMarkdown(file: ConversationFileNew): string {
+  const lines: string[] = [`<!-- conversation_id: ${file.conversation_id} -->`];
+  lines.push(`# ${file.main_topic}`);
+  lines.push("");
+  for (const turn of file.turns) {
+    lines.push(`## Turn ${turn.index} — ${turn.speaker} @ ${turn.time}`);
+    for (const iu of turn.idea_units) {
+      lines.push(`- IU${iu.index} [${iu.categories.join(", ")}]`);
+      for (const sentence of iu.sentences) lines.push(`  - ${sentence}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
 }

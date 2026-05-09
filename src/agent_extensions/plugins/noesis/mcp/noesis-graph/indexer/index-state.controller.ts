@@ -1,5 +1,5 @@
 import { Controller, Get } from "@nestjs/common";
-import { type IndexState, IndexerService } from "./indexer.service.js";
+import { IndexerService, type IndexState } from "./indexer.service.js";
 
 @Controller("api/health")
 export class IndexStateController {

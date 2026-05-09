@@ -1,4 +1,4 @@
-import { DesignDocSchema } from "../../design-doc.js";
+import { DesignDocFileNewSchema } from "../../design-doc-new.js";
 
-export const CreateDesignDocOutputSchema = DesignDocSchema;
-export type CreateDesignDocOutput = import("../../design-doc.js").DesignDoc;
+export const CreateDesignDocOutputSchema = DesignDocFileNewSchema;
+export type CreateDesignDocOutput = import("../../design-doc-new.js").DesignDocFileNew;

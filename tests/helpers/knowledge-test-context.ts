@@ -1,131 +1,99 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { mkdtempSync } from "fs";
-import { join } from "path";
 import { tmpdir } from "os";
-import { DATA_DIR, PROJECT_DIR } from "@noesis/mcp/noesis-graph/config/config.module.js";
+import { join } from "path";
+import {
+  DATA_DIR,
+  PROJECT_DIR,
+} from "@noesis/mcp/noesis-graph/config/config.module.js";
 import { DatabaseService } from "@noesis/mcp/noesis-graph/database/database.service.js";
-import { FileSyncService } from "@noesis/mcp/noesis-graph/file-sync/file-sync.service.js";
-import { GraphProjectionService } from "@noesis/mcp/noesis-graph/file-sync/graph-projection.service.js";
-import { SourceFilesRepository } from "@noesis/mcp/noesis-graph/file-sync/source-files.repository.js";
-import { StalenessService } from "@noesis/mcp/noesis-graph/file-sync/staleness.service.js";
 import { ConversationsRepository } from "@noesis/mcp/noesis-graph/knowledge/conversations/conversations.repository.js";
 import { ConversationsService } from "@noesis/mcp/noesis-graph/knowledge/conversations/conversations.service.js";
 import { DecisionsRepository } from "@noesis/mcp/noesis-graph/knowledge/decisions/decisions.repository.js";
 import { DecisionsService } from "@noesis/mcp/noesis-graph/knowledge/decisions/decisions.service.js";
 import { DesignDocsRepository } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.repository.js";
+import { DesignDocsService } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.service.js";
 import { DocumentsRepository } from "@noesis/mcp/noesis-graph/knowledge/documents/documents.repository.js";
 import { DocumentsService } from "@noesis/mcp/noesis-graph/knowledge/documents/documents.service.js";
-import { SchemaService } from "@noesis/mcp/noesis-graph/knowledge/schema/schema.service.js";
 import { TopicsRepository } from "@noesis/mcp/noesis-graph/knowledge/topics/topics.repository.js";
 import { TopicsService } from "@noesis/mcp/noesis-graph/knowledge/topics/topics.service.js";
+import { IndexerService } from "@noesis/mcp/noesis-graph/indexer/indexer.service.js";
 
-const NODE_LABELS = [
-  "AlternativeOption",
-  "Decision",
-  "Topic",
-  "IdeaUnit",
-  "Turn",
-  "Conversation",
-  "DocumentFragment",
-  "Document",
-  "SourceFile",
-];
-
-export interface KnowledgeTestContext {
+export interface KnowledgeNewTestContext {
   module: TestingModule;
   db: DatabaseService;
-  tmpDir: string;
+  projectDir: string;
+  topics: TopicsService;
+  topicsRepository: TopicsRepository;
+  decisions: DecisionsService;
+  decisionsRepository: DecisionsRepository;
+  conversations: ConversationsService;
+  conversationsRepository: ConversationsRepository;
+  documents: DocumentsService;
+  documentsRepository: DocumentsRepository;
+  designDocs: DesignDocsService;
+  designDocsRepository: DesignDocsRepository;
+  indexer: IndexerService;
 }
 
-export async function createKnowledgeTestModule(): Promise<KnowledgeTestContext> {
-  const tmpDir = mkdtempSync(join(tmpdir(), "noesis-kg-test-"));
+export async function createKnowledgeNewTestModule(): Promise<KnowledgeNewTestContext> {
+  const projectDir = mkdtempSync(join(tmpdir(), "noesis-kg-new-"));
   const module = await Test.createTestingModule({
     providers: [
       DatabaseService,
-      SchemaService,
-      TopicsService,
       TopicsRepository,
-      ConversationsService,
-      ConversationsRepository,
-      DocumentsService,
-      DocumentsRepository,
-      DecisionsService,
+      TopicsService,
       DecisionsRepository,
+      DecisionsService,
+      ConversationsRepository,
+      ConversationsService,
+      DocumentsRepository,
+      DocumentsService,
       DesignDocsRepository,
-      SourceFilesRepository,
-      FileSyncService,
-      GraphProjectionService,
-      StalenessService,
-      { provide: DATA_DIR, useValue: tmpDir },
-      { provide: PROJECT_DIR, useValue: tmpDir },
+      DesignDocsService,
+      IndexerService,
+      { provide: DATA_DIR, useValue: projectDir },
+      { provide: PROJECT_DIR, useValue: projectDir },
     ],
   }).compile();
   await module.init();
+  await module.get(TopicsRepository).initSchema();
+  await module.get(DecisionsRepository).initSchema();
+  await module.get(ConversationsRepository).initSchema();
+  await module.get(DocumentsRepository).initSchema();
   await module.get(DesignDocsRepository).initSchema();
-  return { module, db: module.get(DatabaseService), tmpDir };
+  return {
+    module,
+    db: module.get(DatabaseService),
+    projectDir,
+    topics: module.get(TopicsService),
+    topicsRepository: module.get(TopicsRepository),
+    decisions: module.get(DecisionsService),
+    decisionsRepository: module.get(DecisionsRepository),
+    conversations: module.get(ConversationsService),
+    conversationsRepository: module.get(ConversationsRepository),
+    documents: module.get(DocumentsService),
+    documentsRepository: module.get(DocumentsRepository),
+    designDocs: module.get(DesignDocsService),
+    designDocsRepository: module.get(DesignDocsRepository),
+    indexer: module.get(IndexerService),
+  };
 }
 
-export async function clearGraph(db: DatabaseService): Promise<void> {
+export async function clearGraphNew(db: DatabaseService): Promise<void> {
+  const labels = [
+    "Conversation",
+    "Turn",
+    "IdeaUnit",
+    "Document",
+    "DocumentFragment",
+    "Topic",
+    "Decision",
+    "DesignDoc",
+    "Actor",
+  ];
   const conn = db.getConnection();
-  for (const label of NODE_LABELS) {
+  for (const label of labels) {
     await conn.query(`MATCH (n:${label}) DETACH DELETE n`);
   }
-}
-
-export async function countNodes(
-  db: DatabaseService,
-  label: string,
-): Promise<number> {
-  const result = await db
-    .getConnection()
-    .query(`MATCH (n:${label}) RETURN COUNT(n) AS c`);
-  const rows = asArray(result).getAllSync() as Array<{ c: number | bigint }>;
-  return Number(rows[0].c);
-}
-
-export async function countRels(
-  db: DatabaseService,
-  relName: string,
-): Promise<number> {
-  const result = await db
-    .getConnection()
-    .query(`MATCH ()-[r:${relName}]->() RETURN COUNT(r) AS c`);
-  const rows = asArray(result).getAllSync() as Array<{ c: number | bigint }>;
-  return Number(rows[0].c);
-}
-
-export function asArray(
-  result: unknown,
-): { getNumTuples(): number; getAllSync(): unknown[] } {
-  if (Array.isArray(result)) return result[0];
-  return result as { getNumTuples(): number; getAllSync(): unknown[] };
-}
-
-export function sampleConversation(id: string): unknown {
-  return {
-    conversation_id: id,
-    time: "2026-04-17T10:00:00Z",
-    main_topic: "Sample",
-    turns: [
-      {
-        index: 0,
-        speaker: "alice",
-        time: "2026-04-17T10:00:00Z",
-        idea_units: [
-          { index: 0, sentences: ["hello"], categories: ["Information"] },
-          { index: 1, sentences: ["world"], categories: ["Position"] },
-        ],
-      },
-      {
-        index: 1,
-        speaker: "bob",
-        time: "2026-04-17T10:01:00Z",
-        idea_units: [
-          { index: 0, sentences: ["ok"], categories: ["Argument"] },
-        ],
-      },
-    ],
-    topics: [],
-    decisions: [],
-  };
 }

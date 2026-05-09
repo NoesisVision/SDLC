@@ -1,291 +1,268 @@
 import { Injectable } from "@nestjs/common";
+import { mkdirSync, writeFileSync } from "fs";
+import { dirname } from "path";
 import { z } from "zod";
-import { DatabaseService } from "../../database/database.service.js";
-import type {
-  Conversation,
-  IdeaUnit,
-  IdeaUnitDetail,
-  Turn,
-} from "../../../../shared-contracts/conversation.js";
-import { ideaUnitNodeId, turnNodeId } from "./node-ids.js";
+import type { Turn } from "../../../../shared-contracts/conversation.js";
+import {
+  ConversationFileNewSchema,
+  type ConversationFileNew,
+} from "../../../../shared-contracts/source-file-schemas.js";
+import {
+  computeFileSha,
+  conversationJsonPath,
+  conversationMdPath,
+  readSidecar,
+  writeSidecar,
+} from "../../../../shared-contracts/source-files.js";
+import { DatabaseService, type QueryParams } from "../../database/database.service.js";
 
-const IdRowSchema = z.object({ id: z.string() });
-type IdRow = z.infer<typeof IdRowSchema>;
+const SCHEMA_STATEMENTS = [
+  "CREATE NODE TABLE IF NOT EXISTS Conversation(" +
+    "id STRING, sha STRING, time STRING, main_topic STRING, " +
+    "PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS Turn(" +
+    "id STRING, conversation_id STRING, turn_index INT64, speaker STRING, time STRING, " +
+    "PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS IdeaUnit(" +
+    "id STRING, conversation_id STRING, turn_index INT64, idea_unit_index INT64, " +
+    "sentences STRING[], categories STRING[], " +
+    "PRIMARY KEY(id))",
+  "CREATE REL TABLE IF NOT EXISTS CONVERSATION_HAS_TURN(FROM Conversation TO Turn)",
+  "CREATE REL TABLE IF NOT EXISTS TURN_HAS_IDEA_UNIT(FROM Turn TO IdeaUnit)",
+];
 
-const IdeaUnitJoinRowSchema = z.object({
+const PathRowSchema = z.object({ id: z.string(), sha: z.string() });
+const StoredConversationRowSchema = z.object({
+  id: z.string(),
+  sha: z.string(),
+  time: z.string(),
+  main_topic: z.string(),
+});
+
+const IdeaUnitDetailRowSchema = z.object({
   conversation_id: z.string(),
   turn_index: z.union([z.number(), z.bigint()]),
   idea_unit_index: z.union([z.number(), z.bigint()]),
-  sentences: z.array(z.string()),
-  categories: z.array(z.string()),
   speaker: z.string(),
   time: z.string(),
+  sentences: z.array(z.string()),
+  categories: z.array(z.string()),
 });
-type IdeaUnitJoinRow = z.infer<typeof IdeaUnitJoinRowSchema>;
 
-const ConversationRefRowSchema = z.object({
-  conversation_id: z.string(),
-  main_topic: z.string(),
-  time: z.string(),
-});
-type ConversationRefRow = z.infer<typeof ConversationRefRowSchema>;
-
-const TopicRefRowSchema = z.object({
-  topic_id: z.string(),
-  title: z.string(),
-});
-type TopicRefRow = z.infer<typeof TopicRefRowSchema>;
-
-const DecisionRefRowSchema = z.object({
-  decision_id: z.string(),
-  title: z.string(),
-  status: z.string(),
-});
-type DecisionRefRow = z.infer<typeof DecisionRefRowSchema>;
-
-export interface ConversationRef {
-  conversation_id: string;
-  main_topic: string;
+export interface StoredConversation {
+  id: string;
+  sha: string;
   time: string;
+  main_topic: string;
 }
 
-export interface ConversationTopicRow {
-  topic_id: string;
-  title: string;
+export interface IdeaUnitDetailRow {
+  conversation_id: string;
+  turn_index: number;
+  idea_unit_index: number;
+  speaker: string;
+  time: string;
+  sentences: string[];
+  categories: string[];
 }
 
-export interface ConversationDecisionRow {
-  decision_id: string;
-  title: string;
-  status: string;
+export interface IdeaUnitPosition {
+  turn_index: number;
+  idea_unit_index: number;
 }
 
 @Injectable()
 export class ConversationsRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  async ensureNotExists(id: string): Promise<void> {
-    if (await this.exists(id)) {
-      throw new Error(`Conversation already exists: ${id}`);
-    }
+  canonicalJsonPath(projectDir: string, conversationId: string): string {
+    return conversationJsonPath(projectDir, conversationId);
+  }
+
+  canonicalMdPath(projectDir: string, conversationId: string): string {
+    return conversationMdPath(projectDir, conversationId);
+  }
+
+  async delete(conversationId: string): Promise<void> {
+    await this.deleteTurns(conversationId);
+    await this.db.query(
+      "MATCH (c:Conversation) WHERE c.id = $id DETACH DELETE c",
+      { id: conversationId },
+    );
   }
 
   async exists(conversationId: string): Promise<boolean> {
-    const rows = await this.db.query<IdRow>(
+    const rows = await this.db.query<{ id: string }>(
       "MATCH (c:Conversation) WHERE c.id = $id RETURN c.id AS id LIMIT 1",
       { id: conversationId },
     );
     return rows.length > 0;
   }
 
-  async getPriorIdeaUnits(
-    topicId: string,
-    excludeConversationId: string,
-  ): Promise<IdeaUnitDetail[]> {
-    const rawRows = await this.db.query<IdeaUnitJoinRow>(
-      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn) " +
-        "WHERE t.id = $topicId AND u.conversation_id <> $excludeConversationId " +
-        "AND u.categories <> ['Irrelevant'] " +
-        "RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, " +
-        "u.sentences AS sentences, u.categories AS categories, turn.speaker AS speaker, turn.time AS time " +
-        "ORDER BY u.conversation_id, u.turn_index, u.idea_unit_index",
-      { topicId, excludeConversationId },
-    );
-    const rows = z.array(IdeaUnitJoinRowSchema).parse(rawRows);
-    return rows.map((r) => ({
-      conversation_id: r.conversation_id,
-      turn_index: Number(r.turn_index),
-      idea_unit_index: Number(r.idea_unit_index),
-      speaker: r.speaker,
-      time: r.time,
-      sentences: r.sentences,
-      categories: r.categories as IdeaUnitDetail["categories"],
-    }));
+  fileSha(absPath: string): string {
+    return computeFileSha(absPath);
   }
 
-  async insertConversation(conversation: Conversation): Promise<void> {
-    await this.ensureNotExists(conversation.conversation_id);
-    await this.insertConversationNode(conversation);
-    for (const turn of conversation.turns) {
-      await this.insertTurn(conversation.conversation_id, turn);
+  async initSchema(): Promise<void> {
+    for (const statement of SCHEMA_STATEMENTS) {
+      await this.db.query(statement);
     }
   }
 
-  async listAllConversations(): Promise<ConversationRef[]> {
-    const rawRows = await this.db.query<ConversationRefRow>(
-      "MATCH (c:Conversation) " +
-        "RETURN c.id AS conversation_id, c.main_topic AS main_topic, c.time AS time " +
-        "ORDER BY time DESC",
+  async listAll(): Promise<StoredConversation[]> {
+    return this.queryHeads(
+      "MATCH (c:Conversation) RETURN " +
+        "c.id AS id, c.sha AS sha, c.time AS time, c.main_topic AS main_topic " +
+        "ORDER BY c.id",
     );
-    return z.array(ConversationRefRowSchema).parse(rawRows);
   }
 
-  async listConversationsForTopic(topicId: string): Promise<ConversationRef[]> {
-    const rawRows = await this.db.query<ConversationRefRow>(
-      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) " +
-        "WHERE t.id = $topicId " +
-        "RETURN DISTINCT c.id AS conversation_id, c.main_topic AS main_topic, c.time AS time " +
-        "ORDER BY time DESC",
-      { topicId },
+  async listByIds(ids: string[]): Promise<StoredConversation[]> {
+    if (ids.length === 0) return [];
+    return this.queryHeads(
+      "MATCH (c:Conversation) WHERE c.id IN $ids RETURN " +
+        "c.id AS id, c.sha AS sha, c.time AS time, c.main_topic AS main_topic " +
+        "ORDER BY c.time",
+      { ids },
     );
-    return z.array(ConversationRefRowSchema).parse(rawRows);
   }
 
-  async listDecisionsForConversation(
+  async listIdeaUnitDetails(
     conversationId: string,
-  ): Promise<ConversationDecisionRow[]> {
-    const seen = new Set<string>();
-    const out: ConversationDecisionRow[] = [];
-    const queries = [
-      "MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) " +
-        "WHERE u.conversation_id = $conversationId " +
-        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
-      "MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) " +
-        "WHERE u.conversation_id = $conversationId " +
-        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
-      "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT]->(u:IdeaUnit) " +
-        "WHERE u.conversation_id = $conversationId " +
-        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
-    ];
-    for (const q of queries) {
-      const rawRows = await this.db.query<DecisionRefRow>(q, { conversationId });
-      for (const row of z.array(DecisionRefRowSchema).parse(rawRows)) {
-        if (seen.has(row.decision_id)) continue;
-        seen.add(row.decision_id);
-        out.push(row);
-      }
-    }
-    out.sort((a, b) => a.title.localeCompare(b.title));
-    return out;
-  }
-
-  async listIdeaUnitsForTopicAndConversation(
-    topicId: string,
-    conversationId: string,
-  ): Promise<IdeaUnitDetail[]> {
-    const rawRows = await this.db.query<IdeaUnitJoinRow>(
-      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn) " +
-        "WHERE t.id = $topicId AND u.conversation_id = $conversationId " +
-        "AND u.categories <> ['Irrelevant'] " +
-        "RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, " +
-        "u.sentences AS sentences, u.categories AS categories, turn.speaker AS speaker, turn.time AS time " +
+    positions: IdeaUnitPosition[],
+  ): Promise<IdeaUnitDetailRow[]> {
+    if (positions.length === 0) return [];
+    const ids = positions.map(
+      (p) => `${conversationId}|T${p.turn_index}|IU${p.idea_unit_index}`,
+    );
+    const rows = await this.db.query<unknown>(
+      "MATCH (t:Turn)-[:TURN_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
+        "WHERE u.id IN $ids " +
+        "RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, " +
+        "u.idea_unit_index AS idea_unit_index, t.speaker AS speaker, t.time AS time, " +
+        "u.sentences AS sentences, u.categories AS categories " +
         "ORDER BY u.turn_index, u.idea_unit_index",
-      { topicId, conversationId },
+      { ids },
     );
-    const rows = z.array(IdeaUnitJoinRowSchema).parse(rawRows);
-    return rows.map((r) => ({
+    return z.array(IdeaUnitDetailRowSchema).parse(rows).map((r) => ({
       conversation_id: r.conversation_id,
       turn_index: Number(r.turn_index),
       idea_unit_index: Number(r.idea_unit_index),
       speaker: r.speaker,
       time: r.time,
       sentences: r.sentences,
-      categories: r.categories as IdeaUnitDetail["categories"],
+      categories: r.categories,
     }));
   }
 
-  async listTopicsForConversation(
-    conversationId: string,
-  ): Promise<ConversationTopicRow[]> {
-    const rawRows = await this.db.query<TopicRefRow>(
-      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
-        "WHERE u.conversation_id = $conversationId " +
-        "RETURN DISTINCT t.id AS topic_id, t.title AS title " +
-        "ORDER BY title",
-      { conversationId },
+  async listAllStoredFiles(
+    projectDir: string,
+  ): Promise<Array<{ id: string; path: string; sha: string }>> {
+    const rows = await this.db.query<unknown>(
+      "MATCH (c:Conversation) RETURN c.id AS id, c.sha AS sha",
     );
-    return z.array(TopicRefRowSchema).parse(rawRows);
+    return z.array(PathRowSchema).parse(rows).map((r) => ({
+      id: r.id,
+      sha: r.sha,
+      path: conversationJsonPath(projectDir, r.id),
+    }));
   }
 
-  async readConversationHead(
-    conversationId: string,
-  ): Promise<ConversationRef | null> {
-    const rawRows = await this.db.query<ConversationRefRow>(
-      "MATCH (c:Conversation) WHERE c.id = $id " +
-        "RETURN c.id AS conversation_id, c.main_topic AS main_topic, c.time AS time LIMIT 1",
+  async read(conversationId: string): Promise<StoredConversation | null> {
+    const rows = await this.db.query<unknown>(
+      "MATCH (c:Conversation) WHERE c.id = $id RETURN " +
+        "c.id AS id, c.sha AS sha, c.time AS time, c.main_topic AS main_topic LIMIT 1",
       { id: conversationId },
     );
-    if (rawRows.length === 0) return null;
-    return ConversationRefRowSchema.parse(rawRows[0]);
+    if (rows.length === 0) return null;
+    return StoredConversationRowSchema.parse(rows[0]);
   }
 
-  async requireIdeaUnit(
-    conversationId: string,
-    turnIndex: number,
-    ideaUnitIndex: number,
-  ): Promise<void> {
-    const id = ideaUnitNodeId(conversationId, turnIndex, ideaUnitIndex);
-    const rows = await this.db.query<IdRow>(
-      "MATCH (u:IdeaUnit) WHERE u.id = $id RETURN u.id AS id LIMIT 1",
-      { id },
-    );
-    if (rows.length === 0) {
-      throw new Error(
-        `Idea unit not found: conversation=${conversationId} turn=${turnIndex} idea_unit=${ideaUnitIndex}`,
-      );
-    }
+  readJsonFile(absPath: string): ConversationFileNew {
+    return readSidecar(absPath, ConversationFileNewSchema);
   }
 
-  private async insertConversationNode(
-    conversation: Conversation,
-  ): Promise<void> {
+  async upsert(file: ConversationFileNew, sha: string): Promise<void> {
     await this.db.query(
-      "CREATE (c:Conversation {id: $id, time: $time, main_topic: $main_topic})",
+      "MERGE (c:Conversation {id: $id}) SET " +
+        "c.sha = $sha, c.time = $time, c.main_topic = $main_topic",
       {
-        id: conversation.conversation_id,
-        time: conversation.time,
-        main_topic: conversation.main_topic,
+        id: file.conversation_id,
+        sha,
+        time: file.time,
+        main_topic: file.main_topic,
       },
     );
+    await this.replaceTurns(file.conversation_id, file.turns);
   }
 
-  private async insertIdeaUnit(
-    conversationId: string,
-    turnIndex: number,
-    ideaUnit: IdeaUnit,
-  ): Promise<string> {
-    const id = ideaUnitNodeId(conversationId, turnIndex, ideaUnit.index);
-    await this.db.query(
-      "CREATE (u:IdeaUnit {id: $id, conversation_id: $conversation_id, turn_index: $turn_index, idea_unit_index: $idea_unit_index, sentences: $sentences, categories: $categories})",
-      {
-        id,
-        conversation_id: conversationId,
-        turn_index: turnIndex,
-        idea_unit_index: ideaUnit.index,
-        sentences: ideaUnit.sentences,
-        categories: ideaUnit.categories,
-      },
-    );
-    return id;
+  writeCleanedMd(absPath: string, content: string): void {
+    mkdirSync(dirname(absPath), { recursive: true });
+    writeFileSync(absPath, content, "utf-8");
   }
 
-  private async insertTurn(
+  writeJsonFile(absPath: string, file: ConversationFileNew): void {
+    writeSidecar(absPath, file, ConversationFileNewSchema);
+  }
+
+  private async replaceTurns(
     conversationId: string,
-    turn: Turn,
+    turns: Turn[],
   ): Promise<void> {
-    const turnId = turnNodeId(conversationId, turn.index);
-    await this.db.query(
-      "CREATE (t:Turn {id: $id, conversation_id: $conversation_id, turn_index: $turn_index, speaker: $speaker, time: $time})",
-      {
-        id: turnId,
-        conversation_id: conversationId,
-        turn_index: turn.index,
-        speaker: turn.speaker,
-        time: turn.time,
-      },
-    );
-
-    await this.db.query(
-      "MATCH (c:Conversation), (t:Turn) WHERE c.id = $conversationId AND t.id = $turnId CREATE (c)-[:CONVERSATION_HAS_TURN]->(t)",
-      { conversationId, turnId },
-    );
-
-    for (const iu of turn.idea_units) {
-      const iuId = await this.insertIdeaUnit(conversationId, turn.index, iu);
+    await this.deleteTurns(conversationId);
+    for (const turn of turns) {
+      const turnId = `${conversationId}|T${turn.index}`;
       await this.db.query(
-        "MATCH (t:Turn), (u:IdeaUnit) WHERE t.id = $turnId AND u.id = $iuId CREATE (t)-[:TURN_HAS_IDEA_UNIT]->(u)",
-        { turnId, iuId },
+        "CREATE (t:Turn {id: $id, conversation_id: $cid, turn_index: $idx, speaker: $speaker, time: $time})",
+        {
+          id: turnId,
+          cid: conversationId,
+          idx: turn.index,
+          speaker: turn.speaker,
+          time: turn.time,
+        },
       );
+      await this.db.query(
+        "MATCH (c:Conversation), (t:Turn) WHERE c.id = $cid AND t.id = $tid CREATE (c)-[:CONVERSATION_HAS_TURN]->(t)",
+        { cid: conversationId, tid: turnId },
+      );
+      for (const iu of turn.idea_units) {
+        const iuId = `${conversationId}|T${turn.index}|IU${iu.index}`;
+        await this.db.query(
+          "CREATE (u:IdeaUnit {id: $id, conversation_id: $cid, turn_index: $tidx, idea_unit_index: $iuidx, sentences: $sentences, categories: $categories})",
+          {
+            id: iuId,
+            cid: conversationId,
+            tidx: turn.index,
+            iuidx: iu.index,
+            sentences: iu.sentences,
+            categories: iu.categories,
+          },
+        );
+        await this.db.query(
+          "MATCH (t:Turn), (u:IdeaUnit) WHERE t.id = $tid AND u.id = $uid CREATE (t)-[:TURN_HAS_IDEA_UNIT]->(u)",
+          { tid: turnId, uid: iuId },
+        );
+      }
     }
+  }
+
+  private async deleteTurns(conversationId: string): Promise<void> {
+    await this.db.query(
+      "MATCH (u:IdeaUnit) WHERE u.conversation_id = $cid DETACH DELETE u",
+      { cid: conversationId },
+    );
+    await this.db.query(
+      "MATCH (t:Turn) WHERE t.conversation_id = $cid DETACH DELETE t",
+      { cid: conversationId },
+    );
+  }
+
+  private async queryHeads(
+    cypher: string,
+    params: QueryParams = {},
+  ): Promise<StoredConversation[]> {
+    const rows = await this.db.query<unknown>(cypher, params);
+    return z.array(StoredConversationRowSchema).parse(rows);
   }
 }

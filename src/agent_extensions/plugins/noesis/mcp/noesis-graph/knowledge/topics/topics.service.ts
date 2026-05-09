@@ -1,7 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import { rmSync } from "fs";
+import type {
+  TopicFileNew,
+  TopicItemRefNew,
+} from "../../../../shared-contracts/source-file-schemas.js";
+import { topicJsonPath } from "../../../../shared-contracts/source-files.js";
 import { newUuid } from "../../../../shared-contracts/uuid.js";
-import { assertNever } from "../../../../shared-contracts/assert-never.js";
-import type { TopicItem } from "../../../../shared-contracts/topics.js";
 import type {
   TopicConversationDetail,
   TopicConversationRef,
@@ -10,90 +14,118 @@ import type {
   TopicNode,
   TopicsPageData,
 } from "../../ui-contracts/topics/topics-data.js";
+import { PROJECT_DIR } from "../../config/config.module.js";
 import { ConversationsRepository } from "../conversations/conversations.repository.js";
 import { DocumentsRepository } from "../documents/documents.repository.js";
-import { ideaUnitNodeId } from "../conversations/node-ids.js";
 import {
   TopicsRepository,
-  type NewTopicInput,
-  type TopicDetail,
-  type TopicItemEntry,
-  type TopicOverview,
-  type TopicWithParent,
+  type StoredTopic,
 } from "./topics.repository.js";
+
+export type LockedField = "title" | "short_summary" | "long_summary";
+
+export interface TopicEditableFields {
+  title?: string;
+  short_summary?: string;
+  long_summary?: string;
+}
+
+export interface IndexFileOutcome {
+  status: "indexed" | "unchanged";
+  topic_id: string;
+}
+
+export interface SourceShaSnapshot {
+  conversation: Map<string, string>;
+  document: Map<string, string>;
+}
+
+export interface TopicOverview {
+  id: string;
+  title: string;
+  short_summary: string;
+  long_summary: string;
+  has_subtopics: boolean;
+  path: string[];
+}
+
+export interface TopicDetail {
+  id: string;
+  title: string;
+  short_summary: string;
+  long_summary: string;
+  path: string[];
+}
 
 export interface TopicSummaryWithPath {
   id: string;
   title: string;
-  path: string[];
   short_summary: string;
   long_summary: string;
+  path: string[];
 }
 
-export interface AddTopicInput {
-  id?: string;
-  title: string;
-  short_summary: string;
-  long_summary?: string;
+export interface TopicIdeaUnitItem {
+  type: "idea_unit";
+  conversation_id: string;
+  conversation_main_topic: string;
+  conversation_time: string;
+  turn_index: number;
+  idea_unit_index: number;
+  speaker: string;
+  time: string;
+  sentences: string[];
+  categories: string[];
 }
 
-export interface UpsertTopicResult {
-  added: boolean;
-  updated: boolean;
+export interface TopicDocumentFragmentItem {
+  type: "document_fragment";
+  document_id: string;
+  document_title: string;
+  document_date: string;
+  start_offset: number;
+  end_offset: number;
+  text: string;
 }
+
+export type TopicItemEntry = TopicIdeaUnitItem | TopicDocumentFragmentItem;
 
 @Injectable()
 export class TopicsService {
   constructor(
+    @Inject(PROJECT_DIR) private readonly projectDir: string,
     private readonly repository: TopicsRepository,
-    private readonly conversations: ConversationsRepository,
-    private readonly documents: DocumentsRepository,
+    private readonly conversationsRepository: ConversationsRepository,
+    private readonly documentsRepository: DocumentsRepository,
   ) {}
 
-  async addItemsToTopic(
-    topicId: string,
-    items: TopicItem[],
-  ): Promise<{ added: number }> {
-    await this.repository.require(topicId);
-    await this.requireSupportingItems(items);
-
-    for (const item of items) {
-      switch (item.type) {
-        case "idea_unit_ref": {
-          const iuId = ideaUnitNodeId(
-            item.conversation_id,
-            item.turn_index,
-            item.idea_unit_index,
-          );
-          await this.repository.linkToIdeaUnit(topicId, iuId);
-          break;
-        }
-        case "document_fragment_ref": {
-          const fragId = await this.documents.ensureFragmentNode(
-            item.document_id,
-            item.start_offset,
-            item.end_offset,
-          );
-          await this.repository.linkToDocumentFragment(topicId, fragId);
-          break;
-        }
-        default:
-          assertNever(item);
-      }
-    }
-    return { added: items.length };
+  canonicalPath(topicId: string): string {
+    return this.repository.canonicalPath(this.projectDir, topicId);
   }
 
-  async addSubtopic(
-    parentTopicId: string,
-    input: AddTopicInput,
-  ): Promise<{ id: string }> {
-    const topic = toNewTopic(input);
-    await this.repository.require(parentTopicId);
-    await this.repository.ensureNotExists(topic.id);
-    await this.repository.insertTopicNode(topic);
-    await this.repository.linkSubtopic(parentTopicId, topic.id);
-    return { id: topic.id };
+  async deleteForFile(absPath: string): Promise<{ topic_id: string } | null> {
+    const id = inferTopicIdFromPath(absPath);
+    if (id === null) return null;
+    if (!(await this.repository.exists(id))) return null;
+    await this.repository.delete(id);
+    rmSync(topicJsonPath(this.projectDir, id), { force: true });
+    return { topic_id: id };
+  }
+
+  async editFieldsAndLock(
+    topicId: string,
+    fields: TopicEditableFields,
+    confirmedByUser: boolean,
+  ): Promise<{ updated: LockedField[] }> {
+    const path = this.canonicalPath(topicId);
+    if (!this.repository.fileExists(path)) {
+      throw new Error(`Topic file not found: ${path}`);
+    }
+    const file = this.repository.readFile(path);
+    const next = applyTopicEdits(file, fields, confirmedByUser);
+    if (next.changes.length === 0) return { updated: [] };
+    this.repository.writeFile(path, next.file);
+    return { updated: next.changes };
   }
 
   generateTopicIds(count: number): { ids: string[] } {
@@ -107,38 +139,34 @@ export class TopicsService {
     return { ids };
   }
 
-  async addTopic(input: AddTopicInput): Promise<{ id: string }> {
-    const topic = toNewTopic(input);
-    await this.repository.ensureNotExists(topic.id);
-    await this.repository.insertTopicNode(topic);
-    return { id: topic.id };
-  }
-
   async getTopicConversationDetail(
     topicId: string,
     conversationId: string,
   ): Promise<TopicConversationDetail> {
-    const topic = await this.repository.readTopic(topicId);
-    if (topic === null) throw new Error(`Topic not found: ${topicId}`);
-    const conversations =
-      await this.conversations.listConversationsForTopic(topicId);
-    const conversation = conversations.find(
-      (c) => c.conversation_id === conversationId,
-    );
-    if (conversation === undefined) {
+    const file = await this.requireTopicFile(topicId);
+    const conversation = await this.conversationsRepository.read(conversationId);
+    if (conversation === null) {
+      throw new Error(`Conversation not found: ${conversationId}`);
+    }
+    const positions = file.items
+      .filter(isIdeaUnitRefForConversation(conversationId))
+      .map((item) => ({
+        turn_index: item.turn_index,
+        idea_unit_index: item.idea_unit_index,
+      }));
+    if (positions.length === 0) {
       throw new Error(
         `Conversation ${conversationId} not linked to topic ${topicId}`,
       );
     }
-    const ideaUnits =
-      await this.conversations.listIdeaUnitsForTopicAndConversation(
-        topicId,
-        conversationId,
-      );
+    const ideaUnits = await this.conversationsRepository.listIdeaUnitDetails(
+      conversationId,
+      positions,
+    );
     return {
-      topic_id: topic.id,
-      topic_title: topic.title,
-      conversation_id: conversation.conversation_id,
+      topic_id: file.id,
+      topic_title: file.title,
+      conversation_id: conversation.id,
       conversation_title: conversation.main_topic,
       conversation_date: conversation.time,
       idea_units: ideaUnits.map((iu) => ({
@@ -156,224 +184,487 @@ export class TopicsService {
     topicId: string,
     documentId: string,
   ): Promise<TopicDocumentDetail> {
-    const topic = await this.repository.readTopic(topicId);
-    if (topic === null) throw new Error(`Topic not found: ${topicId}`);
-    const documents = await this.documents.listDocumentsForTopic(topicId);
-    const document = documents.find((d) => d.document_id === documentId);
-    if (document === undefined) {
-      throw new Error(
-        `Document ${documentId} not linked to topic ${topicId}`,
-      );
+    const file = await this.requireTopicFile(topicId);
+    const document = await this.documentsRepository.read(documentId);
+    if (document === null) {
+      throw new Error(`Document not found: ${documentId}`);
     }
-    const fragments = await this.documents.listFragmentsForTopicAndDocument(
-      topicId,
-      documentId,
-    );
+    const ranges = file.items
+      .filter(isFragmentRefForDocument(documentId))
+      .map((item) => ({
+        start_offset: item.start_offset,
+        end_offset: item.end_offset,
+      }));
+    if (ranges.length === 0) {
+      throw new Error(`Document ${documentId} not linked to topic ${topicId}`);
+    }
+    const content = (await this.documentsRepository.readContent(documentId)) ?? "";
     return {
-      topic_id: topic.id,
-      topic_title: topic.title,
-      document_id: document.document_id,
+      topic_id: file.id,
+      topic_title: file.title,
+      document_id: document.id,
       document_title: document.title,
       document_date: document.date,
-      fragments,
+      fragments: ranges.map((r) => ({
+        start_offset: r.start_offset,
+        end_offset: r.end_offset,
+        text: content.slice(r.start_offset, r.end_offset).trim(),
+      })),
     };
   }
 
   async getTopicsPage(): Promise<TopicsPageData> {
-    const allTopics = await this.repository.listAllTopicsWithParents();
-    const conversationsById = new Map<string, TopicConversationRef[]>();
-    const documentsById = new Map<string, TopicDocumentRef[]>();
-    for (const topic of allTopics) {
-      conversationsById.set(
-        topic.id,
-        (await this.conversations.listConversationsForTopic(topic.id)).map(
-          (c) => ({
-            conversation_id: c.conversation_id,
-            title: c.main_topic,
-            date: c.time,
-          }),
-        ),
-      );
-      documentsById.set(
-        topic.id,
-        (await this.documents.listDocumentsForTopic(topic.id)).map((d) => ({
-          document_id: d.document_id,
-          title: d.title,
-          date: d.date,
-        })),
-      );
+    const stored = await this.repository.listAll();
+    const files = await this.readTopicFiles(stored);
+    const refsByTopic = await this.collectCrossDomainRefs(files);
+    return { topics: buildForest(stored, files, refsByTopic) };
+  }
+
+  async indexFile(absPath: string): Promise<IndexFileOutcome> {
+    const sha = this.repository.fileSha(absPath);
+    const file = this.repository.readFile(absPath);
+    const stored = await this.repository.read(file.id);
+    if (stored !== null && stored.sha === sha) {
+      return { status: "unchanged", topic_id: file.id };
     }
-    return { topics: buildTopicForest(allTopics, conversationsById, documentsById) };
+    await this.repository.upsert(file, sha);
+    return { status: "indexed", topic_id: file.id };
   }
 
-  async listAllTopicsWithParents(): Promise<TopicWithParent[]> {
-    return this.repository.listAllTopicsWithParents();
-  }
-
-  async listTopics(parentId: string | null): Promise<TopicOverview[]> {
-    return parentId === null
-      ? this.repository.listRootTopics()
-      : this.repository.listSubtopics(parentId);
-  }
-
-  async listTopicSummariesForSources(
-    conversationIds: string[],
-    documentIds: string[],
-  ): Promise<TopicSummaryWithPath[]> {
-    const rows = await this.repository.listTopicsForSources(
-      conversationIds,
-      documentIds,
-    );
-    const out: TopicSummaryWithPath[] = [];
-    for (const row of rows) {
-      const path = await this.repository.getTopicPath(row.id);
-      out.push({
-        id: row.id,
-        title: row.title,
-        path,
-        short_summary: row.short_summary,
-        long_summary: row.long_summary,
-      });
-    }
-    return out;
+  async listAllStoredFiles(): Promise<
+    Array<{ id: string; path: string; sha: string }>
+  > {
+    return this.repository.listAllStoredFiles(this.projectDir);
   }
 
   async listTopicItemsSince(
     topicId: string,
     since: string | null,
   ): Promise<TopicItemEntry[]> {
-    await this.repository.require(topicId);
-    const ideaUnits = await this.repository.listIdeaUnitItemsForTopic(
-      topicId,
-      since,
-    );
-    const fragments = await this.repository.listDocumentFragmentItemsForTopic(
-      topicId,
-      since,
-    );
+    const file = await this.requireTopicFile(topicId);
+    const ideaUnits = await this.resolveIdeaUnitItems(file.items, since);
+    const fragments = await this.resolveFragmentItems(file.items, since);
     return [...ideaUnits, ...fragments];
   }
 
-  async readTopic(topicId: string): Promise<TopicDetail | null> {
-    return this.repository.readTopic(topicId);
-  }
-
-  async reparentTopic(
-    topicId: string,
-    newParentTopicId: string | null,
-  ): Promise<{ topic_id: string; new_parent_topic_id: string | null }> {
-    await this.repository.require(topicId);
-    if (newParentTopicId !== null) {
-      await this.repository.require(newParentTopicId);
-      if (newParentTopicId === topicId) {
-        throw new Error(`Topic cannot be its own parent: ${topicId}`);
-      }
-    }
-    await this.repository.deleteParentEdge(topicId);
-    if (newParentTopicId !== null) {
-      await this.repository.linkSubtopic(newParentTopicId, topicId);
-    }
-    return { topic_id: topicId, new_parent_topic_id: newParentTopicId };
-  }
-
-  async updateTopicEditableFields(
-    topicId: string,
-    fields: Partial<{ title: string; short_summary: string; long_summary: string }>,
-  ): Promise<void> {
-    await this.repository.require(topicId);
-    const cleaned: Partial<{ title: string; short_summary: string; long_summary: string }> = {};
-    if (fields.title !== undefined) {
-      const trimmed = fields.title.trim();
-      if (trimmed === "") throw new Error("Topic title must not be empty");
-      cleaned.title = trimmed;
-    }
-    if (fields.short_summary !== undefined) cleaned.short_summary = fields.short_summary;
-    if (fields.long_summary !== undefined) cleaned.long_summary = fields.long_summary;
-    await this.repository.updateTopicPartialFields(topicId, cleaned);
-  }
-
-  async upsertTopic(input: NewTopicInput): Promise<UpsertTopicResult> {
-    if (await this.repository.exists(input.id)) {
-      await this.repository.updateTopicFields(input.id, {
-        title: input.title,
-        short_summary: input.short_summary,
-        long_summary: input.long_summary,
+  async listTopicSummariesForSources(
+    conversationIds: string[],
+    documentIds: string[],
+  ): Promise<TopicSummaryWithPath[]> {
+    const conversationSet = new Set(conversationIds);
+    const documentSet = new Set(documentIds);
+    const stored = await this.repository.listAll();
+    const out: TopicSummaryWithPath[] = [];
+    for (const topic of stored) {
+      const file = this.tryReadTopicFile(topic.id);
+      if (file === null) continue;
+      if (!fileReferencesAny(file, conversationSet, documentSet)) continue;
+      const path = await this.computeTopicPath(topic.id);
+      out.push({
+        id: topic.id,
+        title: topic.title,
+        short_summary: topic.short_summary,
+        long_summary: topic.long_summary,
+        path,
       });
-      return { added: false, updated: true };
     }
-    await this.repository.insertTopicNode(input);
-    return { added: true, updated: false };
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return out;
   }
 
-  private async requireSupportingItems(items: TopicItem[]): Promise<void> {
-    for (const item of items) {
-      switch (item.type) {
-        case "idea_unit_ref":
-          await this.conversations.requireIdeaUnit(
-            item.conversation_id,
-            item.turn_index,
-            item.idea_unit_index,
-          );
-          break;
-        case "document_fragment_ref":
-          await this.documents.requireDocument(item.document_id);
-          break;
-        default:
-          assertNever(item);
+  async listTopics(parentId: string | null): Promise<TopicOverview[]> {
+    const children = await this.repository.listChildren(parentId);
+    const out: TopicOverview[] = [];
+    for (const topic of children) {
+      const path = await this.computeTopicPath(topic.id);
+      const grandchildren = await this.repository.listChildren(topic.id);
+      out.push({
+        id: topic.id,
+        title: topic.title,
+        short_summary: topic.short_summary,
+        long_summary: topic.long_summary,
+        has_subtopics: grandchildren.length > 0,
+        path,
+      });
+    }
+    return out;
+  }
+
+  async readStaleFlag(topicId: string): Promise<boolean | null> {
+    return this.repository.readStaleFlag(topicId);
+  }
+
+  async readTopic(topicId: string): Promise<TopicDetail | null> {
+    const stored = await this.repository.read(topicId);
+    if (stored === null) return null;
+    return {
+      id: stored.id,
+      title: stored.title,
+      short_summary: stored.short_summary,
+      long_summary: stored.long_summary,
+      path: await this.computeTopicPath(topicId),
+    };
+  }
+
+  async refreshStaleFlags(snapshot: SourceShaSnapshot): Promise<number> {
+    const stored = await this.repository.listAll();
+    let staleCount = 0;
+    for (const topic of stored) {
+      const path = this.canonicalPath(topic.id);
+      if (!this.repository.fileExists(path)) continue;
+      const file = this.repository.readFile(path);
+      const isStale = computeStaleFromItems(file.items, snapshot);
+      if (isStale !== file.is_stale) {
+        const updated: TopicFileNew = { ...file, is_stale: isStale };
+        this.repository.writeFile(path, updated);
+      }
+      if (isStale !== topic.is_stale) {
+        await this.repository.writeStaleFlag(topic.id, isStale);
+      }
+      if (isStale) staleCount++;
+    }
+    return staleCount;
+  }
+
+  // ----- private helpers -----
+
+  private async collectCrossDomainRefs(
+    files: Map<string, TopicFileNew>,
+  ): Promise<Map<string, TopicCrossRefs>> {
+    const conversationIds = new Set<string>();
+    const documentIds = new Set<string>();
+    for (const file of files.values()) {
+      for (const item of file.items) {
+        if (item.type === "idea_unit_ref") conversationIds.add(item.conversation_id);
+        else if (item.type === "document_fragment_ref") documentIds.add(item.document_id);
       }
     }
+    const conversations = await this.conversationsRepository.listByIds(
+      [...conversationIds],
+    );
+    const documents = await this.documentsRepository.listByIds([...documentIds]);
+    const conversationById = new Map(conversations.map((c) => [c.id, c]));
+    const documentById = new Map(documents.map((d) => [d.id, d]));
+
+    const refs = new Map<string, TopicCrossRefs>();
+    for (const [topicId, file] of files) {
+      const seenConversations = new Set<string>();
+      const seenDocuments = new Set<string>();
+      const cs: TopicConversationRef[] = [];
+      const ds: TopicDocumentRef[] = [];
+      for (const item of file.items) {
+        if (item.type === "idea_unit_ref") {
+          if (seenConversations.has(item.conversation_id)) continue;
+          seenConversations.add(item.conversation_id);
+          const head = conversationById.get(item.conversation_id);
+          if (head === undefined) continue;
+          cs.push({ conversation_id: head.id, title: head.main_topic, date: head.time });
+        } else if (item.type === "document_fragment_ref") {
+          if (seenDocuments.has(item.document_id)) continue;
+          seenDocuments.add(item.document_id);
+          const head = documentById.get(item.document_id);
+          if (head === undefined) continue;
+          ds.push({ document_id: head.id, title: head.title, date: head.date });
+        }
+      }
+      refs.set(topicId, { conversations: cs, documents: ds });
+    }
+    return refs;
+  }
+
+  private async computeTopicPath(topicId: string): Promise<string[]> {
+    const titles: string[] = [];
+    const visited = new Set<string>();
+    let current: string | null = topicId;
+    while (current !== null && !visited.has(current)) {
+      visited.add(current);
+      const node = await this.repository.read(current);
+      if (node === null) break;
+      titles.unshift(node.title);
+      current = node.parent_id;
+    }
+    return titles;
+  }
+
+  private async readTopicFiles(
+    stored: StoredTopic[],
+  ): Promise<Map<string, TopicFileNew>> {
+    const out = new Map<string, TopicFileNew>();
+    for (const topic of stored) {
+      const file = this.tryReadTopicFile(topic.id);
+      if (file !== null) out.set(topic.id, file);
+    }
+    return out;
+  }
+
+  private async requireTopicFile(topicId: string): Promise<TopicFileNew> {
+    const file = this.tryReadTopicFile(topicId);
+    if (file === null) throw new Error(`Topic not found: ${topicId}`);
+    return file;
+  }
+
+  private async resolveFragmentItems(
+    items: TopicItemRefNew[],
+    since: string | null,
+  ): Promise<TopicDocumentFragmentItem[]> {
+    const ranges = new Map<string, Array<{ start: number; end: number }>>();
+    for (const item of items) {
+      if (item.type !== "document_fragment_ref") continue;
+      const list = ranges.get(item.document_id) ?? [];
+      list.push({ start: item.start_offset, end: item.end_offset });
+      ranges.set(item.document_id, list);
+    }
+    if (ranges.size === 0) return [];
+    const heads = await this.documentsRepository.listByIds([...ranges.keys()]);
+    const out: TopicDocumentFragmentItem[] = [];
+    for (const head of heads) {
+      if (since !== null && head.date <= since) continue;
+      const content = (await this.documentsRepository.readContent(head.id)) ?? "";
+      const list = ranges.get(head.id) ?? [];
+      for (const { start, end } of list) {
+        out.push({
+          type: "document_fragment",
+          document_id: head.id,
+          document_title: head.title,
+          document_date: head.date,
+          start_offset: start,
+          end_offset: end,
+          text: content.slice(start, end).trim(),
+        });
+      }
+    }
+    out.sort((a, b) =>
+      a.document_date === b.document_date
+        ? a.start_offset - b.start_offset
+        : b.document_date.localeCompare(a.document_date),
+    );
+    return out;
+  }
+
+  private async resolveIdeaUnitItems(
+    items: TopicItemRefNew[],
+    since: string | null,
+  ): Promise<TopicIdeaUnitItem[]> {
+    const positionsByConv = new Map<
+      string,
+      Array<{ turn_index: number; idea_unit_index: number }>
+    >();
+    for (const item of items) {
+      if (item.type !== "idea_unit_ref") continue;
+      const list = positionsByConv.get(item.conversation_id) ?? [];
+      list.push({
+        turn_index: item.turn_index,
+        idea_unit_index: item.idea_unit_index,
+      });
+      positionsByConv.set(item.conversation_id, list);
+    }
+    if (positionsByConv.size === 0) return [];
+    const heads = await this.conversationsRepository.listByIds(
+      [...positionsByConv.keys()],
+    );
+    const out: TopicIdeaUnitItem[] = [];
+    for (const head of heads) {
+      if (since !== null && head.time <= since) continue;
+      const positions = positionsByConv.get(head.id) ?? [];
+      const details = await this.conversationsRepository.listIdeaUnitDetails(
+        head.id,
+        positions,
+      );
+      for (const iu of details) {
+        if (iu.categories.length === 1 && iu.categories[0] === "Irrelevant") continue;
+        out.push({
+          type: "idea_unit",
+          conversation_id: head.id,
+          conversation_main_topic: head.main_topic,
+          conversation_time: head.time,
+          turn_index: iu.turn_index,
+          idea_unit_index: iu.idea_unit_index,
+          speaker: iu.speaker,
+          time: iu.time,
+          sentences: iu.sentences,
+          categories: iu.categories,
+        });
+      }
+    }
+    out.sort((a, b) =>
+      a.conversation_time === b.conversation_time
+        ? a.turn_index - b.turn_index || a.idea_unit_index - b.idea_unit_index
+        : b.conversation_time.localeCompare(a.conversation_time),
+    );
+    return out;
+  }
+
+  private tryReadTopicFile(topicId: string): TopicFileNew | null {
+    const path = this.canonicalPath(topicId);
+    if (!this.repository.fileExists(path)) return null;
+    return this.repository.readFile(path);
   }
 }
 
-function buildTopicForest(
-  topics: TopicWithParent[],
-  conversationsById: Map<string, TopicConversationRef[]>,
-  documentsById: Map<string, TopicDocumentRef[]>,
+interface TopicCrossRefs {
+  conversations: TopicConversationRef[];
+  documents: TopicDocumentRef[];
+}
+
+interface ApplyResult {
+  file: TopicFileNew;
+  changes: LockedField[];
+}
+
+function applyTopicEdits(
+  file: TopicFileNew,
+  fields: TopicEditableFields,
+  confirmedByUser: boolean,
+): ApplyResult {
+  const changes: LockedField[] = [];
+  let next: TopicFileNew = file;
+  if (fields.title !== undefined) {
+    next = applyEdit(next, "title", "title_locked", fields.title, confirmedByUser, changes);
+  }
+  if (fields.short_summary !== undefined) {
+    next = applyEdit(
+      next,
+      "short_summary",
+      "short_summary_locked",
+      fields.short_summary,
+      confirmedByUser,
+      changes,
+    );
+  }
+  if (fields.long_summary !== undefined) {
+    next = applyEdit(
+      next,
+      "long_summary",
+      "long_summary_locked",
+      fields.long_summary,
+      confirmedByUser,
+      changes,
+    );
+  }
+  return { file: next, changes };
+}
+
+function applyEdit(
+  file: TopicFileNew,
+  fieldKey: "title" | "short_summary" | "long_summary",
+  lockKey: "title_locked" | "short_summary_locked" | "long_summary_locked",
+  newValue: string,
+  confirmedByUser: boolean,
+  changes: LockedField[],
+): TopicFileNew {
+  if (file[fieldKey] === newValue) return file;
+  if (file[lockKey] && !confirmedByUser) {
+    throw new Error(
+      `Topic ${file.id}: field "${fieldKey}" is locked; pass confirmedByUser=true to override.`,
+    );
+  }
+  changes.push(fieldKey);
+  return { ...file, [fieldKey]: newValue, [lockKey]: true };
+}
+
+function buildForest(
+  stored: StoredTopic[],
+  files: Map<string, TopicFileNew>,
+  refs: Map<string, TopicCrossRefs>,
 ): TopicNode[] {
   const nodeById = new Map<string, TopicNode>();
-  for (const t of topics) {
-    nodeById.set(t.id, {
-      id: t.id,
-      title: t.title,
-      short_summary: t.short_summary,
-      long_summary: t.long_summary,
-      conversations: conversationsById.get(t.id) ?? [],
-      documents: documentsById.get(t.id) ?? [],
+  for (const topic of stored) {
+    const cross = refs.get(topic.id) ?? { conversations: [], documents: [] };
+    const file = files.get(topic.id);
+    nodeById.set(topic.id, {
+      id: topic.id,
+      title: topic.title,
+      short_summary: topic.short_summary,
+      long_summary: topic.long_summary,
+      conversations: cross.conversations,
+      documents: cross.documents,
       subtopics: [],
-      is_stale: t.is_stale,
-      edited_by_user: t.edited_by_user,
+      is_stale: topic.is_stale,
+      edited_by_user: hasUserLocks(file),
     });
   }
-
   const roots: TopicNode[] = [];
-  for (const t of topics) {
-    const node = nodeById.get(t.id)!;
-    if (t.parent_id === null) {
+  for (const topic of stored) {
+    const node = nodeById.get(topic.id);
+    if (node === undefined) continue;
+    if (topic.parent_id === null) {
       roots.push(node);
       continue;
     }
-    const parent = nodeById.get(t.parent_id);
+    const parent = nodeById.get(topic.parent_id);
     if (parent === undefined) {
       roots.push(node);
       continue;
     }
     parent.subtopics.push(node);
   }
-
   sortForestByTitle(roots);
   return roots;
+}
+
+function computeStaleFromItems(
+  items: TopicItemRefNew[],
+  snapshot: SourceShaSnapshot,
+): boolean {
+  for (const item of items) {
+    if (item.source_sha === undefined) continue;
+    const currentSha =
+      item.type === "idea_unit_ref"
+        ? snapshot.conversation.get(item.conversation_id)
+        : snapshot.document.get(item.document_id);
+    if (currentSha !== undefined && currentSha !== item.source_sha) return true;
+  }
+  return false;
+}
+
+function fileReferencesAny(
+  file: TopicFileNew,
+  conversationIds: Set<string>,
+  documentIds: Set<string>,
+): boolean {
+  for (const item of file.items) {
+    if (item.type === "idea_unit_ref" && conversationIds.has(item.conversation_id)) {
+      return true;
+    }
+    if (
+      item.type === "document_fragment_ref" &&
+      documentIds.has(item.document_id)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasUserLocks(file: TopicFileNew | undefined): boolean {
+  if (file === undefined) return false;
+  return file.title_locked || file.short_summary_locked || file.long_summary_locked;
+}
+
+function inferTopicIdFromPath(absPath: string): string | null {
+  const match = /\/topics\/([^/]+)\.json$/.exec(absPath);
+  return match === null ? null : match[1];
+}
+
+function isFragmentRefForDocument(
+  documentId: string,
+): (item: TopicItemRefNew) => item is Extract<TopicItemRefNew, { type: "document_fragment_ref" }> {
+  return (item): item is Extract<TopicItemRefNew, { type: "document_fragment_ref" }> => {
+    if (item.type !== "document_fragment_ref") return false;
+    return item.document_id === documentId;
+  };
+}
+
+function isIdeaUnitRefForConversation(
+  conversationId: string,
+): (item: TopicItemRefNew) => item is Extract<TopicItemRefNew, { type: "idea_unit_ref" }> {
+  return (item): item is Extract<TopicItemRefNew, { type: "idea_unit_ref" }> => {
+    if (item.type !== "idea_unit_ref") return false;
+    return item.conversation_id === conversationId;
+  };
 }
 
 function sortForestByTitle(nodes: TopicNode[]): void {
   nodes.sort((a, b) => a.title.localeCompare(b.title));
   for (const n of nodes) sortForestByTitle(n.subtopics);
-}
-
-function toNewTopic(input: AddTopicInput): NewTopicInput {
-  return {
-    id: input.id ?? newUuid(),
-    title: input.title,
-    short_summary: input.short_summary,
-    long_summary: input.long_summary ?? "",
-  };
 }

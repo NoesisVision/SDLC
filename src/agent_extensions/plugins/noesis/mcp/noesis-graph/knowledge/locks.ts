@@ -1,24 +1,47 @@
+import { z } from "zod";
 import type {
   DecisionFileNew,
   TopicFileNew,
-} from "../../../shared-contracts/source-file-schemas-new.js";
+} from "../../../shared-contracts/source-file-schemas.js";
 import type { DesignDocFileNew } from "../../../shared-contracts/design-doc-new.js";
 
-export type TopicLockedField = "title" | "short_summary" | "long_summary";
+export const TopicLockedFieldSchema = z.enum([
+  "title",
+  "short_summary",
+  "long_summary",
+]);
+export type TopicLockedField = z.infer<typeof TopicLockedFieldSchema>;
 
-export type DecisionLockedField =
-  | "title"
-  | "status"
-  | "context.text"
-  | "decision.text"
-  | "decision.rationale";
+export const DecisionLockedFieldSchema = z.enum([
+  "title",
+  "status",
+  "context.text",
+  "decision.text",
+  "decision.rationale",
+]);
+export type DecisionLockedField = z.infer<typeof DecisionLockedFieldSchema>;
 
-export type DesignDocLockedField = "name" | "description";
+export const DesignDocLockedFieldSchema = z.enum(["name", "description"]);
+export type DesignDocLockedField = z.infer<typeof DesignDocLockedFieldSchema>;
 
-export type ConfirmedEdit =
-  | { kind: "topic"; topic_id: string; field: TopicLockedField }
-  | { kind: "decision"; decision_id: string; field: DecisionLockedField }
-  | { kind: "design_doc"; design_doc_id: string; field: DesignDocLockedField };
+export const ConfirmedEditSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("topic"),
+    topic_id: z.string(),
+    field: TopicLockedFieldSchema,
+  }),
+  z.object({
+    kind: z.literal("decision"),
+    decision_id: z.string(),
+    field: DecisionLockedFieldSchema,
+  }),
+  z.object({
+    kind: z.literal("design_doc"),
+    design_doc_id: z.string(),
+    field: DesignDocLockedFieldSchema,
+  }),
+]);
+export type ConfirmedEdit = z.infer<typeof ConfirmedEditSchema>;
 
 export class LockedFieldsBlockedError extends Error {
   readonly blocked: ConfirmedEdit[];

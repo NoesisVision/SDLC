@@ -1,106 +1,19 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { runFileOutputTool } from "../../mcp-tool-output.js";
 import {
-  DecisionSchema,
-  TopicItemSchema,
-} from "../../../../shared-contracts/topics.js";
-import { assertNever } from "../../../../shared-contracts/assert-never.js";
-import type { IndexerService } from "../../indexer/indexer.service.js";
-import {
-  runFileOutputTool,
-  runInlineJsonTool,
-} from "../../mcp-tool-output.js";
-import type {
-  DecisionDetail,
-  DecisionOverview,
-} from "./decisions.repository.js";
-import { DecisionsService } from "./decisions.service.js";
-import type { DecisionSupportSlot } from "./decision-support.js";
-
-const SlotSchema = z
-  .enum(["context", "decision", "alternative"])
-  .describe(
-    "Which supporting-items slot on the Decision to attach items to. " +
-      "'context' = context slot, " +
-      "'decision' = decision slot, " +
-      "'alternative' = alternative_options[alternative_index] slot.",
-  );
+  DecisionsService,
+  type DecisionDetail,
+  type DecisionOverview,
+} from "./decisions.service.js";
 
 export function registerDecisionsTools(
   mcp: McpServer,
   decisions: DecisionsService,
-  indexer: IndexerService,
 ): void {
-  registerAddDecision(mcp, decisions, indexer);
-  registerAddItemsToDecision(mcp, decisions, indexer);
   registerListDecisions(mcp, decisions);
   registerReadDecision(mcp, decisions);
   registerListDecisionsForSources(mcp, decisions);
-}
-
-function registerAddDecision(
-  mcp: McpServer,
-  decisions: DecisionsService,
-  indexer: IndexerService,
-): void {
-  mcp.registerTool(
-    "add_decision",
-    {
-      description:
-        "Add a Decision and attach it to a Topic. Creates the Decision node, " +
-        "an AlternativeOption node per alternative, and edges for all supporting items " +
-        "(context, decision, and each alternative). Referenced IdeaUnits must already exist " +
-        "(add conversations first); DocumentFragment nodes are created on demand as long as " +
-        "the parent Document exists.",
-      inputSchema: {
-        topic_id: z.string().describe("Id of the Topic to attach the Decision to."),
-        decision: DecisionSchema.describe(
-          "Decision payload. If 'id' is omitted, a UUID is generated.",
-        ),
-      },
-    },
-    async ({ topic_id, decision }) =>
-      runInlineJsonTool(() =>
-        indexer.gateWrite(() => decisions.addDecision(topic_id, decision)),
-      ),
-  );
-}
-
-function registerAddItemsToDecision(
-  mcp: McpServer,
-  decisions: DecisionsService,
-  indexer: IndexerService,
-): void {
-  mcp.registerTool(
-    "add_items_to_decision",
-    {
-      description:
-        "Attach IdeaUnits or DocumentFragments to a specific supporting-items slot on a Decision. " +
-        "Slot 'alternative' requires 'alternative_index' to pick which alternative option. " +
-        "Referenced IdeaUnits must already exist; DocumentFragment nodes are created on demand " +
-        "as long as the parent Document exists.",
-      inputSchema: {
-        decision_id: z.string().describe("Id of the target Decision."),
-        slot: SlotSchema,
-        alternative_index: z
-          .number()
-          .int()
-          .nonnegative()
-          .optional()
-          .describe("Index of the alternative option. Required when slot='alternative'."),
-        items: z
-          .array(TopicItemSchema)
-          .describe("IdeaUnitRef or DocumentFragmentRef references to attach."),
-      },
-    },
-    async ({ decision_id, slot, alternative_index, items }) =>
-      runInlineJsonTool(() =>
-        indexer.gateWrite(() => {
-          const resolvedSlot = resolveSlot(slot, alternative_index);
-          return decisions.addItemsToDecisionSlot(decision_id, resolvedSlot, items);
-        }),
-      ),
-  );
 }
 
 function registerListDecisions(
@@ -164,10 +77,9 @@ function registerListDecisionsForSources(
     "list_decisions_for_sources",
     {
       description:
-        "List Decisions whose supporting items (context, decision, or alternatives) reference any of " +
-        "the given Conversations or Documents. Writes Markdown (one section per decision: title, status, " +
-        "context, decision text, rationale, alternatives) to a tmp file and returns the file path — " +
-        "read it with the Read tool.",
+        "List Decisions whose supporting items reference any of the given Conversations or Documents. " +
+        "Writes Markdown (one section per decision: title, status, context, decision text, rationale, " +
+        "alternatives) to a tmp file and returns the file path — read it with the Read tool.",
       inputSchema: {
         conversation_ids: z
           .array(z.string())
@@ -195,26 +107,6 @@ function registerListDecisionsForSources(
           ),
       ),
   );
-}
-
-function resolveSlot(
-  slot: "context" | "decision" | "alternative",
-  alternativeIndex: number | undefined,
-): DecisionSupportSlot {
-  switch (slot) {
-    case "context":
-    case "decision":
-      return { slot };
-    case "alternative":
-      if (alternativeIndex === undefined) {
-        throw new Error(
-          "alternative_index is required when slot='alternative'",
-        );
-      }
-      return { slot, alternative_index: alternativeIndex };
-    default:
-      return assertNever(slot);
-  }
 }
 
 function formatDecisionDetail(
@@ -297,9 +189,8 @@ function formatDecisionList(
   decisions: DecisionOverview[],
   topicId: string | null,
 ): string {
-  const header = topicId === null
-    ? "# All decisions"
-    : `# Decisions for topic ${topicId}`;
+  const header =
+    topicId === null ? "# All decisions" : `# Decisions for topic ${topicId}`;
   if (decisions.length === 0) {
     return `${header}\n\n(none)`;
   }

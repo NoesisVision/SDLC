@@ -42,7 +42,7 @@ export class TopicsController {
     @Param("topicId") topicId: string,
     @Body() body: TopicUpdateBody,
   ): Promise<{ ok: true }> {
-    await this.topics.updateTopicEditableFields(topicId, body);
+    await this.topics.editFieldsAndLock(topicId, body, true);
     return { ok: true };
   }
 }

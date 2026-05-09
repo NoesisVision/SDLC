@@ -197,6 +197,12 @@ export const DesignDocFileNewSchema = z.object({
   name_locked: lockedBool(),
   description: z.string(),
   description_locked: lockedBool(),
+  // ISO date (YYYY-MM-DD) when the doc was authored. Drives ordering on the
+  // design-docs page. Defaulted to today on parse so legacy fixtures and skills
+  // that don't supply it stay valid.
+  date: z
+    .string()
+    .default(() => new Date().toISOString().slice(0, 10)),
   actors: z.array(DesignedActorNewSchema).default([]),
   boundedContexts: DesignedBoundedContextChangeSetNewSchema.optional(),
   implemented: z.boolean().default(false),

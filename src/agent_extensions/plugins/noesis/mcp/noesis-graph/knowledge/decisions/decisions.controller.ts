@@ -3,12 +3,14 @@ import type {
   DecisionConversationDetailData,
   DecisionDetailData,
   DecisionDocumentDetailData,
+  DecisionSlotPath,
   DecisionsPageData,
 } from "../../ui-contracts/decisions/decisions-data.js";
 import { DecisionsService } from "./decisions.service.js";
 
 interface DecisionUpdateBody {
   title?: string;
+  status?: "accepted" | "proposed";
   context_text?: string;
   decision_text?: string;
   decision_rationale?: string;
@@ -40,7 +42,7 @@ export class DecisionsController {
     @Param("decisionId") decisionId: string,
     @Body() body: DecisionUpdateBody,
   ): Promise<{ ok: true }> {
-    await this.decisions.updateDecisionEditableFields(decisionId, body);
+    await this.decisions.editTopFieldsAndLock(decisionId, body, true);
     return { ok: true };
   }
 
@@ -54,7 +56,11 @@ export class DecisionsController {
     if (!Number.isInteger(idx) || idx < 0) {
       throw new Error(`Invalid alternative option index: ${optionIndex}`);
     }
-    await this.decisions.updateAlternativeEditableFields(decisionId, idx, body);
+    await this.decisions.editAlternativeOptionAndLock(
+      decisionId,
+      { index: idx, ...body },
+      true,
+    );
     return { ok: true };
   }
 
@@ -66,7 +72,7 @@ export class DecisionsController {
   ): Promise<DecisionConversationDetailData> {
     return this.decisions.getDecisionConversationDetail(
       decisionId,
-      slot,
+      slot as DecisionSlotPath,
       conversationId,
     );
   }
@@ -79,7 +85,7 @@ export class DecisionsController {
   ): Promise<DecisionDocumentDetailData> {
     return this.decisions.getDecisionDocumentDetail(
       decisionId,
-      slot,
+      slot as DecisionSlotPath,
       documentId,
     );
   }

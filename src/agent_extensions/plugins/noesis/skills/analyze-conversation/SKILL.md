@@ -92,15 +92,15 @@ If processing reveals that an idea unit belongs to a different topic, update `ou
 
 ### Step 5: Merge into the knowledge graph
 
-Call MCP tool `noesis-graph:merge_conversation` with `working_dir: <working_dir>`. The server runs `validate_output` as a pre-flight gate, then reads `output.json` and persists Conversation, Turns, IdeaUnits, Topics (with parent linking from `potential_topics`), Items, and Decisions.
+Call MCP tool `noesis-graph:merge_conversation` with `working_dir: <working_dir>`. The cleaned transcript is read from `<working_dir>/<conversation_id>.md` by default — pass `cleaned_md_filename` only if the file lives under a different name in the working dir. The server reads `output.json` and the cleaned transcript, runs business-level validation (refs resolve, all topics reviewed), and splits the analysis into source files under `<projectDir>/noesis/`: the Conversation sidecar JSON + cleaned md, per-topic JSON files, and per-decision JSON files.
 
-If any topic or decision field is locked (the user previously edited it via the UI) and your `output.json` would change its value, the call rejects with a `LockedFieldsBlockedError` whose `blocked` array lists every conflict as `{ kind: "topic" | "decision", topic_id | decision_id, field }`. When that happens:
+If any topic or decision field is user-edited (`*_locked: true` on disk) and your `output.json` would change its value, the call rejects with a `LockedFieldsBlockedError` whose `blocked` array lists every conflict as `{ kind: "topic" | "decision", topic_id | decision_id, field }`. When that happens:
 
 1. Read each blocked field's current on-disk value and the value your output proposes.
 2. For every entry, ask the user via `AskUserQuestion` whether to keep the locked value or accept the new one.
 3. Re-call `merge_conversation` with `confirmed_edits: [...]` containing only the entries the user accepted (same `{ kind, topic_id | decision_id, field }` shape). The server applies those overwrites and clears the locks; entries omitted from `confirmed_edits` retain the user's value with the lock intact.
 
-Report `topics_added`, `topics_updated`, `decisions_added`, and any `cleared_locks` to the user.
+Report the returned `conversation_id`, the count of `topic_paths` and `decision_paths` written, and any `cleared_locks` to the user.
 
 ## Rules
 

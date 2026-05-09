@@ -1,540 +1,504 @@
 import "reflect-metadata";
 import {
-  describe,
-  test,
-  beforeAll,
   afterAll,
+  beforeAll,
   beforeEach,
+  describe,
   expect,
+  test,
 } from "bun:test";
-import { rmSync } from "fs";
-import { writeFile } from "fs/promises";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { and, given, then, when } from "@tests/bdd.js";
 import {
-  clearGraph,
-  countNodes,
-  countRels,
-  createKnowledgeTestModule,
-  sampleConversation,
-  type KnowledgeTestContext,
+  clearGraphNew,
+  createKnowledgeNewTestModule,
+  type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
-import { ConversationsService } from "@noesis/mcp/noesis-graph/knowledge/conversations/conversations.service.js";
-import { DecisionsService } from "@noesis/mcp/noesis-graph/knowledge/decisions/decisions.service.js";
-import { TopicsService } from "@noesis/mcp/noesis-graph/knowledge/topics/topics.service.js";
+import {
+  DecisionFileNewSchema,
+  type DecisionFileNew,
+} from "@noesis/shared-contracts/source-file-schemas.js";
+import { decisionJsonPath } from "@noesis/shared-contracts/source-files.js";
 
-describe("DecisionsService — recording decisions, alternatives, and supporting links", () => {
-  let ctx: KnowledgeTestContext;
-  let decisions: DecisionsService;
-  let topics: TopicsService;
-  let conversations: ConversationsService;
+describe("DecisionsService — indexing, editing with locks, referenced items, staleness", () => {
+  let ctx: KnowledgeNewTestContext;
 
   beforeAll(async () => {
-    ctx = await createKnowledgeTestModule();
-    decisions = ctx.module.get(DecisionsService);
-    topics = ctx.module.get(TopicsService);
-    conversations = ctx.module.get(ConversationsService);
+    ctx = await createKnowledgeNewTestModule();
   });
 
   afterAll(async () => {
     await ctx.module.close();
-    rmSync(ctx.tmpDir, { recursive: true, force: true });
+    rmSync(ctx.projectDir, { recursive: true, force: true });
   });
 
   beforeEach(async () => {
-    await clearGraph(ctx.db);
+    await clearGraphNew(ctx.db);
   });
 
-  test("adding a decision creates the node, its alternatives, and per-slot supporting links", async () => {
-    let id: string;
+  test("Indexing a brand-new decision file inserts the corresponding Decision row in DB", async () => {
+    let path = "";
+    let outcome: { status: string; decision_id: string } | null = null;
 
-    await given(
-      "a topic and a conversation whose idea units back the new decision",
-      async () => {
-        const convPath = join(ctx.tmpDir, "conv.json");
-        await writeFile(
-          convPath,
-          JSON.stringify(sampleConversation("conv-1")),
-        );
-        await conversations.addConversationFromFile(convPath);
-        await topics.addTopic({ id: "t1", title: "T", short_summary: "" });
-      },
-    );
-    await when(
-      "the service records a decision with one alternative and supporting indices for each slot",
-      async () => {
-        const iuContext = {
-          type: "idea_unit_ref" as const,
-          conversation_id: "conv-1",
-          turn_index: 0,
-          idea_unit_index: 0,
-        };
-        const iuDecision = {
-          type: "idea_unit_ref" as const,
-          conversation_id: "conv-1",
-          turn_index: 0,
-          idea_unit_index: 1,
-        };
-        const iuAlt = {
-          type: "idea_unit_ref" as const,
-          conversation_id: "conv-1",
-          turn_index: 1,
-          idea_unit_index: 0,
-        };
-        ({ id } = await decisions.addDecision("t1", {
-          id: "dec-1",
-          title: "Pick Postgres",
-          status: "accepted",
-          referenced_items: [iuContext, iuDecision, iuAlt],
-          context: { text: "We need a DB.", supporting_item_indices: [0] },
-          decision: {
-            text: "Use Postgres.",
-            rationale: "Team knows it.",
-            supporting_item_indices: [1],
+    await given("a decision file present on disk and no record in DB", () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+    });
+    await when("indexing the file", async () => {
+      outcome = await ctx.decisions.indexFile(path);
+    });
+    await then("the operation reports the decision as freshly indexed", () => {
+      expect(outcome?.status).toBe("indexed");
+      expect(outcome?.decision_id).toBe("decision-1");
+    });
+    await and("the persisted Decision carries the file's title and status", async () => {
+      const stored = await ctx.decisionsRepository.read("decision-1");
+      expect(stored?.title).toBe("Use JWTs for sessions");
+      expect(stored?.status).toBe("accepted");
+      expect(stored?.is_stale).toBe(false);
+    });
+  });
+
+  test("Indexing the same decision file twice without disk changes is a no-op", async () => {
+    let path = "";
+    let secondOutcome: { status: string } | null = null;
+
+    await given("a decision indexed once", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("indexing the file a second time without any disk changes", async () => {
+      secondOutcome = await ctx.decisions.indexFile(path);
+    });
+    await then("the operation reports the decision as unchanged", () => {
+      expect(secondOutcome?.status).toBe("unchanged");
+    });
+  });
+
+  test("Indexing a decision whose file content drifted re-projects the changed fields into DB", async () => {
+    let path = "";
+
+    await given("a decision indexed once", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the file is rewritten with a new title and indexed again", async () => {
+      writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({ title: "Adopt JWT for stateless sessions" }),
+      );
+      const outcome = await ctx.decisions.indexFile(path);
+      expect(outcome.status).toBe("indexed");
+    });
+    await then("the persisted Decision reflects the new title", async () => {
+      const stored = await ctx.decisionsRepository.read("decision-1");
+      expect(stored?.title).toBe("Adopt JWT for stateless sessions");
+    });
+  });
+
+  test("Editing a decision rewrites the title when it is unlocked and reports it as updated", async () => {
+    let path = "";
+    let result: { updated: string[] } | null = null;
+
+    await given("a decision with an unlocked title", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the user changes the title", async () => {
+      result = await ctx.decisions.editTopFieldsAndLock(
+        "decision-1",
+        { title: "Adopt JWT for stateless sessions" },
+        false,
+      );
+    });
+    await then("title is reported as updated", () => {
+      expect(result?.updated).toEqual(["title"]);
+    });
+    await and("the new title is written to disk and its lock is now set", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.title).toBe("Adopt JWT for stateless sessions");
+      expect(file.title_locked).toBe(true);
+    });
+  });
+
+  test("Editing a locked context text without user confirmation is refused", async () => {
+    let path = "";
+    let thrown: Error | null = null;
+
+    await given("a decision whose context text is locked", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          context: {
+            text: "Locked context",
+            text_locked: true,
+            supporting_item_indices: [],
           },
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("an edit tries to overwrite the locked context text without confirmation", async () => {
+      try {
+        await ctx.decisions.editTopFieldsAndLock(
+          "decision-1",
+          { context_text: "Different context" },
+          false,
+        );
+      } catch (e) {
+        thrown = e as Error;
+      }
+    });
+    await then("the service refuses with a lock violation", () => {
+      expect(thrown?.message).toContain("locked");
+    });
+    await and("the on-disk context text is unchanged", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.context.text).toBe("Locked context");
+    });
+  });
+
+  test("Editing a locked decision rationale with explicit user confirmation overwrites the value", async () => {
+    let path = "";
+    let result: { updated: string[] } | null = null;
+
+    await given("a decision with a locked rationale", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          decision: {
+            text: "Use JWT",
+            text_locked: false,
+            rationale: "Original rationale",
+            rationale_locked: true,
+            supporting_item_indices: [],
+          },
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the user confirms an override and supplies a new rationale", async () => {
+      result = await ctx.decisions.editTopFieldsAndLock(
+        "decision-1",
+        { decision_rationale: "Updated rationale" },
+        true,
+      );
+    });
+    await then("the rationale is reported as updated", () => {
+      expect(result?.updated).toEqual(["decision.rationale"]);
+    });
+    await and("the file's rationale carries the replacement value", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.decision.rationale).toBe("Updated rationale");
+    });
+  });
+
+  test("Editing a decision with a value identical to the stored one performs no write", async () => {
+    let path = "";
+    let snapshot = "";
+    let result: { updated: string[] } | null = null;
+
+    await given("a decision on disk with known content", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+      snapshot = readFileSync(path, "utf-8");
+    });
+    await when("the user submits a status equal to the current one", async () => {
+      result = await ctx.decisions.editTopFieldsAndLock(
+        "decision-1",
+        { status: "accepted" },
+        false,
+      );
+    });
+    await then("no field is reported as updated", () => {
+      expect(result?.updated).toEqual([]);
+    });
+    await and("the file content is byte-identical to the original snapshot", () => {
+      expect(readFileSync(path, "utf-8")).toBe(snapshot);
+    });
+  });
+
+  test("Editing an alternative option's text touches only the targeted alternative", async () => {
+    let path = "";
+    let result: { updated: string[] } | null = null;
+
+    await given("a decision with two alternatives", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
           alternative_options: [
             {
-              text: "Use MySQL.",
-              rationale: "Slightly faster.",
-              supporting_item_indices: [2],
+              text: "Server sessions",
+              text_locked: false,
+              rationale: "Stateful.",
+              rationale_locked: false,
+              supporting_item_indices: [],
+            },
+            {
+              text: "OAuth tokens",
+              text_locked: false,
+              rationale: "Delegated.",
+              rationale_locked: false,
+              supporting_item_indices: [],
             },
           ],
-        }));
-      },
-    );
-    await then("the returned id matches the requested decision id", () => {
-      expect(id).toBe("dec-1");
-    });
-    await and(
-      "the decision is linked to its topic, has one alternative, and three slot edges",
-      async () => {
-        expect(await countRels(ctx.db, "TOPIC_HAS_DECISION")).toBe(1);
-        expect(await countNodes(ctx.db, "AlternativeOption")).toBe(1);
-        expect(await countRels(ctx.db, "DECISION_HAS_ALTERNATIVE")).toBe(1);
-        expect(await countRels(ctx.db, "CONTEXT_SUPPORTED_BY_IDEA_UNIT")).toBe(1);
-        expect(await countRels(ctx.db, "DECISION_SUPPORTED_BY_IDEA_UNIT")).toBe(1);
-        expect(
-          await countRels(ctx.db, "ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT"),
-        ).toBe(1);
-      },
-    );
-  });
-
-  test("a single referenced idea unit can support multiple slots without duplication", async () => {
-    await given(
-      "a topic and a single conversation idea unit referenced from every slot",
-      async () => {
-        const convPath = join(ctx.tmpDir, "conv-dedup.json");
-        await writeFile(
-          convPath,
-          JSON.stringify(sampleConversation("conv-dedup")),
-        );
-        await conversations.addConversationFromFile(convPath);
-        await topics.addTopic({
-          id: "t-dedup",
-          title: "T",
-          short_summary: "",
-        });
-      },
-    );
-    await when(
-      "a decision is recorded that points all three slots at the same idea unit",
-      async () => {
-        const iu = {
-          type: "idea_unit_ref" as const,
-          conversation_id: "conv-dedup",
-          turn_index: 0,
-          idea_unit_index: 0,
-        };
-        await decisions.addDecision("t-dedup", {
-          id: "dec-shared",
-          title: "Shared item",
-          status: "accepted",
-          referenced_items: [iu],
-          context: { text: "", supporting_item_indices: [0] },
-          decision: { text: "", rationale: "", supporting_item_indices: [0] },
-          alternative_options: [
-            { text: "alt", rationale: "", supporting_item_indices: [0] },
-          ],
-        });
-      },
-    );
-    await then(
-      "exactly one supporting edge of each kind connects the slot to the unit",
-      async () => {
-        expect(await countRels(ctx.db, "CONTEXT_SUPPORTED_BY_IDEA_UNIT")).toBe(1);
-        expect(await countRels(ctx.db, "DECISION_SUPPORTED_BY_IDEA_UNIT")).toBe(1);
-        expect(
-          await countRels(ctx.db, "ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT"),
-        ).toBe(1);
-      },
-    );
-  });
-
-  test("adding a decision with an unknown supporting idea unit fails fast", async () => {
-    let thrown: Error | null = null;
-
-    await given("a topic with no recorded conversations", async () => {
-      await topics.addTopic({ id: "t1", title: "T", short_summary: "" });
-    });
-    await when(
-      "the caller adds a decision referencing an idea unit from a non-existent conversation",
-      async () => {
-        try {
-          await decisions.addDecision("t1", {
-            id: "dec-1",
-            title: "X",
-            status: "proposed",
-            referenced_items: [
-              {
-                type: "idea_unit_ref",
-                conversation_id: "ghost",
-                turn_index: 0,
-                idea_unit_index: 0,
-              },
-            ],
-            context: { text: "", supporting_item_indices: [0] },
-            decision: { text: "", rationale: "", supporting_item_indices: [] },
-            alternative_options: [],
-          });
-        } catch (e) {
-          thrown = e as Error;
-        }
-      },
-    );
-    await then("the operation fails with a 'not found' error for the missing unit", () => {
-      expect(thrown?.message).toMatch(/Idea unit not found/);
-    });
-  });
-
-  test("adding a decision under a missing topic fails before any node is written", async () => {
-    let thrown: Error | null = null;
-
-    await given("an empty topic graph", () => {});
-    await when("the caller tries to attach a decision to a non-existent topic", async () => {
-      try {
-        await decisions.addDecision("missing", {
-          id: "dec-1",
-          title: "X",
-          status: "proposed",
-          referenced_items: [],
-          context: { text: "", supporting_item_indices: [] },
-          decision: { text: "", rationale: "", supporting_item_indices: [] },
-          alternative_options: [],
-        });
-      } catch (e) {
-        thrown = e as Error;
-      }
-    });
-    await then("the operation fails with a topic-not-found error", () => {
-      expect(thrown?.message).toMatch(/Topic not found/);
-    });
-  });
-
-  test("addItemsToDecisionSlot routes new items to the requested slot", async () => {
-    await given(
-      "a decision with one alternative and a recorded idea unit available for linking",
-      async () => {
-        const convPath = join(ctx.tmpDir, "conv.json");
-        await writeFile(
-          convPath,
-          JSON.stringify(sampleConversation("conv-1")),
-        );
-        await conversations.addConversationFromFile(convPath);
-        await topics.addTopic({ id: "t1", title: "T", short_summary: "" });
-        await decisions.addDecision("t1", {
-          id: "dec-1",
-          title: "X",
-          status: "proposed",
-          referenced_items: [],
-          context: { text: "", supporting_item_indices: [] },
-          decision: { text: "", rationale: "", supporting_item_indices: [] },
-          alternative_options: [
-            { text: "Alt", rationale: "", supporting_item_indices: [] },
-          ],
-        });
-      },
-    );
-    await when(
-      "the same idea unit is added to context, decision, and alternative slots",
-      async () => {
-        const iu = {
-          type: "idea_unit_ref" as const,
-          conversation_id: "conv-1",
-          turn_index: 0,
-          idea_unit_index: 0,
-        };
-        await decisions.addItemsToDecisionSlot("dec-1", { slot: "context" }, [
-          iu,
-        ]);
-        await decisions.addItemsToDecisionSlot("dec-1", { slot: "decision" }, [
-          iu,
-        ]);
-        await decisions.addItemsToDecisionSlot(
-          "dec-1",
-          { slot: "alternative", alternative_index: 0 },
-          [iu],
-        );
-      },
-    );
-    await then(
-      "each slot has exactly one supporting-by-idea-unit edge to the unit",
-      async () => {
-        expect(await countRels(ctx.db, "CONTEXT_SUPPORTED_BY_IDEA_UNIT")).toBe(1);
-        expect(await countRels(ctx.db, "DECISION_SUPPORTED_BY_IDEA_UNIT")).toBe(1);
-        expect(
-          await countRels(ctx.db, "ALTERNATIVE_SUPPORTED_BY_IDEA_UNIT"),
-        ).toBe(1);
-      },
-    );
-  });
-
-  test("addItemsToDecisionSlot rejects an out-of-range alternative index", async () => {
-    let thrown: Error | null = null;
-
-    await given("a decision that has no alternative options", async () => {
-      await topics.addTopic({ id: "t1", title: "T", short_summary: "" });
-      await decisions.addDecision("t1", {
-        id: "dec-1",
-        title: "X",
-        status: "proposed",
-        referenced_items: [],
-        context: { text: "", supporting_item_indices: [] },
-        decision: { text: "", rationale: "", supporting_item_indices: [] },
-        alternative_options: [],
-      });
-    });
-    await when("the caller targets an alternative slot at index 5", async () => {
-      try {
-        await decisions.addItemsToDecisionSlot(
-          "dec-1",
-          { slot: "alternative", alternative_index: 5 },
-          [],
-        );
-      } catch (e) {
-        thrown = e as Error;
-      }
-    });
-    await then("the request fails with an alternative-not-found error", () => {
-      expect(thrown?.message).toMatch(/Alternative option not found/);
-    });
-  });
-
-  test("listDecisions filters by topic and returns everything when called with null", async () => {
-    let all: Awaited<ReturnType<DecisionsService["listDecisions"]>>;
-    let onlyA: Awaited<ReturnType<DecisionsService["listDecisions"]>>;
-
-    await given("two topics each with one stored decision", async () => {
-      await topics.addTopic({ id: "t-a", title: "A", short_summary: "" });
-      await topics.addTopic({ id: "t-b", title: "B", short_summary: "" });
-      await decisions.addDecision("t-a", {
-        id: "dec-a-1",
-        title: "A1",
-        status: "accepted",
-        referenced_items: [],
-        context: { text: "ctx", supporting_item_indices: [] },
-        decision: { text: "do", rationale: "r", supporting_item_indices: [] },
-        alternative_options: [],
-      });
-      await decisions.addDecision("t-b", {
-        id: "dec-b-1",
-        title: "B1",
-        status: "proposed",
-        referenced_items: [],
-        context: { text: "", supporting_item_indices: [] },
-        decision: { text: "", rationale: "", supporting_item_indices: [] },
-        alternative_options: [],
-      });
-    });
-    await when(
-      "the consumer lists decisions twice — unfiltered and scoped to topic A",
-      async () => {
-        all = await decisions.listDecisions(null);
-        onlyA = await decisions.listDecisions("t-a");
-      },
-    );
-    await then("the unfiltered list contains both decisions", () => {
-      expect(all).toHaveLength(2);
-    });
-    await and("the topic-scoped list contains only the decision under A", () => {
-      expect(onlyA).toHaveLength(1);
-      expect(onlyA[0].id).toBe("dec-a-1");
-    });
-  });
-
-  test("readDecision returns the full record including alternatives, or null when absent", async () => {
-    let detail: Awaited<ReturnType<DecisionsService["readDecision"]>>;
-    let missing: Awaited<ReturnType<DecisionsService["readDecision"]>>;
-
-    await given("a stored decision with one alternative option", async () => {
-      await topics.addTopic({ id: "t-c", title: "C", short_summary: "" });
-      await decisions.addDecision("t-c", {
-        id: "dec-c-1",
-        title: "C1",
-        status: "accepted",
-        referenced_items: [],
-        context: { text: "ctx", supporting_item_indices: [] },
-        decision: { text: "do", rationale: "because", supporting_item_indices: [] },
-        alternative_options: [
-          { text: "alt1", rationale: "r1", supporting_item_indices: [] },
-        ],
-      });
-    });
-    await when("the caller reads both an existing and an unknown decision", async () => {
-      detail = await decisions.readDecision("dec-c-1");
-      missing = await decisions.readDecision("ghost");
-    });
-    await then("the existing decision returns its title, context, and alternatives", () => {
-      expect(detail).not.toBeNull();
-      expect(detail!.title).toBe("C1");
-      expect(detail!.context_text).toBe("ctx");
-      expect(detail!.alternatives).toHaveLength(1);
-      expect(detail!.alternatives[0].text).toBe("alt1");
-    });
-    await and("the unknown id returns null", () => {
-      expect(missing).toBeNull();
-    });
-  });
-
-  test("recording a decision with an id that is already in use is rejected", async () => {
-    let thrown: Error | null = null;
-
-    await given("a topic with one decision already recorded", async () => {
-      await topics.addTopic({ id: "t-dup", title: "T", short_summary: "" });
-      await decisions.addDecision("t-dup", {
-        id: "dec-dup",
-        title: "First",
-        status: "accepted",
-        referenced_items: [],
-        context: { text: "", supporting_item_indices: [] },
-        decision: { text: "", rationale: "", supporting_item_indices: [] },
-        alternative_options: [],
-      });
-    });
-    await when(
-      "the agent tries to add another decision under the same id",
-      async () => {
-        try {
-          await decisions.addDecision("t-dup", {
-            id: "dec-dup",
-            title: "Second",
-            status: "proposed",
-            referenced_items: [],
-            context: { text: "", supporting_item_indices: [] },
-            decision: { text: "", rationale: "", supporting_item_indices: [] },
-            alternative_options: [],
-          });
-        } catch (e) {
-          thrown = e as Error;
-        }
-      },
-    );
-    await then("the operation fails with a duplication error", () => {
-      expect(thrown?.message).toMatch(/already exists/);
-    });
-  });
-
-  test("addItemsToDecisionSlot fails fast when the target decision does not exist", async () => {
-    let thrown: Error | null = null;
-
-    await given("an empty decisions graph", () => {});
-    await when(
-      "the caller tries to attach an item to an unknown decision id",
-      async () => {
-        try {
-          await decisions.addItemsToDecisionSlot(
-            "ghost",
-            { slot: "context" },
-            [],
-          );
-        } catch (e) {
-          thrown = e as Error;
-        }
-      },
-    );
-    await then("the operation fails with a decision-not-found error", () => {
-      expect(thrown?.message).toMatch(/Decision not found/);
-    });
-  });
-
-  test(
-    "listDecisionsForSources returns only decisions whose supporting items reference the given conversations",
-    async () => {
-      let matched: Awaited<
-        ReturnType<DecisionsService["listDecisionsForSources"]>
-      >;
-
-      await given(
-        "two decisions: one references conv-X via its context, the other references nothing",
-        async () => {
-          const convPath = join(ctx.tmpDir, "conv-X.json");
-          await writeFile(convPath, JSON.stringify(sampleConversation("conv-X")));
-          await conversations.addConversationFromFile(convPath);
-          await topics.addTopic({ id: "t-src", title: "T", short_summary: "" });
-
-          const iu = {
-            type: "idea_unit_ref" as const,
-            conversation_id: "conv-X",
-            turn_index: 0,
-            idea_unit_index: 0,
-          };
-          await decisions.addDecision("t-src", {
-            id: "dec-linked",
-            title: "Linked to conv-X",
-            status: "accepted",
-            referenced_items: [iu],
-            context: { text: "", supporting_item_indices: [0] },
-            decision: { text: "", rationale: "", supporting_item_indices: [] },
-            alternative_options: [],
-          });
-          await decisions.addDecision("t-src", {
-            id: "dec-unlinked",
-            title: "No source link",
-            status: "proposed",
-            referenced_items: [],
-            context: { text: "", supporting_item_indices: [] },
-            decision: { text: "", rationale: "", supporting_item_indices: [] },
-            alternative_options: [],
-          });
-        },
+        }),
       );
-      await when(
-        "the consumer asks for decisions tied to conversation conv-X",
-        async () => {
-          matched = await decisions.listDecisionsForSources(["conv-X"], []);
-        },
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the user rewrites the second alternative's text", async () => {
+      result = await ctx.decisions.editAlternativeOptionAndLock(
+        "decision-1",
+        { index: 1, text: "OAuth bearer tokens" },
+        false,
       );
-      await then("only the linked decision is returned", () => {
-        expect(matched).toHaveLength(1);
-        expect(matched[0].id).toBe("dec-linked");
-      });
-    },
-  );
+    });
+    await then("only the targeted field is reported as updated", () => {
+      expect(result?.updated).toEqual(["alternative_options[1].text"]);
+    });
+    await and("the first alternative is left untouched on disk and the edited alternative's text lock is now set", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.alternative_options[0].text).toBe("Server sessions");
+      expect(file.alternative_options[0].text_locked).toBe(false);
+      expect(file.alternative_options[1].text).toBe("OAuth bearer tokens");
+      expect(file.alternative_options[1].text_locked).toBe(true);
+    });
+  });
 
-  test("updateDecisionEditableFields rejects an empty title", async () => {
+  test("Editing an alternative option at a non-existent index is rejected", async () => {
     let thrown: Error | null = null;
 
-    await given("a stored decision", async () => {
-      await topics.addTopic({ id: "t-x", title: "X", short_summary: "" });
-      await decisions.addDecision("t-x", {
-        id: "dec-x-1",
-        title: "Has title",
-        status: "proposed",
-        referenced_items: [],
-        context: { text: "", supporting_item_indices: [] },
-        decision: { text: "", rationale: "", supporting_item_indices: [] },
-        alternative_options: [],
-      });
+    await given("a decision indexed and on disk", async () => {
+      const path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
     });
-    await when("the caller tries to overwrite the title with whitespace only", async () => {
+    await when("the user supplies an alternative index that does not exist", async () => {
       try {
-        await decisions.updateDecisionEditableFields("dec-x-1", { title: "   " });
+        await ctx.decisions.editAlternativeOptionAndLock(
+          "decision-1",
+          { index: 5, text: "anything" },
+          false,
+        );
       } catch (e) {
         thrown = e as Error;
       }
     });
-    await then("the operation fails because decision titles must not be empty", () => {
-      expect(thrown?.message).toMatch(/title must not be empty/);
+    await then("the service refuses with an out-of-range error", () => {
+      expect(thrown?.message).toContain("out of range");
+    });
+  });
+
+  test("Appending referenced items adds new entries and de-duplicates by item key", async () => {
+    let path = "";
+    let result: { appended: number } | null = null;
+
+    await given("a decision already referencing one document fragment", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          referenced_items: [
+            {
+              type: "document_fragment_ref",
+              document_id: "doc-1",
+              start_offset: 0,
+              end_offset: 5,
+            },
+          ],
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("the same fragment plus a new one are appended", async () => {
+      result = await ctx.decisions.appendReferencedItems("decision-1", [
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-1",
+          start_offset: 0,
+          end_offset: 5,
+        },
+        {
+          type: "document_fragment_ref",
+          document_id: "doc-1",
+          start_offset: 6,
+          end_offset: 12,
+        },
+      ]);
+    });
+    await then("only the brand-new reference is counted as appended", () => {
+      expect(result?.appended).toBe(1);
+    });
+    await and("the file ends up with both unique references", () => {
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.referenced_items).toHaveLength(2);
+      expect(file.referenced_items[1]).toMatchObject({
+        document_id: "doc-1",
+        start_offset: 6,
+        end_offset: 12,
+      });
+    });
+  });
+
+  test("Refreshing staleness marks a decision stale when a referenced source has drifted", async () => {
+    let path = "";
+    let staleCount = 0;
+
+    await given("a decision referencing a document fragment with an outdated source sha", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          referenced_items: [
+            {
+              type: "document_fragment_ref",
+              document_id: "doc-1",
+              start_offset: 0,
+              end_offset: 5,
+              source_sha: "old-sha",
+            },
+          ],
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("staleness is refreshed against a snapshot with the document's new sha", async () => {
+      staleCount = await ctx.decisions.refreshStaleFlags({
+        conversation: new Map(),
+        document: new Map([["doc-1", "new-sha"]]),
+      });
+    });
+    await then("the operation reports one decision as stale", () => {
+      expect(staleCount).toBe(1);
+    });
+    await and("both the DB row and the source file record the decision as stale", async () => {
+      const stored = await ctx.decisionsRepository.read("decision-1");
+      expect(stored?.is_stale).toBe(true);
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.is_stale).toBe(true);
+    });
+  });
+
+  test("Refreshing staleness clears the stale flag once a decision's sources are back in sync", async () => {
+    let path = "";
+
+    await given("a decision previously marked stale while referencing a document fragment", async () => {
+      path = writeDecisionOnDisk(
+        ctx.projectDir,
+        decisionFile({
+          is_stale: true,
+          referenced_items: [
+            {
+              type: "document_fragment_ref",
+              document_id: "doc-1",
+              start_offset: 0,
+              end_offset: 5,
+              source_sha: "matching-sha",
+            },
+          ],
+        }),
+      );
+      await ctx.decisions.indexFile(path);
+    });
+    await when("staleness is refreshed against a snapshot whose document sha matches the decision's", async () => {
+      await ctx.decisions.refreshStaleFlags({
+        conversation: new Map(),
+        document: new Map([["doc-1", "matching-sha"]]),
+      });
+    });
+    await then("the decision is no longer stale in DB or on disk", async () => {
+      const stored = await ctx.decisionsRepository.read("decision-1");
+      expect(stored?.is_stale).toBe(false);
+      const file = DecisionFileNewSchema.parse(
+        JSON.parse(readFileSync(path, "utf-8")),
+      );
+      expect(file.is_stale).toBe(false);
+    });
+  });
+
+  test("Deleting a decision while its source file is still on disk removes both the DB row and the file", async () => {
+    let path = "";
+
+    await given("an indexed decision whose source file still lives on disk", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+    });
+    await when("deletion is requested for the decision's canonical path", async () => {
+      const result = await ctx.decisions.deleteForFile(path);
+      expect(result?.decision_id).toBe("decision-1");
+    });
+    await then("the decision no longer exists in DB", async () => {
+      expect(await ctx.decisionsRepository.exists("decision-1")).toBe(false);
+    });
+    await and("the source file is removed from disk", () => {
+      expect(existsSync(path)).toBe(false);
+    });
+  });
+
+  test("Deleting a decision whose source file is already gone still removes the DB row", async () => {
+    let path = "";
+
+    await given("an indexed decision whose source file has been removed from disk", async () => {
+      path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
+      await ctx.decisions.indexFile(path);
+      rmSync(path, { force: true });
+    });
+    await when("deletion is requested for the decision's canonical path", async () => {
+      const result = await ctx.decisions.deleteForFile(path);
+      expect(result?.decision_id).toBe("decision-1");
+    });
+    await then("the decision no longer exists in DB", async () => {
+      expect(await ctx.decisionsRepository.exists("decision-1")).toBe(false);
     });
   });
 });
+
+function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew {
+  return DecisionFileNewSchema.parse({
+    id: "decision-1",
+    topic_id: "topic-1",
+    title: "Use JWTs for sessions",
+    status: "accepted",
+    referenced_items: [],
+    context: {
+      text: "We need stateless sessions.",
+      supporting_item_indices: [],
+    },
+    decision: {
+      text: "Use JWT tokens.",
+      rationale: "Avoid server-side session storage.",
+      supporting_item_indices: [],
+    },
+    alternative_options: [
+      {
+        text: "Server sessions",
+        rationale: "Familiar but stateful.",
+        supporting_item_indices: [],
+      },
+    ],
+    is_stale: false,
+    ...overrides,
+  });
+}
+
+function writeDecisionOnDisk(projectDir: string, file: DecisionFileNew): string {
+  const path = decisionJsonPath(projectDir, file.id);
+  mkdirSync(join(projectDir, "noesis", "decisions"), { recursive: true });
+  writeFileSync(path, JSON.stringify(file, null, 2));
+  return path;
+}

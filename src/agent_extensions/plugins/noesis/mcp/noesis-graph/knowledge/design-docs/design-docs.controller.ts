@@ -7,7 +7,6 @@ import {
   Patch,
   Put,
 } from "@nestjs/common";
-import type { DesignedActor } from "../../../../shared-contracts/design-doc.js";
 import type {
   DesignDocDetailData,
   DesignDocsPageData,
@@ -18,6 +17,7 @@ import {
   type ElementPathSegment,
   type ElementUpdateFields,
 } from "./design-docs.service.js";
+import type { DesignedActorNew } from "../../../../shared-contracts/design-doc-new.js";
 
 interface DesignDocElementUpdateBody {
   path: ElementPathSegment[];
@@ -53,7 +53,7 @@ export class DesignDocsController {
       throw new Error("Element path must not be empty");
     }
     try {
-      return await this.service.updateDesignDocElement(
+      return await this.service.updateElement(
         designDocId,
         body.path,
         body.fields ?? {},
@@ -72,8 +72,16 @@ export class DesignDocsController {
   }
 
   @Get("actors")
-  async listActors(): Promise<{ actors: DesignedActor[] }> {
-    return { actors: await this.service.listActors() };
+  async listActors(): Promise<{ actors: DesignedActorNew[] }> {
+    const actors = await this.service.listActors();
+    return {
+      actors: actors.map((a) => ({
+        name: a.name,
+        name_locked: false,
+        description: a.description,
+        description_locked: a.description_locked,
+      })),
+    };
   }
 
   @Put("actors/:name")

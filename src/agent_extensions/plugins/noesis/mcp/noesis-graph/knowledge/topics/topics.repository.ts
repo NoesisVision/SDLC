@@ -1,435 +1,220 @@
 import { Injectable } from "@nestjs/common";
+import { existsSync } from "fs";
 import { z } from "zod";
-import { DatabaseService } from "../../database/database.service.js";
+import {
+  TopicFileNewSchema,
+  type TopicFileNew,
+} from "../../../../shared-contracts/source-file-schemas.js";
+import {
+  computeFileSha,
+  readSidecar,
+  topicJsonPath,
+  writeSidecar,
+} from "../../../../shared-contracts/source-files.js";
+import { DatabaseService, type QueryParams } from "../../database/database.service.js";
 
-const TopicRowSchema = z.object({
+const SCHEMA_STATEMENTS = [
+  "CREATE NODE TABLE IF NOT EXISTS Topic(" +
+    "id STRING, sha STRING, parent_id STRING, " +
+    "title STRING, title_locked BOOLEAN DEFAULT false, " +
+    "short_summary STRING, short_summary_locked BOOLEAN DEFAULT false, " +
+    "long_summary STRING, long_summary_locked BOOLEAN DEFAULT false, " +
+    "reviewed BOOLEAN DEFAULT false, decisions_extracted BOOLEAN DEFAULT false, " +
+    "is_stale BOOLEAN DEFAULT false, " +
+    "PRIMARY KEY(id))",
+];
+
+const STORED_PROJECTION =
+  "t.id AS id, t.sha AS sha, t.parent_id AS parent_id, " +
+  "t.title AS title, t.title_locked AS title_locked, " +
+  "t.short_summary AS short_summary, t.short_summary_locked AS short_summary_locked, " +
+  "t.long_summary AS long_summary, t.long_summary_locked AS long_summary_locked, " +
+  "t.reviewed AS reviewed, t.decisions_extracted AS decisions_extracted, " +
+  "t.is_stale AS is_stale";
+
+const TopicFileRowSchema = z.object({
   id: z.string(),
+  sha: z.string(),
+  parent_id: z.string().nullable(),
   title: z.string(),
+  title_locked: z.boolean(),
   short_summary: z.string(),
+  short_summary_locked: z.boolean(),
   long_summary: z.string(),
+  long_summary_locked: z.boolean(),
+  reviewed: z.boolean(),
+  decisions_extracted: z.boolean(),
+  is_stale: z.boolean(),
 });
-type TopicRow = z.infer<typeof TopicRowSchema>;
+type TopicFileRow = z.infer<typeof TopicFileRowSchema>;
 
-const IdRowSchema = z.object({ id: z.string() });
-type IdRow = z.infer<typeof IdRowSchema>;
-
-const TitleRowSchema = z.object({ title: z.string() });
-type TitleRow = z.infer<typeof TitleRowSchema>;
-
-export const TopicOverviewSchema = z.object({
+const PathRowSchema = z.object({
   id: z.string(),
-  title: z.string(),
-  short_summary: z.string(),
-  long_summary: z.string(),
-  has_subtopics: z.boolean(),
-  path: z.array(z.string()),
+  sha: z.string(),
 });
-export type TopicOverview = z.infer<typeof TopicOverviewSchema>;
 
-export interface NewTopicInput {
-  id: string;
-  title: string;
-  short_summary: string;
-  long_summary: string;
-}
+const StaleRowSchema = z.object({ is_stale: z.boolean() });
 
-export interface TopicDetail {
+export interface StoredTopic {
   id: string;
-  title: string;
-  short_summary: string;
-  long_summary: string;
-  path: string[];
-}
-
-export interface TopicWithParent {
-  id: string;
-  title: string;
-  short_summary: string;
-  long_summary: string;
+  sha: string;
   parent_id: string | null;
-  is_stale: boolean;
-  edited_by_user: boolean;
-}
-
-export interface TopicSummaryRow {
-  id: string;
   title: string;
+  title_locked: boolean;
   short_summary: string;
+  short_summary_locked: boolean;
   long_summary: string;
+  long_summary_locked: boolean;
+  reviewed: boolean;
+  decisions_extracted: boolean;
+  is_stale: boolean;
 }
-
-export interface TopicIdeaUnitItem {
-  type: "idea_unit";
-  conversation_id: string;
-  conversation_main_topic: string;
-  conversation_time: string;
-  turn_index: number;
-  idea_unit_index: number;
-  speaker: string;
-  time: string;
-  sentences: string[];
-  categories: string[];
-}
-
-export interface TopicDocumentFragmentItem {
-  type: "document_fragment";
-  document_id: string;
-  document_title: string;
-  document_date: string;
-  start_offset: number;
-  end_offset: number;
-  text: string;
-}
-
-export type TopicItemEntry = TopicIdeaUnitItem | TopicDocumentFragmentItem;
 
 @Injectable()
 export class TopicsRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  async deleteParentEdge(topicId: string): Promise<void> {
-    await this.db.query(
-      "MATCH (:Topic)-[r:TOPIC_HAS_SUBTOPIC]->(c:Topic) WHERE c.id = $id DELETE r",
-      { id: topicId },
-    );
+  canonicalPath(projectDir: string, topicId: string): string {
+    return topicJsonPath(projectDir, topicId);
   }
 
-  async ensureNotExists(topicId: string): Promise<void> {
-    if (await this.exists(topicId)) {
-      throw new Error(`Topic already exists: ${topicId}`);
-    }
+  async delete(topicId: string): Promise<void> {
+    await this.db.query("MATCH (t:Topic) WHERE t.id = $id DETACH DELETE t", {
+      id: topicId,
+    });
   }
 
   async exists(topicId: string): Promise<boolean> {
-    const rows = await this.db.query<IdRow>(
+    const rows = await this.db.query<{ id: string }>(
       "MATCH (t:Topic) WHERE t.id = $id RETURN t.id AS id LIMIT 1",
       { id: topicId },
     );
     return rows.length > 0;
   }
 
-  async getTopicPath(topicId: string): Promise<string[]> {
-    const titles: string[] = [];
-    let currentId: string | null = topicId;
-    const visited = new Set<string>();
-    while (currentId !== null) {
-      if (visited.has(currentId)) break;
-      visited.add(currentId);
-      const rows = await this.db.query<TitleRow>(
-        "MATCH (t:Topic) WHERE t.id = $id RETURN t.title AS title LIMIT 1",
-        { id: currentId },
+  fileExists(absPath: string): boolean {
+    return existsSync(absPath);
+  }
+
+  fileSha(absPath: string): string {
+    return computeFileSha(absPath);
+  }
+
+  async initSchema(): Promise<void> {
+    for (const stmt of SCHEMA_STATEMENTS) {
+      await this.db.query(stmt);
+    }
+  }
+
+  async listAll(): Promise<StoredTopic[]> {
+    return this.queryStored("MATCH (t:Topic) RETURN " + STORED_PROJECTION + " ORDER BY t.title");
+  }
+
+  async listChildren(parentId: string | null): Promise<StoredTopic[]> {
+    if (parentId === null) {
+      return this.queryStored(
+        `MATCH (t:Topic) WHERE t.parent_id IS NULL RETURN ${STORED_PROJECTION} ORDER BY t.title`,
       );
-      if (rows.length === 0) break;
-      titles.unshift(rows[0].title);
-      currentId = await this.findParentTopicId(currentId);
     }
-    return titles;
-  }
-
-  async hasSubtopics(topicId: string): Promise<boolean> {
-    const rows = await this.db.query<IdRow>(
-      "MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(:Topic) WHERE p.id = $id RETURN p.id AS id LIMIT 1",
-      { id: topicId },
-    );
-    return rows.length > 0;
-  }
-
-  async insertTopicNode(topic: NewTopicInput): Promise<void> {
-    await this.db.query(
-      "CREATE (t:Topic {id: $id, title: $title, short_summary: $short_summary, long_summary: $long_summary})",
-      {
-        id: topic.id,
-        title: topic.title,
-        short_summary: topic.short_summary,
-        long_summary: topic.long_summary,
-      },
-    );
-  }
-
-  async linkSubtopic(parentId: string, childId: string): Promise<void> {
-    await this.db.query(
-      "MATCH (p:Topic), (c:Topic) WHERE p.id = $parentId AND c.id = $childId CREATE (p)-[:TOPIC_HAS_SUBTOPIC]->(c)",
-      { parentId, childId },
-    );
-  }
-
-  async linkToDocumentFragment(topicId: string, fragId: string): Promise<void> {
-    if (await this.edgeExists("TOPIC_HAS_DOCUMENT_FRAGMENT", topicId, "DocumentFragment", fragId)) {
-      return;
-    }
-    await this.db.query(
-      "MATCH (t:Topic), (f:DocumentFragment) WHERE t.id = $topicId AND f.id = $fragId CREATE (t)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f)",
-      { topicId, fragId },
-    );
-  }
-
-  async linkToIdeaUnit(topicId: string, iuId: string): Promise<void> {
-    if (await this.edgeExists("TOPIC_HAS_IDEA_UNIT", topicId, "IdeaUnit", iuId)) {
-      return;
-    }
-    await this.db.query(
-      "MATCH (t:Topic), (u:IdeaUnit) WHERE t.id = $topicId AND u.id = $iuId CREATE (t)-[:TOPIC_HAS_IDEA_UNIT]->(u)",
-      { topicId, iuId },
-    );
-  }
-
-  async listAllTopicsWithParents(): Promise<TopicWithParent[]> {
-    const RowSchema = z.object({
-      id: z.string(),
-      title: z.string(),
-      short_summary: z.string(),
-      long_summary: z.string(),
-      parent_id: z.string().nullable(),
-      is_stale: z.boolean().nullable(),
-      edited_by_user: z.boolean().nullable(),
-    });
-    const rawRows = await this.db.query<unknown>(
-      "MATCH (t:Topic) " +
-        "OPTIONAL MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(t) " +
-        "RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary, p.id AS parent_id, t.is_stale AS is_stale, t.edited_by_user AS edited_by_user " +
-        "ORDER BY t.title",
-    );
-    const rows = z.array(RowSchema).parse(rawRows);
-    return rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      short_summary: r.short_summary,
-      long_summary: r.long_summary,
-      parent_id: r.parent_id,
-      is_stale: r.is_stale ?? false,
-      edited_by_user: r.edited_by_user ?? false,
-    }));
-  }
-
-  async listRootTopics(): Promise<TopicOverview[]> {
-    const rows = await this.queryRootTopicRows();
-    return this.enrichTopics(rows);
-  }
-
-  async listSubtopics(parentId: string): Promise<TopicOverview[]> {
-    const rows = await this.querySubtopicRows(parentId);
-    return this.enrichTopics(rows);
-  }
-
-  async listTopicsForSources(
-    conversationIds: string[],
-    documentIds: string[],
-  ): Promise<TopicSummaryRow[]> {
-    const ids = new Set<string>();
-    if (conversationIds.length > 0) {
-      const rawRows = await this.db.query<TopicRow>(
-        "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
-          "WHERE u.conversation_id IN $ids " +
-          "RETURN DISTINCT t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary",
-        { ids: conversationIds },
-      );
-      for (const row of z.array(TopicRowSchema).parse(rawRows)) {
-        ids.add(JSON.stringify(row));
-      }
-    }
-    if (documentIds.length > 0) {
-      const rawRows = await this.db.query<TopicRow>(
-        "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment) " +
-          "WHERE f.document_id IN $ids " +
-          "RETURN DISTINCT t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary",
-        { ids: documentIds },
-      );
-      for (const row of z.array(TopicRowSchema).parse(rawRows)) {
-        ids.add(JSON.stringify(row));
-      }
-    }
-    const merged: TopicSummaryRow[] = Array.from(ids).map((s) =>
-      JSON.parse(s) as TopicSummaryRow,
-    );
-    merged.sort((a, b) => a.title.localeCompare(b.title));
-    return merged;
-  }
-
-  async listIdeaUnitItemsForTopic(
-    topicId: string,
-    since: string | null,
-  ): Promise<TopicIdeaUnitItem[]> {
-    const RowSchema = z.object({
-      conversation_id: z.string(),
-      conversation_main_topic: z.string(),
-      conversation_time: z.string(),
-      turn_index: z.union([z.number(), z.bigint()]),
-      idea_unit_index: z.union([z.number(), z.bigint()]),
-      speaker: z.string(),
-      time: z.string(),
-      sentences: z.array(z.string()),
-      categories: z.array(z.string()),
-    });
-    const baseMatch =
-      "MATCH (t:Topic)-[:TOPIC_HAS_IDEA_UNIT]->(u:IdeaUnit)<-[:TURN_HAS_IDEA_UNIT]-(turn:Turn)<-[:CONVERSATION_HAS_TURN]-(c:Conversation) " +
-      "WHERE t.id = $topicId AND u.categories <> ['Irrelevant']";
-    const dateFilter = since === null ? "" : " AND c.time > $since";
-    const rawRows = await this.db.query<unknown>(
-      `${baseMatch}${dateFilter} ` +
-        "RETURN c.id AS conversation_id, c.main_topic AS conversation_main_topic, c.time AS conversation_time, " +
-        "u.turn_index AS turn_index, u.idea_unit_index AS idea_unit_index, " +
-        "turn.speaker AS speaker, turn.time AS time, " +
-        "u.sentences AS sentences, u.categories AS categories " +
-        "ORDER BY c.time DESC, u.turn_index, u.idea_unit_index",
-      since === null ? { topicId } : { topicId, since },
-    );
-    return z.array(RowSchema).parse(rawRows).map((r) => ({
-      type: "idea_unit",
-      conversation_id: r.conversation_id,
-      conversation_main_topic: r.conversation_main_topic,
-      conversation_time: r.conversation_time,
-      turn_index: Number(r.turn_index),
-      idea_unit_index: Number(r.idea_unit_index),
-      speaker: r.speaker,
-      time: r.time,
-      sentences: r.sentences,
-      categories: r.categories,
-    }));
-  }
-
-  async listDocumentFragmentItemsForTopic(
-    topicId: string,
-    since: string | null,
-  ): Promise<TopicDocumentFragmentItem[]> {
-    const RowSchema = z.object({
-      document_id: z.string(),
-      document_title: z.string(),
-      document_date: z.string(),
-      document_content: z.string(),
-      start_offset: z.union([z.number(), z.bigint()]),
-      end_offset: z.union([z.number(), z.bigint()]),
-    });
-    const baseMatch =
-      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
-      "WHERE t.id = $topicId";
-    const dateFilter = since === null ? "" : " AND d.date > $since";
-    const rawRows = await this.db.query<unknown>(
-      `${baseMatch}${dateFilter} ` +
-        "RETURN d.id AS document_id, d.title AS document_title, d.date AS document_date, d.content AS document_content, " +
-        "f.start_offset AS start_offset, f.end_offset AS end_offset " +
-        "ORDER BY d.date DESC, f.start_offset",
-      since === null ? { topicId } : { topicId, since },
-    );
-    return z.array(RowSchema).parse(rawRows).map((r) => {
-      const start = Number(r.start_offset);
-      const end = Number(r.end_offset);
-      return {
-        type: "document_fragment" as const,
-        document_id: r.document_id,
-        document_title: r.document_title,
-        document_date: r.document_date,
-        start_offset: start,
-        end_offset: end,
-        text: r.document_content.slice(start, end).trim(),
-      };
-    });
-  }
-
-  async readTopic(topicId: string): Promise<TopicDetail | null> {
-    const rawRows = await this.db.query<TopicRow>(
-      "MATCH (t:Topic) WHERE t.id = $id RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary LIMIT 1",
-      { id: topicId },
-    );
-    if (rawRows.length === 0) return null;
-    const row = TopicRowSchema.parse(rawRows[0]);
-    const path = await this.getTopicPath(topicId);
-    return {
-      id: row.id,
-      title: row.title,
-      short_summary: row.short_summary,
-      long_summary: row.long_summary,
-      path,
-    };
-  }
-
-  async require(topicId: string): Promise<void> {
-    if (!(await this.exists(topicId))) {
-      throw new Error(`Topic not found: ${topicId}`);
-    }
-  }
-
-  async updateTopicFields(
-    topicId: string,
-    fields: { title: string; short_summary: string; long_summary: string },
-  ): Promise<void> {
-    await this.db.query(
-      "MATCH (t:Topic) WHERE t.id = $id SET t.title = $title, t.short_summary = $short_summary, t.long_summary = $long_summary",
-      {
-        id: topicId,
-        title: fields.title,
-        short_summary: fields.short_summary,
-        long_summary: fields.long_summary,
-      },
-    );
-  }
-
-  async updateTopicPartialFields(
-    topicId: string,
-    fields: Partial<{ title: string; short_summary: string; long_summary: string }>,
-  ): Promise<void> {
-    const keys = Object.keys(fields);
-    if (keys.length === 0) return;
-    const setClause = keys.map((k) => `t.${k} = $${k}`).join(", ");
-    await this.db.query(
-      `MATCH (t:Topic) WHERE t.id = $id SET ${setClause}`,
-      { id: topicId, ...fields },
-    );
-  }
-
-  private async edgeExists(
-    relName: string,
-    fromId: string,
-    toLabel: string,
-    toId: string,
-  ): Promise<boolean> {
-    const rows = await this.db.query<IdRow>(
-      `MATCH (a:Topic)-[:${relName}]->(b:${toLabel}) WHERE a.id = $fromId AND b.id = $toId RETURN a.id AS id LIMIT 1`,
-      { fromId, toId },
-    );
-    return rows.length > 0;
-  }
-
-  private async enrichTopics(rows: TopicRow[]): Promise<TopicOverview[]> {
-    const result: TopicOverview[] = [];
-    for (const row of rows) {
-      const path = await this.getTopicPath(row.id);
-      const has_subtopics = await this.hasSubtopics(row.id);
-      result.push({
-        id: row.id,
-        title: row.title,
-        short_summary: row.short_summary,
-        long_summary: row.long_summary,
-        has_subtopics,
-        path,
-      });
-    }
-    return result;
-  }
-
-  private async findParentTopicId(topicId: string): Promise<string | null> {
-    const rows = await this.db.query<IdRow>(
-      "MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(c:Topic) WHERE c.id = $id RETURN p.id AS id LIMIT 1",
-      { id: topicId },
-    );
-    return rows.length === 0 ? null : rows[0].id;
-  }
-
-  private async queryRootTopicRows(): Promise<TopicRow[]> {
-    const rawRows = await this.db.query<TopicRow>(
-      "MATCH (t:Topic) WHERE NOT EXISTS { MATCH (:Topic)-[:TOPIC_HAS_SUBTOPIC]->(t) } " +
-        "RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary " +
-        "ORDER BY t.title",
-    );
-    return z.array(TopicRowSchema).parse(rawRows);
-  }
-
-  private async querySubtopicRows(parentId: string): Promise<TopicRow[]> {
-    const rawRows = await this.db.query<TopicRow>(
-      "MATCH (p:Topic)-[:TOPIC_HAS_SUBTOPIC]->(t:Topic) WHERE p.id = $parentId " +
-        "RETURN t.id AS id, t.title AS title, t.short_summary AS short_summary, t.long_summary AS long_summary " +
-        "ORDER BY t.title",
+    return this.queryStored(
+      `MATCH (t:Topic) WHERE t.parent_id = $parentId RETURN ${STORED_PROJECTION} ORDER BY t.title`,
       { parentId },
     );
-    return z.array(TopicRowSchema).parse(rawRows);
   }
+
+  async listAllStoredFiles(
+    projectDir: string,
+  ): Promise<Array<{ id: string; path: string; sha: string }>> {
+    const rows = await this.db.query<unknown>(
+      "MATCH (t:Topic) RETURN t.id AS id, t.sha AS sha",
+    );
+    return z.array(PathRowSchema).parse(rows).map((r) => ({
+      id: r.id,
+      sha: r.sha,
+      path: topicJsonPath(projectDir, r.id),
+    }));
+  }
+
+  async read(topicId: string): Promise<StoredTopic | null> {
+    const rows = await this.queryStored(
+      `MATCH (t:Topic) WHERE t.id = $id RETURN ${STORED_PROJECTION} LIMIT 1`,
+      { id: topicId },
+    );
+    return rows[0] ?? null;
+  }
+
+  readFile(absPath: string): TopicFileNew {
+    return readSidecar(absPath, TopicFileNewSchema);
+  }
+
+  async readStaleFlag(topicId: string): Promise<boolean | null> {
+    const rows = await this.db.query<unknown>(
+      "MATCH (t:Topic) WHERE t.id = $id RETURN t.is_stale AS is_stale LIMIT 1",
+      { id: topicId },
+    );
+    if (rows.length === 0) return null;
+    return StaleRowSchema.parse(rows[0]).is_stale;
+  }
+
+  async upsert(file: TopicFileNew, sha: string): Promise<void> {
+    await this.db.query(
+      "MERGE (t:Topic {id: $id}) SET " +
+        "t.sha = $sha, t.parent_id = $parent_id, " +
+        "t.title = $title, t.title_locked = $title_locked, " +
+        "t.short_summary = $short_summary, t.short_summary_locked = $short_summary_locked, " +
+        "t.long_summary = $long_summary, t.long_summary_locked = $long_summary_locked, " +
+        "t.reviewed = $reviewed, t.decisions_extracted = $decisions_extracted, " +
+        "t.is_stale = $is_stale",
+      {
+        id: file.id,
+        sha,
+        parent_id: file.parent_id,
+        title: file.title,
+        title_locked: file.title_locked,
+        short_summary: file.short_summary,
+        short_summary_locked: file.short_summary_locked,
+        long_summary: file.long_summary,
+        long_summary_locked: file.long_summary_locked,
+        reviewed: file.reviewed,
+        decisions_extracted: file.decisions_extracted,
+        is_stale: file.is_stale,
+      },
+    );
+  }
+
+  writeFile(absPath: string, file: TopicFileNew): void {
+    writeSidecar(absPath, file, TopicFileNewSchema);
+  }
+
+  async writeStaleFlag(topicId: string, isStale: boolean): Promise<void> {
+    await this.db.query(
+      "MATCH (t:Topic) WHERE t.id = $id SET t.is_stale = $is_stale",
+      { id: topicId, is_stale: isStale },
+    );
+  }
+
+  private async queryStored(
+    cypher: string,
+    params: QueryParams = {},
+  ): Promise<StoredTopic[]> {
+    const rows = await this.db.query<unknown>(cypher, params);
+    return z.array(TopicFileRowSchema).parse(rows).map(toStoredTopic);
+  }
+}
+
+function toStoredTopic(row: TopicFileRow): StoredTopic {
+  return {
+    id: row.id,
+    sha: row.sha,
+    parent_id: row.parent_id,
+    title: row.title,
+    title_locked: row.title_locked,
+    short_summary: row.short_summary,
+    short_summary_locked: row.short_summary_locked,
+    long_summary: row.long_summary,
+    long_summary_locked: row.long_summary_locked,
+    reviewed: row.reviewed,
+    decisions_extracted: row.decisions_extracted,
+    is_stale: row.is_stale,
+  };
 }

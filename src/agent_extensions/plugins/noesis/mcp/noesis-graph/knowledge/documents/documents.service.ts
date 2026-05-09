@@ -1,46 +1,83 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { readFile } from "fs/promises";
-import { join } from "path";
+import { Inject, Injectable } from "@nestjs/common";
+import { existsSync, readFileSync, rmSync } from "fs";
+import { assertNever } from "../../../../shared-contracts/assert-never.js";
+import { isIrrelevantFragment } from "../../../../shared-contracts/documents.js";
 import {
   AnalyzeDesignDraftOutputSchema,
   buildFragmentMap,
   formatEnrichedDocumentTopicMarkdown,
   resolveFragmentDetail,
   type AnalyzeDesignDraftOutput,
-  type AttachToDecision,
   type EnrichedDocumentTopic,
   type FragmentDetail,
 } from "../../../../shared-contracts/skills/analyze-design-draft/output.js";
+import { type DesignDocFileNew } from "../../../../shared-contracts/design-doc-new.js";
 import {
-  DocumentSchema,
-  isIrrelevantFragment,
-  type Document,
-} from "../../../../shared-contracts/documents.js";
-import { type TopicItem } from "../../../../shared-contracts/topics.js";
-import { assertNever } from "../../../../shared-contracts/assert-never.js";
-import { documentMdPath } from "../../../../shared-contracts/source-files.js";
+  DecisionFileNewSchema,
+  TopicFileNewSchema,
+  type DecisionFileNew,
+  type DocumentFileNew,
+  type TopicFileNew,
+  type TopicItemRefNew,
+} from "../../../../shared-contracts/source-file-schemas.js";
+import {
+  computeContentSha,
+  computeFileSha,
+  conversationJsonPath,
+  decisionJsonPath,
+  documentJsonPath,
+  documentMdPath,
+  ensureNoesisLayout,
+  topicJsonPath,
+} from "../../../../shared-contracts/source-files.js";
 import type {
+  DocumentDecisionRef,
   DocumentDetailData,
+  DocumentListItem,
   DocumentsPageData,
+  DocumentTopicRef,
 } from "../../ui-contracts/documents/documents-data.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
-import { splitDocument } from "../../file-sync/document-splitter.js";
-import { FileSyncService } from "../../file-sync/file-sync.service.js";
-import { StalenessService } from "../../file-sync/staleness.service.js";
+import { DecisionsRepository } from "../decisions/decisions.repository.js";
+import { DesignDocsService } from "../design-docs/design-docs.service.js";
 import {
-  DecisionsService,
-  type DecisionSupportSlot,
-} from "../decisions/decisions.service.js";
+  confirmedKey,
+  detectDecisionConflicts,
+  detectTopicConflicts,
+  LockedFieldsBlockedError,
+  resolveDecisionLockedFields,
+  resolveTopicLockedFields,
+  type ConfirmedEdit,
+} from "../locks.js";
 import { TopicsRepository } from "../topics/topics.repository.js";
 import { DocumentsRepository } from "./documents.repository.js";
 
-export interface MergeDocumentResult {
+export {
+  LockedFieldsBlockedError,
+  type ConfirmedEdit,
+  type DecisionLockedField,
+  type DesignDocLockedField,
+  type TopicLockedField,
+} from "../locks.js";
+
+export interface DocumentAnalysisInput {
+  outputJsonPath: string;
+  designDocJsonPath: string | null;
+  confirmed_edits?: ConfirmedEdit[];
+}
+
+export interface UploadDocumentAnalysisResult {
   document_id: string;
-  topics_added: number;
-  topics_updated: number;
-  decisions_added: number;
+  topic_paths: string[];
+  decision_paths: string[];
   decision_attachments: number;
-  files_written: number;
+  design_doc_path: string | null;
+  cleared_locks: ConfirmedEdit[];
+}
+
+export interface IndexFileOutcome {
+  status: "indexed" | "unchanged";
+  document_id: string;
 }
 
 export interface TopicForDocumentReview {
@@ -53,44 +90,49 @@ export interface TopicForDocumentReview {
 
 @Injectable()
 export class DocumentsService {
-  private readonly logger = new Logger(DocumentsService.name);
-
   constructor(
-    private readonly repository: DocumentsRepository,
-    private readonly topics: TopicsRepository,
-    private readonly decisions: DecisionsService,
-    private readonly fileSync: FileSyncService,
-    private readonly staleness: StalenessService,
     @Inject(PROJECT_DIR) private readonly projectDir: string,
+    private readonly repository: DocumentsRepository,
+    private readonly topicsRepository: TopicsRepository,
+    private readonly decisionsRepository: DecisionsRepository,
+    private readonly designDocsService: DesignDocsService,
   ) {}
 
-  async addDocumentFromFile(path: string): Promise<{ id: string }> {
-    const document = await this.readDocumentFile(path);
-    await this.repository.insertDocument(document);
-    this.logger.log(`Added document ${document.id}`);
-    return { id: document.id };
+  async deleteForFile(
+    absPath: string,
+  ): Promise<{ document_id: string } | null> {
+    const id = inferDocumentIdFromPath(absPath);
+    if (id === null) return null;
+    if (!(await this.repository.exists(id))) return null;
+    await this.repository.delete(id);
+    rmSync(documentJsonPath(this.projectDir, id), { force: true });
+    rmSync(documentMdPath(this.projectDir, id), { force: true });
+    return { document_id: id };
   }
 
   async getAllUnreviewedTopicsForDocument(
     outputPath: string,
   ): Promise<TopicForDocumentReview[]> {
-    const output = await this.readOutputFile(outputPath);
+    const output = await this.loadOutputAsync(outputPath);
     const reviews: TopicForDocumentReview[] = [];
     for (const topic of output.topics) {
       if (topic.reviewed) continue;
-      const review = await this.buildTopicReview(output, topic);
-      if (review !== null) reviews.push(review);
+      reviews.push(await this.buildTopicReview(output, topic));
     }
     return reviews;
   }
 
   async getDocumentDetail(documentId: string): Promise<DocumentDetailData> {
-    const head = await this.repository.readDocumentHead(documentId);
-    if (head === null) throw new Error(`Document not found: ${documentId}`);
-    const topics = await this.repository.listTopicsForDocument(documentId);
-    const decisions = await this.repository.listDecisionsForDocument(documentId);
+    const head = await this.repository.read(documentId);
+    if (head === null) {
+      throw new Error(`Document not found: ${documentId}`);
+    }
+    const [topics, decisions] = await Promise.all([
+      this.collectLinkedTopics(documentId),
+      this.collectLinkedDecisions(documentId),
+    ]);
     return {
-      id: head.document_id,
+      id: head.id,
       title: head.title,
       date: head.date,
       topics,
@@ -99,23 +141,357 @@ export class DocumentsService {
   }
 
   async getDocumentsPage(): Promise<DocumentsPageData> {
-    const all = await this.repository.listAllDocuments();
-    return {
-      documents: all.map((d) => ({
-        id: d.document_id,
-        title: d.title,
-        date: d.date,
-      })),
-    };
+    const all = await this.repository.listAll();
+    const documents: DocumentListItem[] = all.map((d) => ({
+      id: d.id,
+      title: d.title,
+      date: d.date,
+    }));
+    return { documents };
   }
 
   async getTopicForDocumentReview(
     outputPath: string,
   ): Promise<TopicForDocumentReview | null> {
-    const output = await this.readOutputFile(outputPath);
+    const output = await this.loadOutputAsync(outputPath);
     const topic = output.topics.find((t) => !t.reviewed) ?? null;
     if (topic === null) return null;
     return this.buildTopicReview(output, topic);
+  }
+
+  async hasDocument(documentId: string): Promise<boolean> {
+    return this.repository.exists(documentId);
+  }
+
+  async indexFile(absPath: string): Promise<IndexFileOutcome> {
+    const sha = this.repository.fileSha(absPath);
+    const file = this.repository.readFile(absPath);
+    const stored = await this.repository.read(file.document_id);
+    if (stored !== null && stored.sha === sha) {
+      return { status: "unchanged", document_id: file.document_id };
+    }
+    await this.repository.upsert(file, sha);
+    return { status: "indexed", document_id: file.document_id };
+  }
+
+  async listAllStoredFiles(): Promise<
+    Array<{ id: string; path: string; sha: string }>
+  > {
+    return this.repository.listAllStoredFiles(this.projectDir);
+  }
+
+  async uploadAnalysis(
+    input: DocumentAnalysisInput,
+  ): Promise<UploadDocumentAnalysisResult> {
+    const output = this.loadOutput(input.outputJsonPath);
+    this.validate(output, input.designDocJsonPath !== null);
+    const designDocFile =
+      input.designDocJsonPath === null
+        ? null
+        : this.designDocsService.loadWorkingFile(input.designDocJsonPath);
+    const conflicts = this.detectLockedFieldConflicts(output, designDocFile);
+    if (input.confirmed_edits === undefined && conflicts.length > 0) {
+      throw new LockedFieldsBlockedError(conflicts);
+    }
+    const confirmed = new Set(
+      (input.confirmed_edits ?? []).map(confirmedKey),
+    );
+    return this.split(output, input.designDocJsonPath, confirmed);
+  }
+
+  // ----- private -----
+
+  private loadOutput(path: string): AnalyzeDesignDraftOutput {
+    if (!existsSync(path)) {
+      throw new Error(`analyze-design-draft output not found at ${path}`);
+    }
+    const raw = readFileSync(path, "utf-8");
+    return AnalyzeDesignDraftOutputSchema.parse(JSON.parse(raw));
+  }
+
+  private validate(
+    output: AnalyzeDesignDraftOutput,
+    expectsDesignDoc: boolean,
+  ): void {
+    const fragmentSet = new Set(output.fragments.map((f) => f.index));
+    for (const topic of output.topics) {
+      if (!topic.reviewed) {
+        throw new Error(
+          `Topic ${topic.id} is not marked reviewed; analyze-design-draft must complete the review pass before merge.`,
+        );
+      }
+      for (const item of topic.items) {
+        if (item.type === "document_fragment_ref") {
+          if (item.document_id !== output.document.id) continue;
+          // can't directly check by index from the ref shape, accept range alignment
+          const matches = output.fragments.some(
+            (f) =>
+              f.start_offset === item.start_offset &&
+              f.end_offset === item.end_offset,
+          );
+          if (!matches) {
+            throw new Error(
+              `Topic ${topic.id} references unknown fragment range ${item.start_offset}-${item.end_offset} in document ${output.document.id}.`,
+            );
+          }
+        }
+      }
+    }
+    for (const att of output.decision_attachments) {
+      for (const fi of att.fragment_indices) {
+        if (!fragmentSet.has(fi)) {
+          throw new Error(
+            `decision_attachments for ${att.decision_id} reference unknown fragment index ${fi}.`,
+          );
+        }
+      }
+    }
+    if (expectsDesignDoc && output.design_doc_extracted !== true) {
+      throw new Error(
+        "Design doc path was supplied but design_doc_extracted is false in skill output.",
+      );
+    }
+  }
+
+  private detectLockedFieldConflicts(
+    output: AnalyzeDesignDraftOutput,
+    designDocFile: DesignDocFileNew | null,
+  ): ConfirmedEdit[] {
+    const conflicts: ConfirmedEdit[] = [];
+    for (const topic of output.topics) {
+      const existingTopic = readTopicIfExists(
+        topicJsonPath(this.projectDir, topic.id),
+      );
+      conflicts.push(...detectTopicConflicts(existingTopic, topic));
+      for (const decision of topic.decisions) {
+        const dpath = decisionJsonPath(this.projectDir, decision.id);
+        const existingDecision = this.decisionsRepository.fileExists(dpath)
+          ? this.decisionsRepository.readFile(dpath)
+          : null;
+        conflicts.push(...detectDecisionConflicts(existingDecision, decision));
+      }
+    }
+    if (designDocFile !== null) {
+      conflicts.push(...this.designDocsService.detectConflicts(designDocFile));
+    }
+    return conflicts;
+  }
+
+  private split(
+    output: AnalyzeDesignDraftOutput,
+    designDocJsonPath: string | null,
+    confirmed: Set<string>,
+  ): UploadDocumentAnalysisResult {
+    ensureNoesisLayout(this.projectDir);
+    const docFile: DocumentFileNew = {
+      document_id: output.document.id,
+      title: output.document.title,
+      date: output.document.date,
+      content: output.document.content,
+      fragments: output.fragments,
+      section_tree: output.section_tree,
+    };
+    const docPath = this.canonicalPath(output.document.id);
+    this.repository.writeFile(docPath, docFile);
+    const documentSha = computeFileSha(docPath);
+
+    const sourceShaCache = new Map<string, string>();
+    sourceShaCache.set(`document:${output.document.id}`, documentSha);
+
+    const parentLookup = new Map<string, string | null>();
+    for (const pt of output.potential_topics.topics) {
+      parentLookup.set(pt.id, pt.parent_id);
+    }
+
+    const topicPaths: string[] = [];
+    const decisionPaths: string[] = [];
+    const clearedLocks: ConfirmedEdit[] = [];
+
+    for (const topic of output.topics) {
+      const tr = this.writeTopicFile(
+        topic,
+        parentLookup.get(topic.id) ?? null,
+        sourceShaCache,
+        confirmed,
+      );
+      topicPaths.push(tr.path);
+      clearedLocks.push(...tr.cleared);
+      for (const decision of topic.decisions) {
+        const dr = this.writeDecisionFile(
+          topic.id,
+          decision,
+          sourceShaCache,
+          confirmed,
+        );
+        decisionPaths.push(dr.path);
+        clearedLocks.push(...dr.cleared);
+      }
+    }
+
+    const attached = this.applyDecisionAttachments(output, sourceShaCache);
+
+    let designDocPath: string | null = null;
+    if (designDocJsonPath !== null) {
+      const dr = this.designDocsService.persistFromWorkingFile(
+        designDocJsonPath,
+        confirmed,
+      );
+      designDocPath = dr.path;
+      clearedLocks.push(...dr.cleared);
+    }
+
+    return {
+      document_id: output.document.id,
+      topic_paths: topicPaths,
+      decision_paths: decisionPaths,
+      decision_attachments: attached,
+      design_doc_path: designDocPath,
+      cleared_locks: clearedLocks,
+    };
+  }
+
+  private writeTopicFile(
+    topic: AnalyzeDesignDraftOutput["topics"][number],
+    parentId: string | null,
+    cache: Map<string, string>,
+    confirmed: Set<string>,
+  ): { path: string; cleared: ConfirmedEdit[] } {
+    const path = topicJsonPath(this.projectDir, topic.id);
+    const items = withItemShas(topic.items as TopicItemRefNew[], this.projectDir, cache);
+    const existing = readTopicIfExists(path);
+    const cleared: ConfirmedEdit[] = [];
+    const resolved = resolveTopicLockedFields(existing, topic, confirmed, cleared);
+    const next: TopicFileNew = {
+      id: topic.id,
+      parent_id: parentId,
+      title: resolved.title,
+      title_locked: resolved.title_locked,
+      short_summary: resolved.short_summary,
+      short_summary_locked: resolved.short_summary_locked,
+      long_summary: resolved.long_summary,
+      long_summary_locked: resolved.long_summary_locked,
+      items: existing === null ? items : mergeItems(existing.items, items),
+      reviewed: topic.reviewed,
+      decisions_extracted: topic.decisions_extracted,
+      is_stale: existing?.is_stale ?? false,
+    };
+    this.topicsRepository.writeFile(path, next);
+    return { path, cleared };
+  }
+
+  private writeDecisionFile(
+    topicId: string,
+    decision: AnalyzeDesignDraftOutput["topics"][number]["decisions"][number],
+    cache: Map<string, string>,
+    confirmed: Set<string>,
+  ): { path: string; cleared: ConfirmedEdit[] } {
+    const path = decisionJsonPath(this.projectDir, decision.id);
+    const referenced = withItemShas(
+      decision.referenced_items as TopicItemRefNew[],
+      this.projectDir,
+      cache,
+    );
+    const existing = readDecisionIfExists(path);
+    const cleared: ConfirmedEdit[] = [];
+    const resolved = resolveDecisionLockedFields(
+      existing,
+      decision,
+      confirmed,
+      cleared,
+    );
+    const next: DecisionFileNew = {
+      id: decision.id,
+      topic_id: topicId,
+      title: resolved.title,
+      title_locked: resolved.title_locked,
+      status: resolved.status,
+      status_locked: resolved.status_locked,
+      referenced_items: referenced,
+      context: {
+        text: resolved.context_text,
+        text_locked: resolved.context_text_locked,
+        supporting_item_indices: decision.context.supporting_item_indices,
+      },
+      decision: {
+        text: resolved.decision_text,
+        text_locked: resolved.decision_text_locked,
+        rationale: resolved.decision_rationale,
+        rationale_locked: resolved.decision_rationale_locked,
+        supporting_item_indices: decision.decision.supporting_item_indices,
+      },
+      alternative_options: decision.alternative_options.map((alt, i) => ({
+        text: alt.text,
+        text_locked: existing?.alternative_options[i]?.text_locked ?? false,
+        rationale: alt.rationale,
+        rationale_locked:
+          existing?.alternative_options[i]?.rationale_locked ?? false,
+        supporting_item_indices: alt.supporting_item_indices,
+      })),
+      is_stale: existing?.is_stale ?? false,
+    };
+    this.decisionsRepository.writeFile(path, next);
+    return { path, cleared };
+  }
+
+  private applyDecisionAttachments(
+    output: AnalyzeDesignDraftOutput,
+    cache: Map<string, string>,
+  ): number {
+    if (output.decision_attachments.length === 0) return 0;
+    const fragmentByIndex = new Map<number, AnalyzeDesignDraftOutput["fragments"][number]>();
+    for (const f of output.fragments) fragmentByIndex.set(f.index, f);
+    const documentSha = cache.get(`document:${output.document.id}`);
+    const grouped = new Map<string, TopicItemRefNew[]>();
+    for (const att of output.decision_attachments) {
+      const refs: TopicItemRefNew[] = att.fragment_indices.map((fi) => {
+        const f = fragmentByIndex.get(fi);
+        if (f === undefined) {
+          throw new Error(
+            `decision_attachments references unknown fragment index ${fi}`,
+          );
+        }
+        return {
+          type: "document_fragment_ref",
+          document_id: output.document.id,
+          start_offset: f.start_offset,
+          end_offset: f.end_offset,
+          source_sha: documentSha,
+        };
+      });
+      const list = grouped.get(att.decision_id) ?? [];
+      list.push(...refs);
+      grouped.set(att.decision_id, list);
+    }
+    let appended = 0;
+    for (const [decisionId, refs] of grouped) {
+      const path = decisionJsonPath(this.projectDir, decisionId);
+      if (!this.decisionsRepository.fileExists(path)) {
+        throw new Error(
+          `decision_attachments target ${decisionId} has no source file at ${path}`,
+        );
+      }
+      const file = this.decisionsRepository.readFile(path);
+      const seen = new Set(file.referenced_items.map(itemKey));
+      const additions: TopicItemRefNew[] = [];
+      for (const ref of refs) {
+        const k = itemKey(ref);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        additions.push(ref);
+      }
+      if (additions.length === 0) continue;
+      const updated: DecisionFileNew = {
+        ...file,
+        referenced_items: [...file.referenced_items, ...additions],
+      };
+      this.decisionsRepository.writeFile(path, updated);
+      appended += additions.length;
+    }
+    return appended;
+  }
+
+  private canonicalPath(documentId: string): string {
+    return this.repository.canonicalPath(this.projectDir, documentId);
   }
 
   private async buildTopicReview(
@@ -123,35 +499,30 @@ export class DocumentsService {
     topic: AnalyzeDesignDraftOutput["topics"][number],
   ): Promise<TopicForDocumentReview> {
     const fragmentMap = buildFragmentMap(output.fragments);
-    const priorFragments = await this.repository.getPriorDocumentFragments(
+    const priorFragments = await this.findPriorDocumentFragments(
       topic.id,
       output.document.id,
     );
 
     const details: FragmentDetail[] = [];
     const seen = new Set<string>();
-
     for (const item of topic.items) {
       switch (item.type) {
         case "document_fragment_ref": {
           if (item.document_id !== output.document.id) break;
-          const fragmentIndex = findFragmentByOffsets(
-            output.fragments,
-            item.start_offset,
-            item.end_offset,
+          const fragment = output.fragments.find(
+            (f) =>
+              f.start_offset === item.start_offset &&
+              f.end_offset === item.end_offset,
           );
-          if (fragmentIndex === null) break;
+          if (fragment === undefined) break;
           const detail = resolveFragmentDetail(
             output.document.id,
-            fragmentIndex,
+            fragment.index,
             fragmentMap,
           );
           if (detail === null || isIrrelevantFragment(detail.categories)) break;
-          const key = fragmentKey(
-            detail.document_id,
-            detail.start_offset,
-            detail.end_offset,
-          );
+          const key = fragmentKey(detail.document_id, detail.start_offset, detail.end_offset);
           if (seen.has(key)) break;
           seen.add(key);
           details.push(detail);
@@ -163,9 +534,12 @@ export class DocumentsService {
           assertNever(item);
       }
     }
-
     for (const prior of priorFragments) {
-      const key = fragmentKey(prior.document_id, prior.start_offset, prior.end_offset);
+      const key = fragmentKey(
+        prior.document_id,
+        prior.start_offset,
+        prior.end_offset,
+      );
       if (seen.has(key)) continue;
       seen.add(key);
       details.push({
@@ -173,7 +547,7 @@ export class DocumentsService {
         fragment_index: -1,
         start_offset: prior.start_offset,
         end_offset: prior.end_offset,
-        section_path: prior.section_path,
+        section_path: [],
         kind: "paragraph",
         text: `[from ${prior.document_title}] ${prior.text}`,
         categories: [],
@@ -198,194 +572,195 @@ export class DocumentsService {
     };
   }
 
-  async hasDocument(documentId: string): Promise<boolean> {
-    return this.repository.exists(documentId);
-  }
-
-  async mergeDocument(workingDir: string): Promise<MergeDocumentResult> {
-    const output = await this.readOutputFile(join(workingDir, "output.json"));
-    const document = output.document;
-    const parentMap = buildParentMap(output.potential_topics.topics);
-
-    if (!(await this.repository.exists(document.id))) {
-      await this.repository.insertDocument(document);
-    }
-
-    let topicsAdded = 0;
-    let topicsUpdated = 0;
-    for (const topic of output.topics) {
-      const fields = {
-        title: topic.title,
-        short_summary: topic.short_summary,
-        long_summary: topic.long_summary,
-      };
-      if (await this.topics.exists(topic.id)) {
-        await this.topics.updateTopicFields(topic.id, fields);
-        topicsUpdated++;
-      } else {
-        await this.topics.insertTopicNode({ id: topic.id, ...fields });
-        topicsAdded++;
-      }
-    }
-
-    for (const topic of output.topics) {
-      if (!parentMap.has(topic.id)) continue;
-      const parentId = parentMap.get(topic.id) ?? null;
-      await this.topics.deleteParentEdge(topic.id);
-      if (parentId !== null) {
-        await this.topics.linkSubtopic(parentId, topic.id);
-      }
-    }
-
-    for (const topic of output.topics) {
-      for (const item of topic.items) {
-        switch (item.type) {
-          case "document_fragment_ref": {
-            const fragId = await this.repository.ensureFragmentNode(
-              item.document_id,
-              item.start_offset,
-              item.end_offset,
-            );
-            await this.topics.linkToDocumentFragment(topic.id, fragId);
-            break;
-          }
-          case "idea_unit_ref":
-            break;
-          default:
-            assertNever(item);
-        }
-      }
-    }
-
-    let decisionsAdded = 0;
-    for (const topic of output.topics) {
-      for (const decision of topic.decisions) {
-        await this.decisions.addDecision(topic.id, decision);
-        decisionsAdded++;
-      }
-    }
-
-    let attachmentsApplied = 0;
-    for (const attachment of output.decision_attachments) {
-      const items = attachmentToItems(attachment, output);
-      if (items.length === 0) continue;
-      const slot = attachmentToSlot(attachment);
-      await this.decisions.addItemsToDecisionSlot(
-        attachment.decision_id,
-        slot,
-        items,
+  private async collectLinkedDecisions(
+    documentId: string,
+  ): Promise<DocumentDecisionRef[]> {
+    const stored = await this.decisionsRepository.listAll();
+    const out: DocumentDecisionRef[] = [];
+    for (const decision of stored) {
+      const path = this.decisionsRepository.canonicalPath(
+        this.projectDir,
+        decision.id,
       );
-      attachmentsApplied++;
+      if (!this.decisionsRepository.fileExists(path)) continue;
+      const file = this.decisionsRepository.readFile(path);
+      if (!fileReferencesDocument(file.referenced_items, documentId)) continue;
+      out.push({
+        decision_id: decision.id,
+        title: decision.title,
+        status: decision.status,
+      });
     }
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return out;
+  }
 
-    const splitResult = splitDocument(output, {
-      projectDir: this.projectDir,
-      sourceMdPath: documentMdPath(this.projectDir, document.id),
-    });
-    const allPaths = [
-      splitResult.md_path,
-      splitResult.sidecar_path,
-      ...splitResult.topic_paths,
-      ...splitResult.decision_paths,
-    ];
-    for (const path of allPaths) {
-      await this.fileSync.registerWritten(path);
+  private async collectLinkedTopics(
+    documentId: string,
+  ): Promise<DocumentTopicRef[]> {
+    const stored = await this.topicsRepository.listAll();
+    const out: DocumentTopicRef[] = [];
+    for (const topic of stored) {
+      const path = this.topicsRepository.canonicalPath(
+        this.projectDir,
+        topic.id,
+      );
+      if (!this.topicsRepository.fileExists(path)) continue;
+      const file = this.topicsRepository.readFile(path);
+      if (!fileReferencesDocument(file.items, documentId)) continue;
+      out.push({ topic_id: topic.id, title: topic.title });
     }
-    await this.staleness.refreshStaleFlags();
-    const filesWritten =
-      2 + splitResult.topic_paths.length + splitResult.decision_paths.length;
-
-    this.logger.log(
-      `Merged document ${document.id}: +${topicsAdded} topics, ~${topicsUpdated} updated, +${decisionsAdded} decisions, +${attachmentsApplied} attachments, ${filesWritten} files written under noesis/`,
-    );
-
-    return {
-      document_id: document.id,
-      topics_added: topicsAdded,
-      topics_updated: topicsUpdated,
-      decisions_added: decisionsAdded,
-      decision_attachments: attachmentsApplied,
-      files_written: filesWritten,
-    };
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return out;
   }
 
-  private async readOutputFile(
-    path: string,
-  ): Promise<AnalyzeDesignDraftOutput> {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw);
-    return AnalyzeDesignDraftOutputSchema.parse(parsed);
-  }
-
-  private async readDocumentFile(path: string): Promise<Document> {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw);
-    return DocumentSchema.parse(parsed);
-  }
-}
-
-function attachmentToItems(
-  attachment: AttachToDecision,
-  output: AnalyzeDesignDraftOutput,
-): TopicItem[] {
-  const fragmentMap = buildFragmentMap(output.fragments);
-  const items: TopicItem[] = [];
-  for (const fi of attachment.fragment_indices) {
-    const fragment = fragmentMap.get(fi);
-    if (fragment === undefined) continue;
-    items.push({
-      type: "document_fragment_ref",
-      document_id: output.document.id,
-      start_offset: fragment.start_offset,
-      end_offset: fragment.end_offset,
-    });
-  }
-  return items;
-}
-
-function attachmentToSlot(attachment: AttachToDecision): DecisionSupportSlot {
-  switch (attachment.slot) {
-    case "context":
-    case "decision":
-      return { slot: attachment.slot };
-    case "alternative":
-      if (attachment.alternative_index === null) {
-        throw new Error(
-          `Attachment to decision ${attachment.decision_id}: alternative_index is required when slot=alternative`,
-        );
+  private async findPriorDocumentFragments(
+    topicId: string,
+    excludeDocumentId: string,
+  ): Promise<
+    Array<{
+      document_id: string;
+      document_title: string;
+      start_offset: number;
+      end_offset: number;
+      text: string;
+    }>
+  > {
+    const path = this.topicsRepository.canonicalPath(this.projectDir, topicId);
+    if (!this.topicsRepository.fileExists(path)) return [];
+    const file = this.topicsRepository.readFile(path);
+    const rangesByDocument = new Map<
+      string,
+      Array<{ start: number; end: number }>
+    >();
+    for (const item of file.items) {
+      if (item.type !== "document_fragment_ref") continue;
+      if (item.document_id === excludeDocumentId) continue;
+      const list = rangesByDocument.get(item.document_id) ?? [];
+      list.push({ start: item.start_offset, end: item.end_offset });
+      rangesByDocument.set(item.document_id, list);
+    }
+    if (rangesByDocument.size === 0) return [];
+    const heads = await this.repository.listByIds([...rangesByDocument.keys()]);
+    const out: Array<{
+      document_id: string;
+      document_title: string;
+      start_offset: number;
+      end_offset: number;
+      text: string;
+    }> = [];
+    for (const head of heads) {
+      const content = (await this.repository.readContent(head.id)) ?? "";
+      const ranges = rangesByDocument.get(head.id) ?? [];
+      for (const { start, end } of ranges) {
+        out.push({
+          document_id: head.id,
+          document_title: head.title,
+          start_offset: start,
+          end_offset: end,
+          text: content.slice(start, end).trim(),
+        });
       }
-      return {
-        slot: "alternative",
-        alternative_index: attachment.alternative_index,
-      };
-    default:
-      return assertNever(attachment.slot);
+    }
+    out.sort((a, b) => {
+      if (a.document_id !== b.document_id)
+        return a.document_id.localeCompare(b.document_id);
+      return a.start_offset - b.start_offset;
+    });
+    return out;
+  }
+
+  private async loadOutputAsync(
+    outputPath: string,
+  ): Promise<AnalyzeDesignDraftOutput> {
+    return this.loadOutput(outputPath);
   }
 }
 
-function findFragmentByOffsets(
-  fragments: AnalyzeDesignDraftOutput["fragments"],
-  startOffset: number,
-  endOffset: number,
-): number | null {
-  for (const f of fragments) {
-    if (f.start_offset === startOffset && f.end_offset === endOffset) {
-      return f.index;
+function withItemShas(
+  items: ReadonlyArray<TopicItemRefNew>,
+  projectDir: string,
+  cache: Map<string, string>,
+): TopicItemRefNew[] {
+  return items.map((item) => {
+    const key =
+      item.type === "idea_unit_ref"
+        ? `conversation:${item.conversation_id}`
+        : `document:${item.document_id}`;
+    let sha = cache.get(key);
+    if (sha === undefined) {
+      const path =
+        item.type === "idea_unit_ref"
+          ? conversationJsonPath(projectDir, item.conversation_id)
+          : documentJsonPath(projectDir, item.document_id);
+      if (existsSync(path)) {
+        sha = computeContentSha(readFileSync(path));
+        cache.set(key, sha);
+      }
+    }
+    return { ...item, source_sha: sha ?? item.source_sha };
+  });
+}
+
+function mergeItems(prev: TopicItemRefNew[], next: TopicItemRefNew[]): TopicItemRefNew[] {
+  const seen = new Set<string>();
+  const out: TopicItemRefNew[] = [];
+  for (const list of [prev, next]) {
+    for (const item of list) {
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
     }
   }
-  return null;
+  return out;
+}
+
+function itemKey(item: TopicItemRefNew): string {
+  if (item.type === "idea_unit_ref") {
+    return `iu:${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
+  }
+  return `doc:${item.document_id}:${item.start_offset}:${item.end_offset}`;
+}
+
+function readTopicIfExists(absPath: string): TopicFileNew | null {
+  if (!existsSync(absPath)) return null;
+  try {
+    return TopicFileNewSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+
+function readDecisionIfExists(absPath: string): DecisionFileNew | null {
+  if (!existsSync(absPath)) return null;
+  try {
+    return DecisionFileNewSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+
+function inferDocumentIdFromPath(absPath: string): string | null {
+  const match = /\/documents\/([^/]+)\.json$/.exec(absPath);
+  return match === null ? null : match[1];
+}
+
+function fileReferencesDocument(
+  items: TopicItemRefNew[],
+  documentId: string,
+): boolean {
+  for (const item of items) {
+    if (
+      item.type === "document_fragment_ref" &&
+      item.document_id === documentId
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function fragmentKey(documentId: string, start: number, end: number): string {
   return `${documentId}:${start}:${end}`;
-}
-
-function buildParentMap(
-  potentialTopics: AnalyzeDesignDraftOutput["potential_topics"]["topics"],
-): Map<string, string | null> {
-  const map = new Map<string, string | null>();
-  for (const t of potentialTopics) {
-    if (t.is_new) map.set(t.id, t.parent_id);
-  }
-  return map;
 }

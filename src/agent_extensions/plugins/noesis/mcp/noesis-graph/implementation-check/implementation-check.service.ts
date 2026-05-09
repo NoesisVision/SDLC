@@ -62,7 +62,14 @@ export class ImplementationCheckService {
     }
     const before = await this.readScanFile(beforeScanPath);
     const after = await this.readScanFile(afterScanPath);
-    return compareImplementation({ before, after, doc });
+    // The static-comparison module reads the structural shape only (names,
+    // hierarchy, behaviours, actors); it predates the per-field _locked fields
+    // on the new schema, so we narrow to the legacy shape at this boundary.
+    return compareImplementation({
+      before,
+      after,
+      doc: doc as unknown as Parameters<typeof compareImplementation>[0]["doc"],
+    });
   }
 
   private async readScanFile(path: string): Promise<DomainModelTree> {

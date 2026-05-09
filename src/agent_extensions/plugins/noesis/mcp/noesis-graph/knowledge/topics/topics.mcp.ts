@@ -1,40 +1,21 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { TopicItemSchema } from "../../../../shared-contracts/topics.js";
-import type { IndexerService } from "../../indexer/indexer.service.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
 } from "../../mcp-tool-output.js";
-import type {
-  TopicDetail,
-  TopicItemEntry,
-  TopicOverview,
-} from "./topics.repository.js";
-import { TopicsService, type TopicSummaryWithPath } from "./topics.service.js";
-
-const TopicFields = {
-  id: z
-    .string()
-    .optional()
-    .describe("Topic UUID. If omitted, one is generated."),
-  title: z.string().describe("Short topic title."),
-  short_summary: z.string().describe("One-sentence summary of the topic."),
-  long_summary: z
-    .string()
-    .optional()
-    .describe("Longer summary. Defaults to empty string."),
-};
+import {
+  TopicsService,
+  type TopicDetail,
+  type TopicItemEntry,
+  type TopicOverview,
+  type TopicSummaryWithPath,
+} from "./topics.service.js";
 
 export function registerTopicsTools(
   mcp: McpServer,
   topics: TopicsService,
-  indexer: IndexerService,
 ): void {
-  registerAddTopic(mcp, topics, indexer);
-  registerAddSubtopic(mcp, topics, indexer);
-  registerReparentTopic(mcp, topics, indexer);
-  registerAddItemsToTopic(mcp, topics, indexer);
   registerGenerateTopicIds(mcp, topics);
   registerListTopics(mcp, topics);
   registerReadTopic(mcp, topics);
@@ -64,83 +45,6 @@ function registerGenerateTopicIds(
     },
     async ({ count }) =>
       runInlineJsonTool(() => Promise.resolve(topics.generateTopicIds(count))),
-  );
-}
-
-function registerAddItemsToTopic(
-  mcp: McpServer,
-  topics: TopicsService,
-  indexer: IndexerService,
-): void {
-  mcp.registerTool(
-    "add_items_to_topic",
-    {
-      description:
-        "Attach IdeaUnits or DocumentFragments to a Topic. Referenced IdeaUnits must already exist; " +
-        "DocumentFragment nodes are created on demand as long as the parent Document exists.",
-      inputSchema: {
-        topic_id: z.string().describe("Id of the target Topic."),
-        items: z
-          .array(TopicItemSchema)
-          .describe("IdeaUnitRef or DocumentFragmentRef references to attach."),
-      },
-    },
-    async ({ topic_id, items }) =>
-      runInlineJsonTool(() =>
-        indexer.gateWrite(() => topics.addItemsToTopic(topic_id, items)),
-      ),
-  );
-}
-
-function registerAddSubtopic(
-  mcp: McpServer,
-  topics: TopicsService,
-  indexer: IndexerService,
-): void {
-  mcp.registerTool(
-    "add_subtopic",
-    {
-      description:
-        "Add a new Topic as a subtopic under an existing parent Topic. " +
-        "Fails if the parent does not exist.",
-      inputSchema: {
-        parent_topic_id: z.string().describe("Id of the parent Topic."),
-        ...TopicFields,
-      },
-    },
-    async ({ parent_topic_id, id, title, short_summary, long_summary }) =>
-      runInlineJsonTool(() =>
-        indexer.gateWrite(() =>
-          topics.addSubtopic(parent_topic_id, {
-            id,
-            title,
-            short_summary,
-            long_summary,
-          }),
-        ),
-      ),
-  );
-}
-
-function registerAddTopic(
-  mcp: McpServer,
-  topics: TopicsService,
-  indexer: IndexerService,
-): void {
-  mcp.registerTool(
-    "add_topic",
-    {
-      description:
-        "Add a new top-level Topic to the knowledge graph. " +
-        "Use add_subtopic to attach a topic under a parent.",
-      inputSchema: TopicFields,
-    },
-    async ({ id, title, short_summary, long_summary }) =>
-      runInlineJsonTool(() =>
-        indexer.gateWrite(() =>
-          topics.addTopic({ id, title, short_summary, long_summary }),
-        ),
-      ),
   );
 }
 
@@ -189,34 +93,6 @@ function registerReadTopic(mcp: McpServer, topics: TopicsService): void {
         "read_topic",
         () => topics.readTopic(topic_id),
         (topic) => formatTopicDetail(topic, topic_id),
-      ),
-  );
-}
-
-function registerReparentTopic(
-  mcp: McpServer,
-  topics: TopicsService,
-  indexer: IndexerService,
-): void {
-  mcp.registerTool(
-    "reparent_topic",
-    {
-      description:
-        "Move a Topic under a new parent Topic, or make it top-level by passing null. " +
-        "Fails if the topic or target parent does not exist.",
-      inputSchema: {
-        topic_id: z.string().describe("Id of the Topic to move."),
-        new_parent_topic_id: z
-          .string()
-          .nullable()
-          .describe("Id of the new parent Topic, or null to make it top-level."),
-      },
-    },
-    async ({ topic_id, new_parent_topic_id }) =>
-      runInlineJsonTool(() =>
-        indexer.gateWrite(() =>
-          topics.reparentTopic(topic_id, new_parent_topic_id),
-        ),
       ),
   );
 }
@@ -289,8 +165,7 @@ function registerListTopicItemsSince(
       runFileOutputTool(
         "list_topic_items_since",
         () => topics.listTopicItemsSince(topic_id, since ?? null),
-        (entries) =>
-          formatTopicItemsSince(topic_id, since ?? null, entries),
+        (entries) => formatTopicItemsSince(topic_id, since ?? null, entries),
       ),
   );
 }
@@ -303,7 +178,7 @@ function formatTopicDetail(
     return `Topic not found: ${requestedId}`;
   }
   const pathLine = topic.path.length > 0 ? topic.path.join(" / ") : "(root)";
-  const lines = [
+  return [
     `# ${topic.title}`,
     `- **ID:** ${topic.id}`,
     `- **Path:** ${pathLine}`,
@@ -312,17 +187,15 @@ function formatTopicDetail(
     "## Long summary",
     "",
     topic.long_summary || "(empty)",
-  ];
-  return lines.join("\n");
+  ].join("\n");
 }
 
 export function formatTopicList(
   topics: TopicOverview[],
   parentId: string | null,
 ): string {
-  const header = parentId === null
-    ? "# Root topics"
-    : `# Subtopics of ${parentId}`;
+  const header =
+    parentId === null ? "# Root topics" : `# Subtopics of ${parentId}`;
   if (topics.length === 0) {
     return `${header}\n\n(none)`;
   }

@@ -1,267 +1,182 @@
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
+import {
+  DocumentFileNewSchema,
+  type DocumentFileNew,
+} from "../../../../shared-contracts/source-file-schemas.js";
+import {
+  computeFileSha,
+  documentJsonPath,
+  readSidecar,
+  writeSidecar,
+} from "../../../../shared-contracts/source-files.js";
 import { DatabaseService } from "../../database/database.service.js";
-import type { Document } from "../../../../shared-contracts/documents.js";
-import { documentFragmentNodeId } from "./node-ids.js";
 
-const IdRowSchema = z.object({ id: z.string() });
-type IdRow = z.infer<typeof IdRowSchema>;
+const SCHEMA_STATEMENTS = [
+  "CREATE NODE TABLE IF NOT EXISTS Document(" +
+    "id STRING, sha STRING, title STRING, date STRING, content STRING, " +
+    "PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS DocumentFragment(" +
+    "id STRING, document_id STRING, start_offset INT64, end_offset INT64, " +
+    "kind STRING, text STRING, " +
+    "PRIMARY KEY(id))",
+  "CREATE REL TABLE IF NOT EXISTS DOCUMENT_HAS_FRAGMENT(FROM Document TO DocumentFragment)",
+];
 
-const DocumentFragmentJoinRowSchema = z.object({
-  document_id: z.string(),
-  document_title: z.string(),
-  document_content: z.string(),
-  start_offset: z.union([z.number(), z.bigint()]),
-  end_offset: z.union([z.number(), z.bigint()]),
-});
-type DocumentFragmentJoinRow = z.infer<typeof DocumentFragmentJoinRowSchema>;
-
-const DocumentRefRowSchema = z.object({
-  document_id: z.string(),
+const PathRowSchema = z.object({ id: z.string(), sha: z.string() });
+const StoredDocumentRowSchema = z.object({
+  id: z.string(),
+  sha: z.string(),
   title: z.string(),
   date: z.string(),
 });
-type DocumentRefRow = z.infer<typeof DocumentRefRowSchema>;
 
-const TopicRefRowSchema = z.object({
-  topic_id: z.string(),
-  title: z.string(),
-});
-type TopicRefRow = z.infer<typeof TopicRefRowSchema>;
+const ContentRowSchema = z.object({ content: z.string() });
 
-const DecisionRefRowSchema = z.object({
-  decision_id: z.string(),
-  title: z.string(),
-  status: z.string(),
-});
-type DecisionRefRow = z.infer<typeof DecisionRefRowSchema>;
-
-const DocumentFragmentRowSchema = z.object({
-  start_offset: z.union([z.number(), z.bigint()]),
-  end_offset: z.union([z.number(), z.bigint()]),
-  document_content: z.string(),
-});
-type DocumentFragmentRow = z.infer<typeof DocumentFragmentRowSchema>;
-
-export interface DocumentFragmentDetail {
-  document_id: string;
-  document_title: string;
-  start_offset: number;
-  end_offset: number;
-  text: string;
-  section_path: string[];
-}
-
-export interface DocumentRef {
-  document_id: string;
+export interface StoredDocument {
+  id: string;
+  sha: string;
   title: string;
   date: string;
-}
-
-export interface DocumentTopicRow {
-  topic_id: string;
-  title: string;
-}
-
-export interface DocumentDecisionRow {
-  decision_id: string;
-  title: string;
-  status: string;
-}
-
-export interface TopicDocumentFragment {
-  start_offset: number;
-  end_offset: number;
-  text: string;
 }
 
 @Injectable()
 export class DocumentsRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  async ensureFragmentNode(
-    documentId: string,
-    startOffset: number,
-    endOffset: number,
-  ): Promise<string> {
-    await this.requireDocument(documentId);
-    const fragId = documentFragmentNodeId(documentId, startOffset, endOffset);
-    if (await this.fragmentExists(fragId)) {
-      return fragId;
-    }
-    await this.db.query(
-      "CREATE (f:DocumentFragment {id: $id, document_id: $document_id, start_offset: $start_offset, end_offset: $end_offset})",
-      {
-        id: fragId,
-        document_id: documentId,
-        start_offset: startOffset,
-        end_offset: endOffset,
-      },
-    );
-    await this.db.query(
-      "MATCH (d:Document), (f:DocumentFragment) WHERE d.id = $documentId AND f.id = $fragId CREATE (d)-[:DOCUMENT_HAS_FRAGMENT]->(f)",
-      { documentId, fragId },
-    );
-    return fragId;
+  canonicalPath(projectDir: string, documentId: string): string {
+    return documentJsonPath(projectDir, documentId);
   }
 
-  async ensureNotExists(documentId: string): Promise<void> {
-    if (await this.exists(documentId)) {
-      throw new Error(`Document already exists: ${documentId}`);
-    }
+  async delete(documentId: string): Promise<void> {
+    await this.deleteFragments(documentId);
+    await this.db.query(
+      "MATCH (d:Document) WHERE d.id = $id DETACH DELETE d",
+      { id: documentId },
+    );
   }
 
   async exists(documentId: string): Promise<boolean> {
-    const rows = await this.db.query<IdRow>(
+    const rows = await this.db.query<{ id: string }>(
       "MATCH (d:Document) WHERE d.id = $id RETURN d.id AS id LIMIT 1",
       { id: documentId },
     );
     return rows.length > 0;
   }
 
-  async getPriorDocumentFragments(
-    topicId: string,
-    excludeDocumentId: string,
-  ): Promise<DocumentFragmentDetail[]> {
-    const rawRows = await this.db.query<DocumentFragmentJoinRow>(
-      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
-        "WHERE t.id = $topicId AND d.id <> $excludeDocumentId " +
-        "RETURN d.id AS document_id, d.title AS document_title, d.content AS document_content, " +
-        "f.start_offset AS start_offset, f.end_offset AS end_offset " +
-        "ORDER BY d.id, f.start_offset",
-      { topicId, excludeDocumentId },
-    );
-    const rows = z.array(DocumentFragmentJoinRowSchema).parse(rawRows);
-    return rows.map((r) => {
-      const start = Number(r.start_offset);
-      const end = Number(r.end_offset);
-      return {
-        document_id: r.document_id,
-        document_title: r.document_title,
-        start_offset: start,
-        end_offset: end,
-        text: r.document_content.slice(start, end).trim(),
-        section_path: [],
-      };
-    });
+  fileSha(absPath: string): string {
+    return computeFileSha(absPath);
   }
 
-  async listAllDocuments(): Promise<DocumentRef[]> {
-    const rawRows = await this.db.query<DocumentRefRow>(
-      "MATCH (d:Document) " +
-        "RETURN d.id AS document_id, d.title AS title, d.date AS date " +
-        "ORDER BY date DESC",
-    );
-    return z.array(DocumentRefRowSchema).parse(rawRows);
-  }
-
-  async listDecisionsForDocument(
-    documentId: string,
-  ): Promise<DocumentDecisionRow[]> {
-    const seen = new Set<string>();
-    const out: DocumentDecisionRow[] = [];
-    const queries = [
-      "MATCH (d:Decision)-[:CONTEXT_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) " +
-        "WHERE f.document_id = $documentId " +
-        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
-      "MATCH (d:Decision)-[:DECISION_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) " +
-        "WHERE f.document_id = $documentId " +
-        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
-      "MATCH (d:Decision)-[:DECISION_HAS_ALTERNATIVE]->(:AlternativeOption)-[:ALTERNATIVE_SUPPORTED_BY_DOC_FRAGMENT]->(f:DocumentFragment) " +
-        "WHERE f.document_id = $documentId " +
-        "RETURN DISTINCT d.id AS decision_id, d.title AS title, d.status AS status",
-    ];
-    for (const q of queries) {
-      const rawRows = await this.db.query<DecisionRefRow>(q, { documentId });
-      for (const row of z.array(DecisionRefRowSchema).parse(rawRows)) {
-        if (seen.has(row.decision_id)) continue;
-        seen.add(row.decision_id);
-        out.push(row);
-      }
+  async initSchema(): Promise<void> {
+    for (const stmt of SCHEMA_STATEMENTS) {
+      await this.db.query(stmt);
     }
-    out.sort((a, b) => a.title.localeCompare(b.title));
-    return out;
   }
 
-  async listTopicsForDocument(documentId: string): Promise<DocumentTopicRow[]> {
-    const rawRows = await this.db.query<TopicRefRow>(
-      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment) " +
-        "WHERE f.document_id = $documentId " +
-        "RETURN DISTINCT t.id AS topic_id, t.title AS title " +
-        "ORDER BY title",
-      { documentId },
+  async listAll(): Promise<StoredDocument[]> {
+    const rows = await this.db.query<unknown>(
+      "MATCH (d:Document) RETURN d.id AS id, d.sha AS sha, d.title AS title, d.date AS date " +
+        "ORDER BY d.id",
     );
-    return z.array(TopicRefRowSchema).parse(rawRows);
+    return z.array(StoredDocumentRowSchema).parse(rows);
   }
 
-  async readDocumentHead(documentId: string): Promise<DocumentRef | null> {
-    const rawRows = await this.db.query<DocumentRefRow>(
-      "MATCH (d:Document) WHERE d.id = $id " +
-        "RETURN d.id AS document_id, d.title AS title, d.date AS date LIMIT 1",
+  async listByIds(ids: string[]): Promise<StoredDocument[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db.query<unknown>(
+      "MATCH (d:Document) WHERE d.id IN $ids " +
+        "RETURN d.id AS id, d.sha AS sha, d.title AS title, d.date AS date " +
+        "ORDER BY d.date",
+      { ids },
+    );
+    return z.array(StoredDocumentRowSchema).parse(rows);
+  }
+
+  async readContent(documentId: string): Promise<string | null> {
+    const rows = await this.db.query<unknown>(
+      "MATCH (d:Document) WHERE d.id = $id RETURN d.content AS content LIMIT 1",
       { id: documentId },
     );
-    if (rawRows.length === 0) return null;
-    return DocumentRefRowSchema.parse(rawRows[0]);
+    if (rows.length === 0) return null;
+    return ContentRowSchema.parse(rows[0]).content;
   }
 
-  async listDocumentsForTopic(topicId: string): Promise<DocumentRef[]> {
-    const rawRows = await this.db.query<DocumentRefRow>(
-      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
-        "WHERE t.id = $topicId " +
-        "RETURN DISTINCT d.id AS document_id, d.title AS title, d.date AS date " +
-        "ORDER BY date DESC",
-      { topicId },
+  async listAllStoredFiles(
+    projectDir: string,
+  ): Promise<Array<{ id: string; path: string; sha: string }>> {
+    const rows = await this.db.query<unknown>(
+      "MATCH (d:Document) RETURN d.id AS id, d.sha AS sha",
     );
-    return z.array(DocumentRefRowSchema).parse(rawRows);
+    return z.array(PathRowSchema).parse(rows).map((r) => ({
+      id: r.id,
+      sha: r.sha,
+      path: documentJsonPath(projectDir, r.id),
+    }));
   }
 
-  async listFragmentsForTopicAndDocument(
-    topicId: string,
-    documentId: string,
-  ): Promise<TopicDocumentFragment[]> {
-    const rawRows = await this.db.query<DocumentFragmentRow>(
-      "MATCH (t:Topic)-[:TOPIC_HAS_DOCUMENT_FRAGMENT]->(f:DocumentFragment)<-[:DOCUMENT_HAS_FRAGMENT]-(d:Document) " +
-        "WHERE t.id = $topicId AND d.id = $documentId " +
-        "RETURN f.start_offset AS start_offset, f.end_offset AS end_offset, d.content AS document_content " +
-        "ORDER BY f.start_offset",
-      { topicId, documentId },
+  async read(documentId: string): Promise<StoredDocument | null> {
+    const rows = await this.db.query<unknown>(
+      "MATCH (d:Document) WHERE d.id = $id RETURN " +
+        "d.id AS id, d.sha AS sha, d.title AS title, d.date AS date LIMIT 1",
+      { id: documentId },
     );
-    const rows = z.array(DocumentFragmentRowSchema).parse(rawRows);
-    return rows.map((r) => {
-      const start = Number(r.start_offset);
-      const end = Number(r.end_offset);
-      return {
-        start_offset: start,
-        end_offset: end,
-        text: r.document_content.slice(start, end),
-      };
-    });
+    if (rows.length === 0) return null;
+    return StoredDocumentRowSchema.parse(rows[0]);
   }
 
-  async insertDocument(document: Document): Promise<void> {
-    await this.ensureNotExists(document.id);
+  readFile(absPath: string): DocumentFileNew {
+    return readSidecar(absPath, DocumentFileNewSchema);
+  }
+
+  async upsert(file: DocumentFileNew, sha: string): Promise<void> {
     await this.db.query(
-      "CREATE (d:Document {id: $id, title: $title, date: $date, content: $content})",
+      "MERGE (d:Document {id: $id}) SET " +
+        "d.sha = $sha, d.title = $title, d.date = $date, d.content = $content",
       {
-        id: document.id,
-        title: document.title,
-        date: document.date,
-        content: document.content,
+        id: file.document_id,
+        sha,
+        title: file.title,
+        date: file.date,
+        content: file.content,
       },
     );
+    await this.replaceFragments(file.document_id, file.fragments);
   }
 
-  async requireDocument(documentId: string): Promise<void> {
-    if (!(await this.exists(documentId))) {
-      throw new Error(`Document not found: ${documentId}`);
+  writeFile(absPath: string, file: DocumentFileNew): void {
+    writeSidecar(absPath, file, DocumentFileNewSchema);
+  }
+
+  private async replaceFragments(
+    documentId: string,
+    fragments: DocumentFileNew["fragments"],
+  ): Promise<void> {
+    await this.deleteFragments(documentId);
+    for (const frag of fragments) {
+      const fragId = `${documentId}|F${frag.start_offset}-${frag.end_offset}`;
+      await this.db.query(
+        "CREATE (f:DocumentFragment {id: $id, document_id: $did, start_offset: $startOffset, end_offset: $endOffset, kind: $kind, text: $text})",
+        {
+          id: fragId,
+          did: documentId,
+          startOffset: frag.start_offset,
+          endOffset: frag.end_offset,
+          kind: frag.kind,
+          text: frag.text,
+        },
+      );
+      await this.db.query(
+        "MATCH (d:Document), (f:DocumentFragment) WHERE d.id = $did AND f.id = $fid CREATE (d)-[:DOCUMENT_HAS_FRAGMENT]->(f)",
+        { did: documentId, fid: fragId },
+      );
     }
   }
 
-  private async fragmentExists(fragId: string): Promise<boolean> {
-    const rows = await this.db.query<IdRow>(
-      "MATCH (f:DocumentFragment) WHERE f.id = $id RETURN f.id AS id LIMIT 1",
-      { id: fragId },
+  private async deleteFragments(documentId: string): Promise<void> {
+    await this.db.query(
+      "MATCH (f:DocumentFragment) WHERE f.document_id = $did DETACH DELETE f",
+      { did: documentId },
     );
-    return rows.length > 0;
   }
 }

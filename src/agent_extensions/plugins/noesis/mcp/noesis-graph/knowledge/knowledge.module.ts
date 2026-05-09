@@ -1,6 +1,5 @@
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../database/database.module.js";
-import { IndexerModule } from "../indexer/indexer.module.js";
 import { ConversationsController } from "./conversations/conversations.controller.js";
 import { ConversationsRepository } from "./conversations/conversations.repository.js";
 import { ConversationsService } from "./conversations/conversations.service.js";
@@ -17,7 +16,7 @@ import { TopicsRepository } from "./topics/topics.repository.js";
 import { TopicsService } from "./topics/topics.service.js";
 
 @Module({
-  imports: [DatabaseModule, SchemaModule, DesignDocsModule, IndexerModule],
+  imports: [DatabaseModule, SchemaModule, DesignDocsModule],
   controllers: [
     TopicsController,
     DecisionsController,
@@ -36,9 +35,13 @@ import { TopicsService } from "./topics/topics.service.js";
   ],
   exports: [
     TopicsService,
+    TopicsRepository,
     DecisionsService,
+    DecisionsRepository,
     ConversationsService,
+    ConversationsRepository,
     DocumentsService,
+    DocumentsRepository,
     SchemaModule,
     DesignDocsModule,
   ],

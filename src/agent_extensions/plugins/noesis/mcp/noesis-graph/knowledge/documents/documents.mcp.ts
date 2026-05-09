@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { IndexerService } from "../../indexer/indexer.service.js";
+import { join } from "path";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -13,39 +13,11 @@ import {
 export function registerDocumentsTools(
   mcp: McpServer,
   documents: DocumentsService,
-  indexer: IndexerService,
 ): void {
-  registerAddDocument(mcp, documents, indexer);
   registerHasDocument(mcp, documents);
   registerGetTopicForDocumentReview(mcp, documents);
   registerListUnreviewedTopicsForDocument(mcp, documents);
-  registerMergeDocument(mcp, documents, indexer);
-}
-
-function registerAddDocument(
-  mcp: McpServer,
-  documents: DocumentsService,
-  indexer: IndexerService,
-): void {
-  mcp.registerTool(
-    "add_document",
-    {
-      description:
-        "Add a Document to the knowledge graph from a JSON file. " +
-        "The document's content is stored on the Document node. " +
-        "DocumentFragment nodes are created on demand when items reference this document. " +
-        "Fails if a document with the same id already exists.",
-      inputSchema: {
-        path: z
-          .string()
-          .describe("Absolute path to a JSON file matching DocumentSchema."),
-      },
-    },
-    async ({ path }) =>
-      runInlineJsonTool(() =>
-        indexer.gateWrite(() => documents.addDocumentFromFile(path)),
-      ),
-  );
+  registerMergeDocument(mcp, documents);
 }
 
 function registerGetTopicForDocumentReview(
@@ -92,11 +64,8 @@ function registerListUnreviewedTopicsForDocument(
     {
       description:
         "Batch variant of `get_topic_for_document_review` for documents with many topics. " +
-        "Returns every unreviewed topic's enriched view (current + prior-document fragments, with `[from <doc>]` markers) " +
-        "in one Markdown bundle separated by `<!-- topic_id: ... -->` headers. " +
-        "Writes the bundle to a tmp file and returns the file path — read it with the Read tool. " +
-        "Use this when iterating per-topic would require >10 round-trips. " +
-        "Per-topic verification is still mandatory: confirm prior-document fragments (if any) were folded into each summary.",
+        "Returns every unreviewed topic's enriched view in one Markdown bundle. " +
+        "Writes the bundle to a tmp file and returns the file path — read it with the Read tool.",
       inputSchema: {
         output_path: z
           .string()
@@ -138,30 +107,39 @@ function registerHasDocument(
 function registerMergeDocument(
   mcp: McpServer,
   documents: DocumentsService,
-  indexer: IndexerService,
 ): void {
   mcp.registerTool(
     "merge_document",
     {
       description:
         "Merge a completed document analysis into the knowledge graph. Reads " +
-        "`<working_dir>/output.json` (matching AnalyzeDesignDraftOutput: " +
-        "`{ document, fragments, section_tree, topics, decision_attachments, potential_topics, design_doc_id?, design_doc_title? }`). " +
-        "Persists the Document, upserts referenced Topics with parent linking, " +
-        "attaches document-fragment items, creates Decisions, and applies attachments to existing Decisions. " +
-        "Design Docs are persisted via the separate `save_design_doc` tool. " +
-        "Returns inline JSON with counts.",
+        "`<working_dir>/output.json` and the optional design-doc working file. " +
+        "Splits the analysis into source files under `<projectDir>/noesis/` and projects them to the graph. " +
+        "Returns inline JSON with the canonical paths written.",
       inputSchema: {
         working_dir: z
           .string()
           .describe(
             "Absolute path to the analysis working directory containing output.json.",
           ),
+        design_doc_filename: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            "Optional filename (within the working directory) of the design-doc JSON.",
+          ),
       },
     },
-    async ({ working_dir }) =>
+    async ({ working_dir, design_doc_filename }) =>
       runInlineJsonTool(() =>
-        indexer.gateWrite(() => documents.mergeDocument(working_dir)),
+        documents.uploadAnalysis({
+          outputJsonPath: join(working_dir, "output.json"),
+          designDocJsonPath:
+            design_doc_filename === null || design_doc_filename === undefined
+              ? null
+              : join(working_dir, design_doc_filename),
+        }),
       ),
   );
 }
@@ -186,10 +164,7 @@ function formatTopicsForDocumentReviewBundle(
       "(no unreviewed topics — Step 5 is complete)",
     ].join("\n");
   }
-  const parts: string[] = [
-    `<!-- num_topics: ${reviews.length} -->`,
-    "",
-  ];
+  const parts: string[] = [`<!-- num_topics: ${reviews.length} -->`, ""];
   for (const review of reviews) {
     parts.push(formatTopicForDocumentReview(review));
     parts.push("");

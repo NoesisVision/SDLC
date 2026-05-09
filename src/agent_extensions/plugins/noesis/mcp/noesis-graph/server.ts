@@ -23,7 +23,6 @@ import { DesignDocsService } from "./knowledge/design-docs/design-docs.service.j
 import { registerDesignDocsTools } from "./knowledge/design-docs/design-docs.mcp.js";
 import { DocumentsService } from "./knowledge/documents/documents.service.js";
 import { registerDocumentsTools } from "./knowledge/documents/documents.mcp.js";
-import { IndexerService } from "./indexer/indexer.service.js";
 import { TopicsService } from "./knowledge/topics/topics.service.js";
 import { registerTopicsTools } from "./knowledge/topics/topics.mcp.js";
 import { ImplementationCheckService } from "./implementation-check/implementation-check.service.js";
@@ -71,14 +70,12 @@ export async function startServer(): Promise<void> {
     app.enableShutdownHooks();
     await app.listen(0);
 
-    const indexer = app.get(IndexerService);
-
     registerScannerTools(mcp, app.get(ScannerService), app.get(InvocationsService));
-    registerTopicsTools(mcp, app.get(TopicsService), indexer);
-    registerDecisionsTools(mcp, app.get(DecisionsService), indexer);
-    registerConversationsTools(mcp, app.get(ConversationsService), indexer);
-    registerDocumentsTools(mcp, app.get(DocumentsService), indexer);
-    registerDesignDocsTools(mcp, app.get(DesignDocsService), indexer);
+    registerTopicsTools(mcp, app.get(TopicsService));
+    registerDecisionsTools(mcp, app.get(DecisionsService));
+    registerConversationsTools(mcp, app.get(ConversationsService));
+    registerDocumentsTools(mcp, app.get(DocumentsService));
+    registerDesignDocsTools(mcp, app.get(DesignDocsService));
     registerImplementationCheckTools(mcp, app.get(ImplementationCheckService));
     logger.log("MCP tools registered", "Bootstrap");
 

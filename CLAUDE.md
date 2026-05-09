@@ -50,6 +50,16 @@
 - Asserts on data read from the DB compare whole rows (or the full set of relevant fields). Presence/count helpers (`countNodes`, `countRels`, `toHaveLength`) and single-field projections (`.map(r => r.id)`) are acceptable only as **additional** sanity checks, never as the sole assertion.
 - Reuse seed data from `dev-seed.ts` and shared test helpers under `tests/helpers/` (e.g. a `sampleConversation()` fixture builder, a `setupKnowledgeTests()` lifecycle wrapper) instead of constructing fresh fixtures or copy-pasting `beforeAll` / `afterAll` / `beforeEach` blocks per test.
 
+## Dev seed coverage
+
+Every model change MUST be reflected in `dev-seed.ts` so that, after seeding, the fixture set exercises every shape a consumer might encounter:
+
+- **Optional / nullable fields**: at least one fixture has the field set to `null` (for nullable) **or** omits it (for optional), and at least one has it populated. The "null/missing" variant lives alongside the populated one in the same domain, named so its purpose is obvious (e.g. `behaviourMinimal()` next to `behaviourRich()`).
+- **ChangeSet shapes** (`{ added, modified, removed }`): at least one fixture has each slot non-empty somewhere — `added`, `modified`, AND `removed`. A green-field doc with only `added` is not enough on its own; pair it with a follow-up "diff" fixture that exercises modify and remove. This applies to every ChangeSet level (bounded contexts, modules, building blocks, behaviours, rules, scenarios, quality attributes, properties, and string change-sets such as a behaviour's `input`/`output`/`usedBuildingBlocks`).
+- **Discriminated unions and enums**: each variant / enum value is represented at least once.
+
+Apply transitively: a new optional field on a nested type (e.g. on `DesignedBehaviour`) requires a fixture variant at the level where that type is constructed, not only at the top-level file. A model change that ships without the matching fixture update is an incomplete change.
+
 ## UI verification
 
 1. Every UI change MUST be verified in a real browser via the **Playwright MCP** server (`.mcp.json`) before reporting the task as complete. Type checks alone are not sufficient.

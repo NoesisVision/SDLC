@@ -1,49 +1,86 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { readFile } from "fs/promises";
-import { join } from "path";
+import { Inject, Injectable } from "@nestjs/common";
+import { existsSync, readFileSync, rmSync } from "fs";
 import {
-  ConversationSchema,
   buildTurnMap,
   formatEnrichedTopicMarkdown,
   isIrrelevant,
   resolveIdeaUnitDetail,
-  type Conversation,
   type EnrichedSubtopic,
   type EnrichedTopic,
   type IdeaUnitDetail,
   type IdeaUnitRef,
 } from "../../../../shared-contracts/conversation.js";
-import { assertNever } from "../../../../shared-contracts/assert-never.js";
 import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
 } from "../../../../shared-contracts/skills/analyze-conversation/output.js";
-import { conversationMdPath } from "../../../../shared-contracts/source-files.js";
+import {
+  TopicFileNewSchema,
+  type ConversationFileNew,
+  type DecisionFileNew,
+  type TopicFileNew,
+  type TopicItemRefNew,
+} from "../../../../shared-contracts/source-file-schemas.js";
+import {
+  computeContentSha,
+  computeFileSha,
+  conversationJsonPath,
+  conversationMdPath,
+  decisionJsonPath,
+  documentJsonPath,
+  ensureNoesisLayout,
+  stampIdLine,
+  topicJsonPath,
+} from "../../../../shared-contracts/source-files.js";
 import type {
+  ConversationDecisionRef,
   ConversationDetailData,
+  ConversationListItem,
   ConversationsPageData,
+  ConversationTopicRef,
 } from "../../ui-contracts/conversations/conversations-data.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
-import { splitConversation } from "../../file-sync/conversation-splitter.js";
-import { FileSyncService } from "../../file-sync/file-sync.service.js";
-import { StalenessService } from "../../file-sync/staleness.service.js";
-import { DecisionsService } from "../decisions/decisions.service.js";
-import { DocumentsRepository } from "../documents/documents.repository.js";
+import { DecisionsRepository } from "../decisions/decisions.repository.js";
+import {
+  confirmedKey,
+  detectDecisionConflicts,
+  detectTopicConflicts,
+  LockedFieldsBlockedError,
+  resolveDecisionLockedFields,
+  resolveTopicLockedFields,
+  type ConfirmedEdit,
+} from "../locks.js";
 import { TopicsRepository } from "../topics/topics.repository.js";
 import { ConversationsRepository } from "./conversations.repository.js";
-import { ideaUnitNodeId } from "./node-ids.js";
 import {
   validateAnalyzeConversationOutput,
   type GraphLookup,
   type ValidationResult,
 } from "./validate-output.js";
 
-export interface MergeConversationResult {
+export {
+  LockedFieldsBlockedError,
+  type ConfirmedEdit,
+  type DecisionLockedField,
+  type TopicLockedField,
+} from "../locks.js";
+
+export interface ConversationAnalysisOutput {
+  outputJsonPath: string;
+  cleanedMdPath: string;
+  confirmed_edits?: ConfirmedEdit[];
+}
+
+export interface UploadConversationAnalysisResult {
   conversation_id: string;
-  topics_added: number;
-  topics_updated: number;
-  decisions_added: number;
-  files_written: number;
+  topic_paths: string[];
+  decision_paths: string[];
+  cleared_locks: ConfirmedEdit[];
+}
+
+export interface IndexFileOutcome {
+  status: "indexed" | "unchanged";
+  conversation_id: string;
 }
 
 export interface ReviewBundle {
@@ -54,46 +91,38 @@ export interface ReviewBundle {
 
 @Injectable()
 export class ConversationsService {
-  private readonly logger = new Logger(ConversationsService.name);
-
   constructor(
-    private readonly repository: ConversationsRepository,
-    private readonly topics: TopicsRepository,
-    private readonly documents: DocumentsRepository,
-    private readonly decisions: DecisionsService,
-    private readonly fileSync: FileSyncService,
-    private readonly staleness: StalenessService,
     @Inject(PROJECT_DIR) private readonly projectDir: string,
+    private readonly repository: ConversationsRepository,
+    private readonly topicsRepository: TopicsRepository,
+    private readonly decisionsRepository: DecisionsRepository,
   ) {}
 
-  async addConversationFromFile(path: string): Promise<{
-    conversation_id: string;
-    turns: number;
-    idea_units: number;
-  }> {
-    const conversation = await this.readConversationFile(path);
-    await this.repository.insertConversation(conversation);
-    const ideaUnits = countIdeaUnits(conversation);
-    this.logger.log(
-      `Added conversation ${conversation.conversation_id} (${conversation.turns.length} turns, ${ideaUnits} idea units)`,
-    );
-    return {
-      conversation_id: conversation.conversation_id,
-      turns: conversation.turns.length,
-      idea_units: ideaUnits,
-    };
+  async deleteForFile(
+    absPath: string,
+  ): Promise<{ conversation_id: string } | null> {
+    const id = inferConversationIdFromPath(absPath);
+    if (id === null) return null;
+    if (!(await this.repository.exists(id))) return null;
+    await this.repository.delete(id);
+    rmSync(conversationJsonPath(this.projectDir, id), { force: true });
+    rmSync(conversationMdPath(this.projectDir, id), { force: true });
+    return { conversation_id: id };
   }
 
   async getConversationDetail(
     conversationId: string,
   ): Promise<ConversationDetailData> {
-    const head = await this.repository.readConversationHead(conversationId);
-    if (head === null) throw new Error(`Conversation not found: ${conversationId}`);
-    const topics = await this.repository.listTopicsForConversation(conversationId);
-    const decisions =
-      await this.repository.listDecisionsForConversation(conversationId);
+    const head = await this.repository.read(conversationId);
+    if (head === null) {
+      throw new Error(`Conversation not found: ${conversationId}`);
+    }
+    const [topics, decisions] = await Promise.all([
+      this.collectLinkedTopics(conversationId),
+      this.collectLinkedDecisions(conversationId),
+    ]);
     return {
-      id: head.conversation_id,
+      id: head.id,
       title: head.main_topic,
       date: head.time,
       topics,
@@ -102,142 +131,42 @@ export class ConversationsService {
   }
 
   async getConversationsPage(): Promise<ConversationsPageData> {
-    const all = await this.repository.listAllConversations();
-    return {
-      conversations: all.map((c) => ({
-        id: c.conversation_id,
-        title: c.main_topic,
-        date: c.time,
-      })),
-    };
+    const all = await this.repository.listAll();
+    const conversations: ConversationListItem[] = all.map((c) => ({
+      id: c.id,
+      title: c.main_topic,
+      date: c.time,
+    }));
+    return { conversations };
   }
 
   async hasConversation(conversationId: string): Promise<boolean> {
     return this.repository.exists(conversationId);
   }
 
-  async mergeConversation(workingDir: string): Promise<MergeConversationResult> {
-    const outputPath = join(workingDir, "output.json");
-    const raw = await readJsonFile(outputPath);
-    const validation = await validateAnalyzeConversationOutput(
-      raw,
-      this.graphLookup(),
-    );
-    if (validation.status === "Errors") {
-      throw new Error(
-        `Output validation failed before merge: ` +
-          JSON.stringify(validation.errors),
-      );
+  async indexFile(absPath: string): Promise<IndexFileOutcome> {
+    const sha = this.repository.fileSha(absPath);
+    const file = this.repository.readJsonFile(absPath);
+    const stored = await this.repository.read(file.conversation_id);
+    if (stored !== null && stored.sha === sha) {
+      return { status: "unchanged", conversation_id: file.conversation_id };
     }
-    const output = AnalyzeConversationOutputSchema.parse(raw);
-    const { conversation, potential_topics } = output;
-    const parentMap = buildParentMap(potential_topics.topics);
+    await this.repository.upsert(file, sha);
+    return { status: "indexed", conversation_id: file.conversation_id };
+  }
 
-    await this.repository.insertConversation(conversation);
-
-    let topicsAdded = 0;
-    let topicsUpdated = 0;
-    for (const topic of conversation.topics) {
-      const fields = {
-        title: topic.title,
-        short_summary: topic.short_summary,
-        long_summary: topic.long_summary,
-      };
-      if (await this.topics.exists(topic.id)) {
-        await this.topics.updateTopicFields(topic.id, fields);
-        topicsUpdated++;
-      } else {
-        await this.topics.insertTopicNode({ id: topic.id, ...fields });
-        topicsAdded++;
-      }
-    }
-
-    for (const topic of conversation.topics) {
-      if (!parentMap.has(topic.id)) continue;
-      const parentId = parentMap.get(topic.id) ?? null;
-      await this.topics.deleteParentEdge(topic.id);
-      if (parentId !== null) {
-        await this.topics.linkSubtopic(parentId, topic.id);
-      }
-    }
-
-    for (const topic of conversation.topics) {
-      for (const item of topic.items) {
-        switch (item.type) {
-          case "idea_unit_ref": {
-            const iuId = ideaUnitNodeId(
-              item.conversation_id,
-              item.turn_index,
-              item.idea_unit_index,
-            );
-            await this.topics.linkToIdeaUnit(topic.id, iuId);
-            break;
-          }
-          case "document_fragment_ref": {
-            const fragId = await this.documents.ensureFragmentNode(
-              item.document_id,
-              item.start_offset,
-              item.end_offset,
-            );
-            await this.topics.linkToDocumentFragment(topic.id, fragId);
-            break;
-          }
-          default:
-            assertNever(item);
-        }
-      }
-    }
-
-    let decisionsAdded = 0;
-    for (const topic of conversation.topics) {
-      for (const decision of topic.decisions) {
-        await this.decisions.addDecision(topic.id, decision);
-        decisionsAdded++;
-      }
-    }
-
-    const splitResult = splitConversation(output, {
-      projectDir: this.projectDir,
-      cleanedMdSourcePath: conversationMdPath(
-        this.projectDir,
-        conversation.conversation_id,
-      ),
-    });
-    const allPaths = [
-      splitResult.md_path,
-      splitResult.sidecar_path,
-      ...splitResult.topic_paths,
-      ...splitResult.decision_paths,
-    ];
-    for (const path of allPaths) {
-      await this.fileSync.registerWritten(path);
-    }
-    await this.staleness.refreshStaleFlags();
-    const filesWritten =
-      2 + splitResult.topic_paths.length + splitResult.decision_paths.length;
-
-    this.logger.log(
-      `Merged conversation ${conversation.conversation_id}: +${topicsAdded} topics, ~${topicsUpdated} updated, +${decisionsAdded} decisions, ${filesWritten} files written under noesis/`,
-    );
-
-    return {
-      conversation_id: conversation.conversation_id,
-      topics_added: topicsAdded,
-      topics_updated: topicsUpdated,
-      decisions_added: decisionsAdded,
-      files_written: filesWritten,
-    };
+  async listAllStoredFiles(): Promise<
+    Array<{ id: string; path: string; sha: string }>
+  > {
+    return this.repository.listAllStoredFiles(this.projectDir);
   }
 
   async prepareReviewBundle(outputPath: string): Promise<ReviewBundle> {
-    const output = await this.readOutputFile(outputPath);
-    const { conversation } = output;
-    const order = postOrderTopicIds(
-      conversation.topics,
-      output.potential_topics.topics,
-    );
-    const byId = new Map(conversation.topics.map((t) => [t.id, t] as const));
-    const currentTurnMap = buildTurnMap(conversation.turns);
+    const output = this.loadOutput(outputPath);
+    const conv = output.conversation;
+    const order = postOrderTopicIds(conv.topics, output.potential_topics.topics);
+    const byId = new Map(conv.topics.map((t) => [t.id, t] as const));
+    const currentTurnMap = buildTurnMap(conv.turns);
 
     const sections: string[] = [];
     let topicsWithPrior = 0;
@@ -246,30 +175,22 @@ export class ConversationsService {
       const topic = byId.get(id);
       if (topic === undefined) continue;
 
-      const priorDetails = await this.repository.getPriorIdeaUnits(
+      const priorDetails = await this.findPriorIdeaUnits(
         topic.id,
-        conversation.conversation_id,
+        conv.conversation_id,
       );
       if (priorDetails.length > 0) topicsWithPrior++;
 
       const details: IdeaUnitDetail[] = [];
       const seen = new Set<string>();
       for (const item of topic.items) {
-        switch (item.type) {
-          case "idea_unit_ref": {
-            const key = itemKey(item);
-            if (seen.has(key)) break;
-            seen.add(key);
-            const detail = resolveIdeaUnitDetail(item, currentTurnMap);
-            if (detail === null || isIrrelevant(detail.categories)) break;
-            details.push(detail);
-            break;
-          }
-          case "document_fragment_ref":
-            break;
-          default:
-            assertNever(item);
-        }
+        if (item.type !== "idea_unit_ref") continue;
+        const key = priorIdeaUnitKey(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const detail = resolveIdeaUnitDetail(item, currentTurnMap);
+        if (detail === null || isIrrelevant(detail.categories)) continue;
+        details.push(detail);
       }
       for (const prior of priorDetails) {
         const key = `${prior.conversation_id}:${prior.turn_index}:${prior.idea_unit_index}`;
@@ -280,7 +201,7 @@ export class ConversationsService {
 
       const subtopics = collectSubtopics(
         topic.id,
-        conversation.topics,
+        conv.topics,
         output.potential_topics.topics,
       );
 
@@ -289,7 +210,7 @@ export class ConversationsService {
         title: topic.title,
         short_summary: topic.short_summary,
         long_summary: topic.long_summary,
-        conversation_id: conversation.conversation_id,
+        conversation_id: conv.conversation_id,
         idea_units: details,
         subtopics,
       };
@@ -320,58 +241,436 @@ export class ConversationsService {
   }
 
   async validateOutput(workingDir: string): Promise<ValidationResult> {
-    const raw = await readJsonFile(join(workingDir, "output.json"));
+    const path = `${workingDir.replace(/\/$/, "")}/output.json`;
+    if (!existsSync(path)) {
+      throw new Error(`analyze-conversation output not found at ${path}`);
+    }
+    const raw = JSON.parse(readFileSync(path, "utf-8"));
     return validateAnalyzeConversationOutput(raw, this.graphLookup());
   }
 
-  private graphLookup(): GraphLookup {
+  async uploadAnalysis(input: ConversationAnalysisOutput): Promise<UploadConversationAnalysisResult> {
+    const output = this.loadOutput(input.outputJsonPath);
+    this.validate(output);
+    const conflicts = this.detectLockedFieldConflicts(output);
+    if (input.confirmed_edits === undefined && conflicts.length > 0) {
+      throw new LockedFieldsBlockedError(conflicts);
+    }
+    const confirmedSet = new Set((input.confirmed_edits ?? []).map(confirmedKey));
+    const cleanedMd = this.loadCleanedMd(input.cleanedMdPath);
+    return this.split(output, cleanedMd, confirmedSet);
+  }
+
+  // ----- private: merge pipeline -----
+
+  private loadOutput(path: string): AnalyzeConversationOutput {
+    if (!existsSync(path)) {
+      throw new Error(`analyze-conversation output not found at ${path}`);
+    }
+    const raw = readFileSync(path, "utf-8");
+    const parsed = JSON.parse(raw);
+    return AnalyzeConversationOutputSchema.parse(parsed);
+  }
+
+  private loadCleanedMd(path: string): string {
+    if (!existsSync(path)) {
+      throw new Error(`Cleaned conversation md not found at ${path}`);
+    }
+    return readFileSync(path, "utf-8");
+  }
+
+  private validate(output: AnalyzeConversationOutput): void {
+    const conv = output.conversation;
+    const refMap = new Map<string, true>();
+    for (const turn of conv.turns) {
+      for (const iu of turn.idea_units) {
+        refMap.set(`${turn.index}|${iu.index}`, true);
+      }
+    }
+    for (const topic of conv.topics) {
+      if (!topic.reviewed) {
+        throw new Error(
+          `Topic ${topic.id} is not marked reviewed; analyze-conversation must complete the review pass.`,
+        );
+      }
+      for (const item of topic.items) {
+        if (item.type !== "idea_unit_ref") continue;
+        if (item.conversation_id !== conv.conversation_id) continue;
+        const key = `${item.turn_index}|${item.idea_unit_index}`;
+        if (!refMap.has(key)) {
+          throw new Error(
+            `Topic ${topic.id} references unknown idea unit ${key} in current conversation.`,
+          );
+        }
+      }
+    }
+    const topicIds = new Set(conv.topics.map((t) => t.id));
+    for (const pt of output.potential_topics.topics) {
+      if (pt.parent_id !== null && pt.is_new && !topicIds.has(pt.id)) {
+        throw new Error(
+          `potential_topics references new topic ${pt.id} not present in conversation.topics`,
+        );
+      }
+    }
+  }
+
+  private detectLockedFieldConflicts(
+    output: AnalyzeConversationOutput,
+  ): ConfirmedEdit[] {
+    const conflicts: ConfirmedEdit[] = [];
+    for (const topic of output.conversation.topics) {
+      const existingTopic = readTopicIfExists(
+        topicJsonPath(this.projectDir, topic.id),
+      );
+      conflicts.push(...detectTopicConflicts(existingTopic, topic));
+      for (const decision of topic.decisions) {
+        const dpath = decisionJsonPath(this.projectDir, decision.id);
+        const existingDecision = this.decisionsRepository.fileExists(dpath)
+          ? this.decisionsRepository.readFile(dpath)
+          : null;
+        conflicts.push(...detectDecisionConflicts(existingDecision, decision));
+      }
+    }
+    return conflicts;
+  }
+
+  private split(
+    output: AnalyzeConversationOutput,
+    cleanedMd: string,
+    confirmed: Set<string>,
+  ): UploadConversationAnalysisResult {
+    ensureNoesisLayout(this.projectDir);
+    const conv = output.conversation;
+    const stampedMd = stampIdLine(cleanedMd, "conversation", conv.conversation_id);
+    const mdPath = this.canonicalMdPath(conv.conversation_id);
+    this.repository.writeCleanedMd(mdPath, stampedMd);
+
+    const conversationFile: ConversationFileNew = {
+      conversation_id: conv.conversation_id,
+      time: conv.time,
+      main_topic: conv.main_topic,
+      turns: conv.turns,
+    };
+    const jsonPath = this.canonicalJsonPath(conv.conversation_id);
+    this.repository.writeJsonFile(jsonPath, conversationFile);
+
+    const conversationSha = computeFileSha(jsonPath);
+    const parentLookup = new Map<string, string | null>();
+    for (const pt of output.potential_topics.topics) {
+      parentLookup.set(pt.id, pt.parent_id);
+    }
+
+    const sourceShaCache = new Map<string, string>();
+    sourceShaCache.set(`conversation:${conv.conversation_id}`, conversationSha);
+
+    const topicPaths: string[] = [];
+    const decisionPaths: string[] = [];
+    const clearedLocks: ConfirmedEdit[] = [];
+
+    for (const topic of conv.topics) {
+      const { path, cleared } = this.writeTopicFile(
+        topic,
+        parentLookup.get(topic.id) ?? null,
+        sourceShaCache,
+        confirmed,
+      );
+      topicPaths.push(path);
+      clearedLocks.push(...cleared);
+      for (const decision of topic.decisions) {
+        const dr = this.writeDecisionFile(
+          topic.id,
+          decision,
+          sourceShaCache,
+          confirmed,
+        );
+        decisionPaths.push(dr.path);
+        clearedLocks.push(...dr.cleared);
+      }
+    }
+
     return {
-      topicExists: (id: string) => this.topics.exists(id),
+      conversation_id: conv.conversation_id,
+      topic_paths: topicPaths,
+      decision_paths: decisionPaths,
+      cleared_locks: clearedLocks,
     };
   }
 
-  private async readConversationFile(path: string): Promise<Conversation> {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw);
-    return ConversationSchema.parse(parsed);
+  private writeTopicFile(
+    topic: AnalyzeConversationOutput["conversation"]["topics"][number],
+    parentId: string | null,
+    cache: Map<string, string>,
+    confirmed: Set<string>,
+  ): { path: string; cleared: ConfirmedEdit[] } {
+    const path = topicJsonPath(this.projectDir, topic.id);
+    const items = withItemShas(topic.items as TopicItemRefNew[], this.projectDir, cache);
+    const existing = readTopicIfExists(path);
+    const cleared: ConfirmedEdit[] = [];
+    const resolved = resolveTopicLockedFields(existing, topic, confirmed, cleared);
+    const next: TopicFileNew = {
+      id: topic.id,
+      parent_id: parentId,
+      title: resolved.title,
+      title_locked: resolved.title_locked,
+      short_summary: resolved.short_summary,
+      short_summary_locked: resolved.short_summary_locked,
+      long_summary: resolved.long_summary,
+      long_summary_locked: resolved.long_summary_locked,
+      items: existing === null ? items : mergeItems(existing.items, items),
+      reviewed: topic.reviewed,
+      decisions_extracted: topic.decisions_extracted,
+      is_stale: existing?.is_stale ?? false,
+    };
+    this.topicsRepository.writeFile(path, next);
+    return { path, cleared };
   }
 
-  private async readOutputFile(
-    path: string,
-  ): Promise<AnalyzeConversationOutput> {
-    const raw = await readJsonFile(path);
-    return AnalyzeConversationOutputSchema.parse(raw);
+  private writeDecisionFile(
+    topicId: string,
+    decision: AnalyzeConversationOutput["conversation"]["topics"][number]["decisions"][number],
+    cache: Map<string, string>,
+    confirmed: Set<string>,
+  ): { path: string; cleared: ConfirmedEdit[] } {
+    const path = decisionJsonPath(this.projectDir, decision.id);
+    const referenced = withItemShas(
+      decision.referenced_items as TopicItemRefNew[],
+      this.projectDir,
+      cache,
+    );
+    const existing = this.decisionsRepository.fileExists(path)
+      ? this.decisionsRepository.readFile(path)
+      : null;
+    const cleared: ConfirmedEdit[] = [];
+    const resolved = resolveDecisionLockedFields(existing, decision, confirmed, cleared);
+    const next: DecisionFileNew = {
+      id: decision.id,
+      topic_id: topicId,
+      title: resolved.title,
+      title_locked: resolved.title_locked,
+      status: resolved.status,
+      status_locked: resolved.status_locked,
+      referenced_items: referenced,
+      context: {
+        text: resolved.context_text,
+        text_locked: resolved.context_text_locked,
+        supporting_item_indices: decision.context.supporting_item_indices,
+      },
+      decision: {
+        text: resolved.decision_text,
+        text_locked: resolved.decision_text_locked,
+        rationale: resolved.decision_rationale,
+        rationale_locked: resolved.decision_rationale_locked,
+        supporting_item_indices: decision.decision.supporting_item_indices,
+      },
+      alternative_options: decision.alternative_options.map((alt, i) => ({
+        text: alt.text,
+        text_locked: existing?.alternative_options[i]?.text_locked ?? false,
+        rationale: alt.rationale,
+        rationale_locked: existing?.alternative_options[i]?.rationale_locked ?? false,
+        supporting_item_indices: alt.supporting_item_indices,
+      })),
+      is_stale: existing?.is_stale ?? false,
+    };
+    this.decisionsRepository.writeFile(path, next);
+    return { path, cleared };
+  }
+
+  private canonicalJsonPath(conversationId: string): string {
+    return this.repository.canonicalJsonPath(this.projectDir, conversationId);
+  }
+
+  private canonicalMdPath(conversationId: string): string {
+    return this.repository.canonicalMdPath(this.projectDir, conversationId);
+  }
+
+  private async collectLinkedDecisions(
+    conversationId: string,
+  ): Promise<ConversationDecisionRef[]> {
+    const stored = await this.decisionsRepository.listAll();
+    const out: ConversationDecisionRef[] = [];
+    for (const decision of stored) {
+      const path = this.decisionsRepository.canonicalPath(
+        this.projectDir,
+        decision.id,
+      );
+      if (!this.decisionsRepository.fileExists(path)) continue;
+      const file = this.decisionsRepository.readFile(path);
+      if (!fileReferencesConversation(file.referenced_items, conversationId)) {
+        continue;
+      }
+      out.push({
+        decision_id: decision.id,
+        title: decision.title,
+        status: decision.status,
+      });
+    }
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return out;
+  }
+
+  private async collectLinkedTopics(
+    conversationId: string,
+  ): Promise<ConversationTopicRef[]> {
+    const stored = await this.topicsRepository.listAll();
+    const out: ConversationTopicRef[] = [];
+    for (const topic of stored) {
+      const path = this.topicsRepository.canonicalPath(
+        this.projectDir,
+        topic.id,
+      );
+      if (!this.topicsRepository.fileExists(path)) continue;
+      const file = this.topicsRepository.readFile(path);
+      if (!fileReferencesConversation(file.items, conversationId)) continue;
+      out.push({ topic_id: topic.id, title: topic.title });
+    }
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return out;
+  }
+
+  private async findPriorIdeaUnits(
+    topicId: string,
+    excludeConversationId: string,
+  ): Promise<IdeaUnitDetail[]> {
+    const path = this.topicsRepository.canonicalPath(this.projectDir, topicId);
+    if (!this.topicsRepository.fileExists(path)) return [];
+    const file = this.topicsRepository.readFile(path);
+    const positionsByConv = new Map<
+      string,
+      Array<{ turn_index: number; idea_unit_index: number }>
+    >();
+    for (const item of file.items) {
+      if (item.type !== "idea_unit_ref") continue;
+      if (item.conversation_id === excludeConversationId) continue;
+      const list = positionsByConv.get(item.conversation_id) ?? [];
+      list.push({
+        turn_index: item.turn_index,
+        idea_unit_index: item.idea_unit_index,
+      });
+      positionsByConv.set(item.conversation_id, list);
+    }
+    const out: IdeaUnitDetail[] = [];
+    for (const [convId, positions] of positionsByConv) {
+      const details = await this.repository.listIdeaUnitDetails(convId, positions);
+      for (const d of details) {
+        if (isIrrelevant(d.categories as IdeaUnitDetail["categories"])) continue;
+        out.push({
+          conversation_id: d.conversation_id,
+          turn_index: d.turn_index,
+          idea_unit_index: d.idea_unit_index,
+          speaker: d.speaker,
+          time: d.time,
+          sentences: d.sentences,
+          categories: d.categories as IdeaUnitDetail["categories"],
+        });
+      }
+    }
+    out.sort((a, b) => {
+      if (a.conversation_id !== b.conversation_id)
+        return a.conversation_id.localeCompare(b.conversation_id);
+      if (a.turn_index !== b.turn_index) return a.turn_index - b.turn_index;
+      return a.idea_unit_index - b.idea_unit_index;
+    });
+    return out;
+  }
+
+  private graphLookup(): GraphLookup {
+    return { topicExists: (id) => this.topicsRepository.exists(id) };
   }
 }
 
-async function readJsonFile(path: string): Promise<unknown> {
-  const raw = await readFile(path, "utf-8");
-  return JSON.parse(raw);
+function withItemShas(
+  items: ReadonlyArray<TopicItemRefNew>,
+  projectDir: string,
+  cache: Map<string, string>,
+): TopicItemRefNew[] {
+  return items.map((item) => {
+    const sha = resolveSourceSha(item, projectDir, cache);
+    return { ...item, source_sha: sha ?? item.source_sha };
+  });
+}
+
+function resolveSourceSha(
+  item: TopicItemRefNew,
+  projectDir: string,
+  cache: Map<string, string>,
+): string | undefined {
+  const key =
+    item.type === "idea_unit_ref"
+      ? `conversation:${item.conversation_id}`
+      : `document:${item.document_id}`;
+  if (cache.has(key)) return cache.get(key);
+  const path =
+    item.type === "idea_unit_ref"
+      ? conversationJsonPath(projectDir, item.conversation_id)
+      : documentJsonPath(projectDir, item.document_id);
+  if (!existsSync(path)) return undefined;
+  const sha = computeContentSha(readFileSync(path));
+  cache.set(key, sha);
+  return sha;
+}
+
+function mergeItems(prev: TopicItemRefNew[], next: TopicItemRefNew[]): TopicItemRefNew[] {
+  const seen = new Set<string>();
+  const out: TopicItemRefNew[] = [];
+  for (const list of [prev, next]) {
+    for (const item of list) {
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+function itemKey(item: TopicItemRefNew): string {
+  if (item.type === "idea_unit_ref") {
+    return `iu:${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
+  }
+  return `doc:${item.document_id}:${item.start_offset}:${item.end_offset}`;
+}
+
+function readTopicIfExists(absPath: string): TopicFileNew | null {
+  if (!existsSync(absPath)) return null;
+  try {
+    return TopicFileNewSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+
+function inferConversationIdFromPath(absPath: string): string | null {
+  const match = /\/conversations\/([^/]+)\.json$/.exec(absPath);
+  return match === null ? null : match[1];
+}
+
+function fileReferencesConversation(
+  items: TopicItemRefNew[],
+  conversationId: string,
+): boolean {
+  for (const item of items) {
+    if (item.type === "idea_unit_ref" && item.conversation_id === conversationId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function priorIdeaUnitKey(item: IdeaUnitRef): string {
+  return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
 }
 
 function buildParentLookup(
   potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
 ): Map<string, string | null> {
   const map = new Map<string, string | null>();
-  for (const t of potentialTopics) {
-    map.set(t.id, t.parent_id);
-  }
-  return map;
-}
-
-function buildParentMap(
-  potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
-): Map<string, string | null> {
-  const map = new Map<string, string | null>();
-  for (const t of potentialTopics) {
-    if (t.is_new) map.set(t.id, t.parent_id);
-  }
+  for (const t of potentialTopics) map.set(t.id, t.parent_id);
   return map;
 }
 
 function collectSubtopics(
   parentId: string,
-  topics: Conversation["topics"],
+  topics: AnalyzeConversationOutput["conversation"]["topics"],
   potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
 ): EnrichedSubtopic[] {
   const parents = buildParentLookup(potentialTopics);
@@ -388,14 +687,6 @@ function collectSubtopics(
   return subtopics;
 }
 
-function countIdeaUnits(conversation: Conversation): number {
-  return conversation.turns.reduce((sum, t) => sum + t.idea_units.length, 0);
-}
-
-function itemKey(item: IdeaUnitRef): string {
-  return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
-}
-
 function joinSections(sections: string[]): string[] {
   if (sections.length === 0) return [];
   const out: string[] = [];
@@ -407,7 +698,7 @@ function joinSections(sections: string[]): string[] {
 }
 
 function postOrderTopicIds(
-  topics: Conversation["topics"],
+  topics: AnalyzeConversationOutput["conversation"]["topics"],
   potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
 ): string[] {
   const idSet = new Set(topics.map((t) => t.id));
@@ -426,7 +717,6 @@ function postOrderTopicIds(
     siblings.push(t.id);
     childrenByParent.set(effectiveParent, siblings);
   }
-
   const out: string[] = [];
   const visited = new Set<string>();
   function visit(id: string): void {
