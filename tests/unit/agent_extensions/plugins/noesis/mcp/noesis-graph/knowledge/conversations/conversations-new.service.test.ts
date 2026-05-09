@@ -7,7 +7,7 @@ import {
   expect,
   test,
 } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { and, given, then, when } from "@tests/bdd.js";
 import {
@@ -20,6 +20,7 @@ import {
   DecisionFileNewSchema,
   TopicFileNewSchema,
 } from "@noesis/shared-contracts/source-file-schemas-new.js";
+import { LockedFieldsBlockedError } from "@noesis/mcp/noesis-graph/knowledge/conversations/conversations-new.service.js";
 import {
   conversationJsonPath,
   decisionJsonPath,
@@ -46,18 +47,21 @@ describe("ConversationsServiceNew — accept skill output, validate, split, save
     rmSync(join(ctx.projectDir, "noesis"), { recursive: true, force: true });
   });
 
-  test("Merging an analyze-conversation output writes the conversation, topics and decisions to canonical paths", async () => {
+  test("Uploading an analyze-conversation output writes the conversation, topics and decisions files to canonical paths", async () => {
     let result: { conversation_id: string; topic_paths: string[]; decision_paths: string[] } | null = null;
 
-    await given("an analyze-conversation working dir with valid output and cleaned md", () => {
+    await given("an analyze-conversation working dir with valid output proposing a JWT topic and decision, and a cleaned md", () => {
       writeWorkingDirFiles(
         workingDir,
-        makeSkillOutput(),
+        makeSkillOutput({
+          topicTitle: "JWT decision",
+          decisionTitle: "Adopt JWT",
+        }),
         "# Authentication\n\nalice: We should use JWTs.\n",
       );
     });
-    await when("the skill output and cleaned transcript are merged", async () => {
-      result = await ctx.conversations.merge({
+    await when("the skill output is uploaded", async () => {
+      result = await ctx.conversations.uploadAnalysis({
         outputJsonPath: join(workingDir, "output.json"),
         cleanedMdPath: join(workingDir, "cleaned.md"),
       });
@@ -70,15 +74,17 @@ describe("ConversationsServiceNew — accept skill output, validate, split, save
       expect(conversation.conversation_id).toBe("conv-1");
       expect(conversation.turns).toHaveLength(1);
     });
-    await and("the topic file lands at noesis/topics/<id>.json with parent_id null and source sha set", () => {
+    await and("the topic file lands at noesis/topics/<id>.json with source sha set", () => {
       const topicPath = topicJsonPath(ctx.projectDir, "topic-1");
       const topic = TopicFileNewSchema.parse(
         JSON.parse(readFileSync(topicPath, "utf-8")),
       );
       expect(topic.parent_id).toBeNull();
       expect(topic.title_locked).toBe(false);
-      expect(topic.items).toHaveLength(1);
-      expect(topic.items[0].source_sha).toBeDefined();
+      expect(topic.items.length).toBeGreaterThan(0);
+      for (const item of topic.items) {
+        expect(item.source_sha).toBeDefined();
+      }
     });
     await and("the decision file lands at noesis/decisions/<id>.json with source sha set on each reference", () => {
       const decisionPath = decisionJsonPath(ctx.projectDir, "decision-1");
@@ -86,15 +92,22 @@ describe("ConversationsServiceNew — accept skill output, validate, split, save
         JSON.parse(readFileSync(decisionPath, "utf-8")),
       );
       expect(decision.title).toBe("Adopt JWT");
-      expect(decision.referenced_items[0].source_sha).toBeDefined();
+      expect(decision.referenced_items.length).toBeGreaterThan(0);
+      for (const item of decision.referenced_items) {
+        expect(item.source_sha).toBeDefined();
+      }
     });
     await and("the result enumerates the produced canonical paths", () => {
-      expect(result?.topic_paths).toHaveLength(1);
-      expect(result?.decision_paths).toHaveLength(1);
+      expect(result?.topic_paths).toEqual([
+        topicJsonPath(ctx.projectDir, "topic-1"),
+      ]);
+      expect(result?.decision_paths).toEqual([
+        decisionJsonPath(ctx.projectDir, "decision-1"),
+      ]);
     });
   });
 
-  test("Merging an analyze-conversation output containing an unreviewed topic is rejected", async () => {
+  test("Uploading an analyze-conversation output containing an unreviewed topic is rejected", async () => {
     let thrown: Error | null = null;
 
     await given("a working dir whose topic has not been reviewed", () => {
@@ -102,9 +115,9 @@ describe("ConversationsServiceNew — accept skill output, validate, split, save
       output.conversation.topics[0].reviewed = false;
       writeWorkingDirFiles(workingDir, output, "# any");
     });
-    await when("the skill output is merged", async () => {
+    await when("the skill output is uploaded", async () => {
       try {
-        await ctx.conversations.merge({
+        await ctx.conversations.uploadAnalysis({
           outputJsonPath: join(workingDir, "output.json"),
           cleanedMdPath: join(workingDir, "cleaned.md"),
         });
@@ -112,63 +125,275 @@ describe("ConversationsServiceNew — accept skill output, validate, split, save
         thrown = e as Error;
       }
     });
-    await then("the merge is rejected before any file is written, with a clear message about the review pass", () => {
+    await then("the upload is rejected before any file is written, with a clear message about the review pass", () => {
       expect(thrown?.message).toContain("reviewed");
     });
   });
 
-  test("Merging preserves a user-locked topic title across skill re-runs", async () => {
-    await given("a topic written by an earlier merge whose title was then edited by the user", async () => {
+  test("Uploading without confirmation rejects with the list of topic locked fields whose value would change", async () => {
+    let thrown: Error | null = null;
+
+    await given("a topic on disk with a locked title and locked short_summary", () => {
+      seedTopicFile(ctx, {
+        title: "User-set title",
+        title_locked: true,
+        short_summary: "User-set summary",
+        short_summary_locked: true,
+      });
+    });
+    await when("the skill output proposing different title and short_summary is uploaded with no confirmed_edits", async () => {
       writeWorkingDirFiles(
         workingDir,
-        makeSkillOutput(),
+        makeSkillOutput({
+          topicTitle: "Skill-proposed title",
+          topicShortSummary: "Skill-proposed summary",
+        }),
         "# any\n",
       );
-      await ctx.conversations.merge({
+      try {
+        await ctx.conversations.uploadAnalysis({
+          outputJsonPath: join(workingDir, "output.json"),
+          cleanedMdPath: join(workingDir, "cleaned.md"),
+        });
+      } catch (e) {
+        thrown = e as Error;
+      }
+    });
+    await then("the upload is rejected with a LockedFieldsBlockedError listing every locked field that would have changed", () => {
+      expect(thrown).toBeInstanceOf(LockedFieldsBlockedError);
+      const blocked = (thrown as LockedFieldsBlockedError).blocked;
+      expect(blocked).toEqual([
+        { kind: "topic", topic_id: "topic-1", field: "title" },
+        { kind: "topic", topic_id: "topic-1", field: "short_summary" },
+      ]);
+    });
+    await and("the on-disk topic file is left exactly as it was before the upload", () => {
+      const topic = readTopic(ctx, "topic-1");
+      expect(topic.title).toBe("User-set title");
+      expect(topic.title_locked).toBe(true);
+      expect(topic.short_summary).toBe("User-set summary");
+      expect(topic.short_summary_locked).toBe(true);
+    });
+  });
+
+  test("Uploading without confirmation succeeds when locked field values match the skill output exactly", async () => {
+    await given("a topic on disk whose locked title matches the title the skill is about to upload", () => {
+      seedTopicFile(ctx, {
+        title: "JWT decision",
+        title_locked: true,
+      });
+    });
+    await when("the skill output is uploaded with no confirmed_edits", async () => {
+      writeWorkingDirFiles(
+        workingDir,
+        makeSkillOutput({ topicTitle: "JWT decision" }),
+        "# any\n",
+      );
+      await ctx.conversations.uploadAnalysis({
         outputJsonPath: join(workingDir, "output.json"),
         cleanedMdPath: join(workingDir, "cleaned.md"),
       });
-      await ctx.topics.editFieldsAndLock(
-        "topic-1",
-        { title: "User-set title" },
-        false,
-      );
     });
-    await when("the skill produces a different title and the conversation is merged again", async () => {
+    await then("the on-disk topic file keeps the title locked at the same value", () => {
+      const topic = readTopic(ctx, "topic-1");
+      expect(topic.title).toBe("JWT decision");
+      expect(topic.title_locked).toBe(true);
+    });
+  });
+
+  test("Uploading with confirmed_edits for a locked topic field overwrites the value and clears the lock", async () => {
+    let result: { cleared_locks: unknown[] } | null = null;
+
+    await given("a topic on disk with a locked title differing from the skill output", () => {
+      seedTopicFile(ctx, {
+        title: "User-set title",
+        title_locked: true,
+      });
+    });
+    await when("the skill re-uploads with confirmed_edits for the topic title", async () => {
       writeWorkingDirFiles(
         workingDir,
         makeSkillOutput({ topicTitle: "Skill-proposed title" }),
         "# any\n",
       );
-      await ctx.conversations.merge({
+      result = await ctx.conversations.uploadAnalysis({
         outputJsonPath: join(workingDir, "output.json"),
         cleanedMdPath: join(workingDir, "cleaned.md"),
+        confirmed_edits: [
+          { kind: "topic", topic_id: "topic-1", field: "title" },
+        ],
       });
     });
-    await then("the on-disk topic title remains the user-set value, not the skill's", () => {
-      const topicPath = topicJsonPath(ctx.projectDir, "topic-1");
-      const topic = TopicFileNewSchema.parse(
-        JSON.parse(readFileSync(topicPath, "utf-8")),
+    await then("the topic title is replaced with the skill's value and the lock is cleared", () => {
+      const topic = readTopic(ctx, "topic-1");
+      expect(topic.title).toBe("Skill-proposed title");
+      expect(topic.title_locked).toBe(false);
+    });
+    await and("the result reports the cleared lock", () => {
+      expect(result?.cleared_locks).toEqual([
+        { kind: "topic", topic_id: "topic-1", field: "title" },
+      ]);
+    });
+  });
+
+  test("Uploading with partial confirmed_edits applies confirmed edits and preserves unconfirmed locked fields", async () => {
+    await given("a topic on disk whose title and short_summary are both locked", () => {
+      seedTopicFile(ctx, {
+        title: "User-set title",
+        title_locked: true,
+        short_summary: "User-set summary",
+        short_summary_locked: true,
+      });
+    });
+    await when("the skill re-uploads with different title and short_summary, confirming only the title edit", async () => {
+      writeWorkingDirFiles(
+        workingDir,
+        makeSkillOutput({
+          topicTitle: "Skill-proposed title",
+          topicShortSummary: "Skill-proposed summary",
+        }),
+        "# any\n",
       );
-      expect(topic.title).toBe("User-set title");
-      expect(topic.title_locked).toBe(true);
+      await ctx.conversations.uploadAnalysis({
+        outputJsonPath: join(workingDir, "output.json"),
+        cleanedMdPath: join(workingDir, "cleaned.md"),
+        confirmed_edits: [
+          { kind: "topic", topic_id: "topic-1", field: "title" },
+        ],
+      });
+    });
+    await then("the title takes the new value with its lock cleared", () => {
+      const topic = readTopic(ctx, "topic-1");
+      expect(topic.title).toBe("Skill-proposed title");
+      expect(topic.title_locked).toBe(false);
+    });
+    await and("the unconfirmed short_summary keeps its user-set value with the lock still set", () => {
+      const topic = readTopic(ctx, "topic-1");
+      expect(topic.short_summary).toBe("User-set summary");
+      expect(topic.short_summary_locked).toBe(true);
+    });
+  });
+
+  test("Uploading without confirmation rejects when a locked decision field would change", async () => {
+    let thrown: Error | null = null;
+
+    await given("a decision with a locked decision.text", () => {
+      seedDecisionFile(ctx, {
+        decision: {
+          text: "User-set decision text",
+          text_locked: true,
+          rationale: "Standard.",
+          supporting_item_indices: [],
+        },
+      });
+    });
+    await when("the skill output proposing a different decision.text is uploaded with no confirmed_edits", async () => {
+      writeWorkingDirFiles(
+        workingDir,
+        makeSkillOutput({ decisionText: "Skill-proposed decision text" }),
+        "# any\n",
+      );
+      try {
+        await ctx.conversations.uploadAnalysis({
+          outputJsonPath: join(workingDir, "output.json"),
+          cleanedMdPath: join(workingDir, "cleaned.md"),
+        });
+      } catch (e) {
+        thrown = e as Error;
+      }
+    });
+    await then("the upload is rejected with a LockedFieldsBlockedError pointing at the decision field", () => {
+      expect(thrown).toBeInstanceOf(LockedFieldsBlockedError);
+      const blocked = (thrown as LockedFieldsBlockedError).blocked;
+      expect(blocked).toEqual([
+        { kind: "decision", decision_id: "decision-1", field: "decision.text" },
+      ]);
+    });
+  });
+
+  test("Uploading with confirmed_edits for a locked decision field overwrites the value and clears the lock", async () => {
+    await given("a decision with a locked decision text differing from the skill output", () => {
+      seedDecisionFile(ctx, {
+        decision: {
+          text: "User-set decision text",
+          text_locked: true,
+          rationale: "Standard.",
+          supporting_item_indices: [],
+        },
+      });
+    });
+    await when("the skill re-uploads with a different decision.text and confirms the edit", async () => {
+      writeWorkingDirFiles(
+        workingDir,
+        makeSkillOutput({ decisionText: "Skill-proposed decision text" }),
+        "# any\n",
+      );
+      await ctx.conversations.uploadAnalysis({
+        outputJsonPath: join(workingDir, "output.json"),
+        cleanedMdPath: join(workingDir, "cleaned.md"),
+        confirmed_edits: [
+          { kind: "decision", decision_id: "decision-1", field: "decision.text" },
+        ],
+      });
+    });
+    await then("the decision text takes the skill's value with its lock cleared", () => {
+      const decision = readDecision(ctx, "decision-1");
+      expect(decision.decision.text).toBe("Skill-proposed decision text");
+      expect(decision.decision.text_locked).toBe(false);
+    });
+  });
+
+  test("Uploading without confirmation lists conflicts across both topics and decisions in one error", async () => {
+    let thrown: Error | null = null;
+
+    await given("a topic with a locked title and a decision with a locked rationale", () => {
+      seedTopicFile(ctx, {
+        title: "User-set title",
+        title_locked: true,
+      });
+      seedDecisionFile(ctx, {
+        decision: {
+          text: "Use JWT.",
+          rationale: "User-set rationale",
+          rationale_locked: true,
+          supporting_item_indices: [],
+        },
+      });
+    });
+    await when("the skill output proposing different topic.title and decision.rationale is uploaded with no confirmed_edits", async () => {
+      writeWorkingDirFiles(
+        workingDir,
+        makeSkillOutput({
+          topicTitle: "Skill-proposed title",
+          decisionRationale: "Skill-proposed rationale",
+        }),
+        "# any\n",
+      );
+      try {
+        await ctx.conversations.uploadAnalysis({
+          outputJsonPath: join(workingDir, "output.json"),
+          cleanedMdPath: join(workingDir, "cleaned.md"),
+        });
+      } catch (e) {
+        thrown = e as Error;
+      }
+    });
+    await then("the LockedFieldsBlockedError lists both the topic and the decision conflict", () => {
+      expect(thrown).toBeInstanceOf(LockedFieldsBlockedError);
+      const blocked = (thrown as LockedFieldsBlockedError).blocked;
+      expect(blocked).toEqual([
+        { kind: "topic", topic_id: "topic-1", field: "title" },
+        { kind: "decision", decision_id: "decision-1", field: "decision.rationale" },
+      ]);
     });
   });
 
   test("Indexing a conversation file projects it into Conversation, Turn and IdeaUnit nodes", async () => {
     let path = "";
 
-    await given("a merged conversation on disk", async () => {
-      writeWorkingDirFiles(
-        workingDir,
-        makeSkillOutput(),
-        "# any\n",
-      );
-      await ctx.conversations.merge({
-        outputJsonPath: join(workingDir, "output.json"),
-        cleanedMdPath: join(workingDir, "cleaned.md"),
-      });
+    await given("a structured conversation file on disk that has not yet been indexed", () => {
       path = conversationJsonPath(ctx.projectDir, "conv-1");
+      ctx.conversationsRepository.writeJsonFile(path, sampleConversationFile());
     });
     await when("indexing the conversation file", async () => {
       const outcome = await ctx.conversations.indexFile(path);
@@ -245,24 +470,37 @@ describe("ConversationsServiceNew — accept skill output, validate, split, save
     });
   });
 
-  test("Deleting a conversation by its canonical file path removes the corresponding row from DB", async () => {
-    let path = "";
+  test("Deleting a conversation while its structured conversation file is still on disk removes both the DB row and the file", async () => {
+    let jsonPath = "";
 
-    await given("a merged and indexed conversation on disk", async () => {
-      writeWorkingDirFiles(
-        workingDir,
-        makeSkillOutput(),
-        "# any\n",
-      );
-      await ctx.conversations.merge({
-        outputJsonPath: join(workingDir, "output.json"),
-        cleanedMdPath: join(workingDir, "cleaned.md"),
-      });
-      path = conversationJsonPath(ctx.projectDir, "conv-1");
-      await ctx.conversations.indexFile(path);
+    await given("an indexed conversation whose structured conversation file lives on disk", async () => {
+      jsonPath = conversationJsonPath(ctx.projectDir, "conv-1");
+      ctx.conversationsRepository.writeJsonFile(jsonPath, sampleConversationFile());
+      await ctx.conversations.indexFile(jsonPath);
     });
     await when("deletion is requested for the conversation's canonical path", async () => {
-      const result = await ctx.conversations.deleteForFile(path);
+      const result = await ctx.conversations.deleteForFile(jsonPath);
+      expect(result?.conversation_id).toBe("conv-1");
+    });
+    await then("the conversation no longer exists in DB", async () => {
+      expect(await ctx.conversationsRepository.exists("conv-1")).toBe(false);
+    });
+    await and("the structured conversation file is removed from disk", () => {
+      expect(existsSync(jsonPath)).toBe(false);
+    });
+  });
+
+  test("Deleting a conversation whose structured conversation file is already gone still removes the DB row", async () => {
+    let jsonPath = "";
+
+    await given("an indexed conversation whose structured conversation file has been removed from disk", async () => {
+      jsonPath = conversationJsonPath(ctx.projectDir, "conv-1");
+      ctx.conversationsRepository.writeJsonFile(jsonPath, sampleConversationFile());
+      await ctx.conversations.indexFile(jsonPath);
+      rmSync(jsonPath, { force: true });
+    });
+    await when("deletion is requested for the conversation's canonical path", async () => {
+      const result = await ctx.conversations.deleteForFile(jsonPath);
       expect(result?.conversation_id).toBe("conv-1");
     });
     await then("the conversation no longer exists in DB", async () => {
@@ -278,6 +516,13 @@ interface SkillOutputBuilder {
   decisionTitleLocked?: boolean;
   topicTitleLocked?: boolean;
   topicTitle?: string;
+  topicShortSummary?: string;
+  topicLongSummary?: string;
+  decisionTitle?: string;
+  decisionStatus?: "accepted" | "proposed";
+  decisionContextText?: string;
+  decisionText?: string;
+  decisionRationale?: string;
 }
 
 function makeSkillOutput(b: SkillOutputBuilder = {}): unknown {
@@ -312,8 +557,9 @@ function makeSkillOutput(b: SkillOutputBuilder = {}): unknown {
         {
           id: topicId,
           title: b.topicTitle ?? "JWT decision",
-          short_summary: "Authentication choice.",
-          long_summary: "We chose JWTs for stateless authentication.",
+          short_summary: b.topicShortSummary ?? "Authentication choice.",
+          long_summary:
+            b.topicLongSummary ?? "We chose JWTs for stateless authentication.",
           items: [
             {
               type: "idea_unit_ref",
@@ -325,8 +571,8 @@ function makeSkillOutput(b: SkillOutputBuilder = {}): unknown {
           decisions: [
             {
               id: decisionId,
-              title: "Adopt JWT",
-              status: "accepted",
+              title: b.decisionTitle ?? "Adopt JWT",
+              status: b.decisionStatus ?? "accepted",
               referenced_items: [
                 {
                   type: "idea_unit_ref",
@@ -336,12 +582,12 @@ function makeSkillOutput(b: SkillOutputBuilder = {}): unknown {
                 },
               ],
               context: {
-                text: "Need stateless auth.",
+                text: b.decisionContextText ?? "Need stateless auth.",
                 supporting_item_indices: [0],
               },
               decision: {
-                text: "Use JWT.",
-                rationale: "Standard.",
+                text: b.decisionText ?? "Use JWT.",
+                rationale: b.decisionRationale ?? "Standard.",
                 supporting_item_indices: [0],
               },
               alternative_options: [],
@@ -357,7 +603,7 @@ function makeSkillOutput(b: SkillOutputBuilder = {}): unknown {
         {
           id: topicId,
           title: b.topicTitle ?? "JWT decision",
-          short_summary: "Authentication choice.",
+          short_summary: b.topicShortSummary ?? "Authentication choice.",
           path: ["JWT decision"],
           is_new: true,
           parent_id: null,
@@ -365,6 +611,91 @@ function makeSkillOutput(b: SkillOutputBuilder = {}): unknown {
       ],
     },
   };
+}
+
+function seedTopicFile(
+  ctx: KnowledgeNewTestContext,
+  overrides: Record<string, unknown>,
+): void {
+  ctx.topicsRepository.writeFile(
+    topicJsonPath(ctx.projectDir, "topic-1"),
+    TopicFileNewSchema.parse({
+      id: "topic-1",
+      title: "JWT decision",
+      short_summary: "Authentication choice.",
+      long_summary: "We chose JWTs for stateless authentication.",
+      items: [],
+      reviewed: true,
+      decisions_extracted: true,
+      ...overrides,
+    }),
+  );
+}
+
+function seedDecisionFile(
+  ctx: KnowledgeNewTestContext,
+  overrides: Record<string, unknown>,
+): void {
+  ctx.decisionsRepository.writeFile(
+    decisionJsonPath(ctx.projectDir, "decision-1"),
+    DecisionFileNewSchema.parse({
+      id: "decision-1",
+      topic_id: "topic-1",
+      title: "Adopt JWT",
+      status: "accepted",
+      referenced_items: [],
+      context: {
+        text: "Need stateless auth.",
+        supporting_item_indices: [],
+      },
+      decision: {
+        text: "Use JWT.",
+        rationale: "Standard.",
+        supporting_item_indices: [],
+      },
+      alternative_options: [],
+      ...overrides,
+    }),
+  );
+}
+
+function readTopic(ctx: KnowledgeNewTestContext, id: string) {
+  return TopicFileNewSchema.parse(
+    JSON.parse(readFileSync(topicJsonPath(ctx.projectDir, id), "utf-8")),
+  );
+}
+
+function readDecision(ctx: KnowledgeNewTestContext, id: string) {
+  return DecisionFileNewSchema.parse(
+    JSON.parse(readFileSync(decisionJsonPath(ctx.projectDir, id), "utf-8")),
+  );
+}
+
+function sampleConversationFile() {
+  return ConversationFileNewSchema.parse({
+    conversation_id: "conv-1",
+    time: "2026-04-17T10:00:00Z",
+    main_topic: "Authentication strategy",
+    turns: [
+      {
+        index: 0,
+        speaker: "alice",
+        time: "2026-04-17T10:00:00Z",
+        idea_units: [
+          {
+            index: 0,
+            sentences: ["We should use JWTs."],
+            categories: ["Position"],
+          },
+          {
+            index: 1,
+            sentences: ["Stateless and standard."],
+            categories: ["Argument"],
+          },
+        ],
+      },
+    ],
+  });
 }
 
 function writeWorkingDirFiles(

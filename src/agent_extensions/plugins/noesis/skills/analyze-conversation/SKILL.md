@@ -94,7 +94,13 @@ If processing reveals that an idea unit belongs to a different topic, update `ou
 
 Call MCP tool `noesis-graph:merge_conversation` with `working_dir: <working_dir>`. The server runs `validate_output` as a pre-flight gate, then reads `output.json` and persists Conversation, Turns, IdeaUnits, Topics (with parent linking from `potential_topics`), Items, and Decisions.
 
-Report `topics_added`, `topics_updated`, and `decisions_added` to the user.
+If any topic or decision field is locked (the user previously edited it via the UI) and your `output.json` would change its value, the call rejects with a `LockedFieldsBlockedError` whose `blocked` array lists every conflict as `{ kind: "topic" | "decision", topic_id | decision_id, field }`. When that happens:
+
+1. Read each blocked field's current on-disk value and the value your output proposes.
+2. For every entry, ask the user via `AskUserQuestion` whether to keep the locked value or accept the new one.
+3. Re-call `merge_conversation` with `confirmed_edits: [...]` containing only the entries the user accepted (same `{ kind, topic_id | decision_id, field }` shape). The server applies those overwrites and clears the locks; entries omitted from `confirmed_edits` retain the user's value with the lock intact.
+
+Report `topics_added`, `topics_updated`, `decisions_added`, and any `cleared_locks` to the user.
 
 ## Rules
 
@@ -102,4 +108,4 @@ Report `topics_added`, `topics_updated`, and `decisions_added` to the user.
 - Persist graph state only via `noesis-graph` MCP tools. Edit `output.json` directly with Edit/Write.
 - Generate all titles, summaries, and free-text fields in the same language as the transcript.
 - Reuse before promote: prefer an existing topic over a new one whenever the fit is reasonable.
-- **Respect user edits.** Before changing any existing topic or decision whose on-disk file is marked `edited_by_user: true`, ask for explicit user acceptance via `AskUserQuestion`. The splitter will skip user-edited files at merge time regardless; this rule additionally surfaces the intended overwrite so the user can keep their version, accept the new one, or merge manually. If the user declines, leave the entity unchanged and route the new evidence elsewhere (different topic, new topic, item-only attachment).
+- **Never auto-confirm a locked-field edit.** Only pass an entry in `confirmed_edits` after the user has explicitly accepted that specific overwrite via `AskUserQuestion`. If the user declines, leave the entity unchanged and route the new evidence elsewhere (different topic, new topic, item-only attachment).
