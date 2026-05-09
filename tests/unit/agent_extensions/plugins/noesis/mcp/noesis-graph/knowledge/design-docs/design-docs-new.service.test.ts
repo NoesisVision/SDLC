@@ -104,8 +104,18 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
         "billing-aaa.json",
         designDoc({
           actors: [
-            { name: "Customer", description: "End-user purchasing." },
-            { name: "Approver", description: "Approves invoices." },
+            {
+              name: "Customer",
+              name_locked: false,
+              description: "End-user purchasing.",
+              description_locked: false,
+            },
+            {
+              name: "Approver",
+              name_locked: false,
+              description: "Approves invoices.",
+              description_locked: false,
+            },
           ],
         }),
       );
@@ -131,7 +141,14 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
         designDoc({
           id: "01928000-0000-7000-8000-aaaaaaaaaaaa",
           name: "billing",
-          actors: [{ name: "Customer", description: "Billing customer." }],
+          actors: [
+            {
+              name: "Customer",
+              name_locked: false,
+              description: "Billing customer.",
+              description_locked: false,
+            },
+          ],
         }),
       );
       const b = writeDesignDocFile(
@@ -140,7 +157,14 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
         designDoc({
           id: "01928000-0000-7000-8000-bbbbbbbbbbbb",
           name: "support",
-          actors: [{ name: "Customer", description: "Support customer." }],
+          actors: [
+            {
+              name: "Customer",
+              name_locked: false,
+              description: "Support customer.",
+              description_locked: false,
+            },
+          ],
         }),
       );
       await ctx.designDocs.indexFile(a);
@@ -226,7 +250,16 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
       path = writeDesignDocFile(
         ctx.projectDir,
         "billing-fff.json",
-        designDoc({ actors: [{ name: "OnlyActor", description: "x." }] }),
+        designDoc({
+          actors: [
+            {
+              name: "OnlyActor",
+              name_locked: false,
+              description: "x.",
+              description_locked: false,
+            },
+          ],
+        }),
       );
       await ctx.designDocs.indexFile(path);
     });
@@ -290,7 +323,14 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
         designDoc({
           id: "01928000-0000-7000-8000-aaaa00000001",
           name: "billing-shared",
-          actors: [{ name: "Customer", description: "Shared." }],
+          actors: [
+            {
+              name: "Customer",
+              name_locked: false,
+              description: "Shared.",
+              description_locked: false,
+            },
+          ],
         }),
       );
       pathB = writeDesignDocFile(
@@ -299,7 +339,14 @@ describe("DesignDocsServiceNew — canonical paths, locks, sealing on implemente
         designDoc({
           id: "01928000-0000-7000-8000-bbbb00000002",
           name: "support-shared",
-          actors: [{ name: "Customer", description: "Shared." }],
+          actors: [
+            {
+              name: "Customer",
+              name_locked: false,
+              description: "Shared.",
+              description_locked: false,
+            },
+          ],
         }),
       );
       await ctx.designDocs.indexFile(pathA);

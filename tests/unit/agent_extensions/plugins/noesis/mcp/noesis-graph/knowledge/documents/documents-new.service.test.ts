@@ -362,6 +362,7 @@ describe("DocumentsServiceNew — accept skill output, validate, split, save", (
           text: "User-set decision text",
           text_locked: true,
           rationale: "Customer demand.",
+          rationale_locked: false,
           supporting_item_indices: [],
         },
       });
@@ -397,6 +398,7 @@ describe("DocumentsServiceNew — accept skill output, validate, split, save", (
           text: "User-set decision text",
           text_locked: true,
           rationale: "Customer demand.",
+          rationale_locked: false,
           supporting_item_indices: [],
         },
       });
@@ -511,6 +513,7 @@ describe("DocumentsServiceNew — accept skill output, validate, split, save", (
         id: "doc-decision-1",
         decision: {
           text: "Ship feature X.",
+          text_locked: false,
           rationale: "User-set rationale",
           rationale_locked: true,
           supporting_item_indices: [],

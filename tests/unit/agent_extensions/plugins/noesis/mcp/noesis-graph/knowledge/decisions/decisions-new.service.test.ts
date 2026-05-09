@@ -178,6 +178,7 @@ describe("DecisionsServiceNew — indexing, editing with locks, referenced items
         decisionFile({
           decision: {
             text: "Use JWT",
+            text_locked: false,
             rationale: "Original rationale",
             rationale_locked: true,
             supporting_item_indices: [],
@@ -240,12 +241,16 @@ describe("DecisionsServiceNew — indexing, editing with locks, referenced items
           alternative_options: [
             {
               text: "Server sessions",
+              text_locked: false,
               rationale: "Stateful.",
+              rationale_locked: false,
               supporting_item_indices: [],
             },
             {
               text: "OAuth tokens",
+              text_locked: false,
               rationale: "Delegated.",
+              rationale_locked: false,
               supporting_item_indices: [],
             },
           ],
