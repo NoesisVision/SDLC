@@ -28,10 +28,14 @@ import {
 } from "@noesis/shared-contracts/source-file-schemas.js";
 import {
   conversationJsonPath,
+  conversationMdPath,
   decisionJsonPath,
+  designDocCanonicalPath,
   documentJsonPath,
+  documentMdPath,
   topicJsonPath,
 } from "@noesis/shared-contracts/source-files.js";
+import { DesignDocFileNewSchema, type DesignDocFileNew } from "@noesis/shared-contracts/design-doc-new.js";
 
 describe("IndexerService — full-pass orchestration, deletion, staleness, single-flight", () => {
   let ctx: KnowledgeNewTestContext;
@@ -307,6 +311,84 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
     });
   });
 
+  test("Indexing skips orphan .md files in documents and conversations dirs without erroring", async () => {
+    await given("orphan .md files alongside no .json sidecar", () => {
+      writeFileSync(
+        documentMdPath(ctx.projectDir, "draft-document"),
+        "# Some draft\n\nNot a JSON document.\n",
+      );
+      writeFileSync(
+        conversationMdPath(ctx.projectDir, "draft-conversation"),
+        "# Conversation transcript\n",
+      );
+    });
+    let result:
+      | { files_total: number; files_processed: number }
+      | null = null;
+    await when("indexing runs", async () => {
+      result = await ctx.indexer.runFullIndex();
+    });
+    await then("indexing settles in consistent state and no JSON-parse error trips the pass", () => {
+      expect(ctx.indexer.getState()).toBe("consistent");
+      expect(result?.files_processed).toBe(result?.files_total);
+    });
+    await and("no document or conversation rows are written for the orphan markdown files", async () => {
+      expect(await ctx.documentsRepository.exists("draft-document")).toBe(false);
+      expect(await ctx.conversationsRepository.exists("draft-conversation")).toBe(false);
+    });
+  });
+
+  test("Indexing picks up a file in a subdirectory that was removed and recreated (git-checkout regression)", async () => {
+    const designDoc: DesignDocFileNew = DesignDocFileNewSchema.parse({
+      id: "f9cb90cc-0ec6-4c1a-bb9f-c600ba3b490a",
+      name: "Sample",
+      description: "Reproduction fixture for git-checkout reindex bug.",
+      date: "2026-05-09",
+      actors: [],
+      implemented: false,
+    });
+    const designDocsDir = join(ctx.projectDir, "noesis", "design-docs");
+
+    await given("the indexer is watching the project layout", () => {
+      ctx.indexer.startWatching();
+    });
+    await and("a design doc file is indexed once", async () => {
+      writeJson(
+        designDocCanonicalPath(ctx.projectDir, designDoc.id, designDoc.name),
+        designDoc,
+      );
+      await waitForCondition(
+        async () =>
+          ctx.indexer.getState() === "consistent" &&
+          (await ctx.designDocsRepository.exists(designDoc.id)),
+      );
+    });
+    await when(
+      "the design-docs subdirectory is deleted and then recreated with the file (mimicking git checkout away and back)",
+      async () => {
+        rmSync(designDocsDir, { recursive: true, force: true });
+        await waitForCondition(
+          async () =>
+            ctx.indexer.getState() === "consistent" &&
+            !(await ctx.designDocsRepository.exists(designDoc.id)),
+        );
+        mkdirSync(designDocsDir, { recursive: true });
+        writeJson(
+          designDocCanonicalPath(ctx.projectDir, designDoc.id, designDoc.name),
+          designDoc,
+        );
+        await waitForCondition(
+          async () =>
+            ctx.indexer.getState() === "consistent" &&
+            (await ctx.designDocsRepository.exists(designDoc.id)),
+        );
+      },
+    );
+    await then("the design doc reaches DB without any explicit indexing call", async () => {
+      expect(await ctx.designDocsRepository.exists(designDoc.id)).toBe(true);
+    });
+  });
+
   test("Indexing absorbs a rapid burst of file changes and lands every change in DB", async () => {
     await given("the indexer is watching the project layout", () => {
       ctx.indexer.startWatching();
@@ -424,7 +506,7 @@ function writeJson(path: string, data: unknown): void {
 
 async function waitForCondition(
   predicate: () => Promise<boolean>,
-  timeoutMs = 2000
+  timeoutMs = 5000
 ): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {

@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
-import { type FSWatcher, watch } from 'fs';
+import { unwatchFile, watchFile } from 'fs';
 import { assertNever } from '../../../shared-contracts/assert-never.js';
 import {
   discoverSourceFiles,
   ensureNoesisLayout,
   noesisRoot,
+  noesisSubdirPath,
+  SOURCE_FILE_KINDS,
   type SourceFileKind,
 } from '../../../shared-contracts/source-files.js';
 import { PROJECT_DIR } from '../config/config.module.js';
@@ -47,12 +49,15 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
+const WATCH_POLL_INTERVAL_MS = 500;
+
 @Injectable()
 export class IndexerService implements OnApplicationBootstrap {
   private readonly logger = new Logger(IndexerService.name);
   private state: IndexState = "idle";
   private lastError: string | null = null;
-  private watcher: FSWatcher | null = null;
+  private watchedSubdirs: Set<string> = new Set();
+  private watching = false;
   private debounceMs = DEFAULT_DEBOUNCE_MS;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private currentPass: Deferred<IndexResult> | null = null;
@@ -137,15 +142,27 @@ export class IndexerService implements OnApplicationBootstrap {
    * a debounced re-index. Each new event resets the debounce window. While a
    * pass is running, additional events enqueue a single follow-up pass; further
    * events during that window are coalesced into the same follow-up.
+   *
+   * Implementation: `fs.watchFile` polls each subdir's stat. This catches file
+   * additions/removals (subdir mtime bumps) and survives the subdir being
+   * deleted and recreated by `git checkout` — a scenario where Bun's
+   * inotify-based `fs.watch` silently stops firing for a freshly recreated
+   * directory.
    */
   startWatching(): void {
-    if (this.watcher !== null) return;
+    if (this.watching) return;
+    this.watching = true;
     ensureNoesisLayout(this.projectDir);
-    const root = noesisRoot(this.projectDir);
-    this.watcher = watch(root, { recursive: true }, () => {
-      this.scheduleDebouncedReindex();
-    });
-    this.logger.log(`Watching ${root} (debounce ${this.debounceMs}ms)`);
+    for (const kind of SOURCE_FILE_KINDS) {
+      const subdir = noesisSubdirPath(this.projectDir, kind);
+      watchFile(subdir, { interval: WATCH_POLL_INTERVAL_MS }, () => {
+        this.scheduleDebouncedReindex();
+      });
+      this.watchedSubdirs.add(subdir);
+    }
+    this.logger.log(
+      `Watching ${noesisRoot(this.projectDir)} (poll ${WATCH_POLL_INTERVAL_MS}ms, debounce ${this.debounceMs}ms)`,
+    );
   }
 
   stopWatching(): void {
@@ -153,10 +170,11 @@ export class IndexerService implements OnApplicationBootstrap {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
-    if (this.watcher !== null) {
-      this.watcher.close();
-      this.watcher = null;
+    for (const subdir of this.watchedSubdirs) {
+      unwatchFile(subdir);
     }
+    this.watchedSubdirs.clear();
+    this.watching = false;
   }
 
   // ----- internals -----
@@ -214,8 +232,12 @@ export class IndexerService implements OnApplicationBootstrap {
   }
 
   private async indexOne(kind: SourceFileKind, path: string): Promise<void> {
-    if (kind === "conversation" && path.endsWith(".md")) {
-      // cleaned md is not hash-tracked; nothing to index for change detection.
+    if (
+      (kind === "conversation" || kind === "document") &&
+      path.endsWith(".md")
+    ) {
+      // The .md file is the human-readable source; the .json sidecar is what
+      // the indexer tracks for change detection.
       return;
     }
     switch (kind) {
