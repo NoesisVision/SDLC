@@ -10,8 +10,10 @@ import {
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "fs";
 import { join } from "path";
@@ -25,7 +27,10 @@ import {
   DecisionFileNewSchema,
   type DecisionFileNew,
 } from "@noesis/shared-contracts/source-file-schemas.js";
-import { decisionJsonPath } from "@noesis/shared-contracts/source-files.js";
+import {
+  decisionJsonPath,
+  findDecisionJsonById,
+} from "@noesis/shared-contracts/source-files.js";
 
 describe("DecisionsService — indexing, editing with locks, referenced items, staleness", () => {
   let ctx: KnowledgeNewTestContext;
@@ -41,6 +46,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
 
   beforeEach(async () => {
     await clearGraphNew(ctx.db);
+    clearDecisionsDir(ctx.projectDir);
   });
 
   test("Indexing a brand-new decision file inserts the corresponding Decision row in DB", async () => {
@@ -88,17 +94,17 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
       path = writeDecisionOnDisk(ctx.projectDir, decisionFile());
       await ctx.decisions.indexFile(path);
     });
-    await when("the file is rewritten with a new title and indexed again", async () => {
-      writeDecisionOnDisk(
+    await when("the file is rewritten with a new status and indexed again", async () => {
+      path = writeDecisionOnDisk(
         ctx.projectDir,
-        decisionFile({ title: "Adopt JWT for stateless sessions" }),
+        decisionFile({ status: "proposed" }),
       );
       const outcome = await ctx.decisions.indexFile(path);
       expect(outcome.status).toBe("indexed");
     });
-    await then("the persisted Decision reflects the new title", async () => {
+    await then("the persisted Decision reflects the new status", async () => {
       const stored = await ctx.decisionsRepository.read("decision-1");
-      expect(stored?.title).toBe("Adopt JWT for stateless sessions");
+      expect(stored?.status).toBe("proposed");
     });
   });
 
@@ -121,8 +127,10 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
       expect(result?.updated).toEqual(["title"]);
     });
     await and("the new title is written to disk and its lock is now set", () => {
+      const current = findDecisionJsonById(ctx.projectDir, "decision-1");
+      expect(current).not.toBeNull();
       const file = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
+        JSON.parse(readFileSync(current!, "utf-8")),
       );
       expect(file.title).toBe("Adopt JWT for stateless sessions");
       expect(file.title_locked).toBe(true);
@@ -497,8 +505,18 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
 }
 
 function writeDecisionOnDisk(projectDir: string, file: DecisionFileNew): string {
-  const path = decisionJsonPath(projectDir, file.id);
   mkdirSync(join(projectDir, "noesis", "decisions"), { recursive: true });
+  const previous = findDecisionJsonById(projectDir, file.id);
+  if (previous !== null && existsSync(previous)) unlinkSync(previous);
+  const path = decisionJsonPath(projectDir, file.id, file.title);
   writeFileSync(path, JSON.stringify(file, null, 2));
   return path;
+}
+
+function clearDecisionsDir(projectDir: string): void {
+  const dir = join(projectDir, "noesis", "decisions");
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir)) {
+    unlinkSync(join(dir, entry));
+  }
 }

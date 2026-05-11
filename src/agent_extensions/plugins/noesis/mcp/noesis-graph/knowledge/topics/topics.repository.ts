@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { existsSync } from "fs";
+import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
 import {
   TopicFileNewSchema,
@@ -7,6 +7,7 @@ import {
 } from "../../../../shared-contracts/source-file-schemas.js";
 import {
   computeFileSha,
+  findTopicJsonById,
   readSidecar,
   topicJsonPath,
   writeSidecar,
@@ -56,6 +57,7 @@ type TopicFileRow = z.infer<typeof TopicFileRowSchema>;
 const PathRowSchema = z.object({
   id: z.string(),
   sha: z.string(),
+  title: z.string(),
 });
 
 const StaleRowSchema = z.object({ is_stale: z.boolean() });
@@ -79,8 +81,8 @@ export interface StoredTopic {
 export class TopicsRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  canonicalPath(projectDir: string, topicId: string): string {
-    return topicJsonPath(projectDir, topicId);
+  canonicalPath(projectDir: string, topicId: string, title: string): string {
+    return topicJsonPath(projectDir, topicId, title);
   }
 
   async delete(topicId: string): Promise<void> {
@@ -97,12 +99,20 @@ export class TopicsRepository {
     return rows.length > 0;
   }
 
+  deleteFile(absPath: string): void {
+    if (existsSync(absPath)) unlinkSync(absPath);
+  }
+
   fileExists(absPath: string): boolean {
     return existsSync(absPath);
   }
 
   fileSha(absPath: string): string {
     return computeFileSha(absPath);
+  }
+
+  findFileById(projectDir: string, topicId: string): string | null {
+    return findTopicJsonById(projectDir, topicId);
   }
 
   async initSchema(): Promise<void> {
@@ -140,12 +150,12 @@ export class TopicsRepository {
     projectDir: string,
   ): Promise<Array<{ id: string; path: string; sha: string }>> {
     const rows = await this.db.query<unknown>(
-      "MATCH (t:Topic) RETURN t.id AS id, t.sha AS sha",
+      "MATCH (t:Topic) RETURN t.id AS id, t.sha AS sha, t.title AS title",
     );
     return z.array(PathRowSchema).parse(rows).map((r) => ({
       id: r.id,
       sha: r.sha,
-      path: topicJsonPath(projectDir, r.id),
+      path: topicJsonPath(projectDir, r.id, r.title),
     }));
   }
 

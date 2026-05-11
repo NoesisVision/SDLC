@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
 import {
   DocumentFileNewSchema,
@@ -7,6 +8,7 @@ import {
 import {
   computeFileSha,
   documentJsonPath,
+  findDocumentJsonById,
   readSidecar,
   writeSidecar,
 } from "../../../../shared-contracts/source-files.js";
@@ -23,7 +25,11 @@ const SCHEMA_STATEMENTS = [
   "CREATE REL TABLE IF NOT EXISTS DOCUMENT_HAS_FRAGMENT(FROM Document TO DocumentFragment)",
 ];
 
-const PathRowSchema = z.object({ id: z.string(), sha: z.string() });
+const PathRowSchema = z.object({
+  id: z.string(),
+  sha: z.string(),
+  title: z.string(),
+});
 const StoredDocumentRowSchema = z.object({
   id: z.string(),
   sha: z.string(),
@@ -44,8 +50,16 @@ export interface StoredDocument {
 export class DocumentsRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  canonicalPath(projectDir: string, documentId: string): string {
-    return documentJsonPath(projectDir, documentId);
+  canonicalPath(projectDir: string, documentId: string, title: string): string {
+    return documentJsonPath(projectDir, documentId, title);
+  }
+
+  deleteFile(absPath: string): void {
+    if (existsSync(absPath)) unlinkSync(absPath);
+  }
+
+  findJsonById(projectDir: string, documentId: string): string | null {
+    return findDocumentJsonById(projectDir, documentId);
   }
 
   async delete(documentId: string): Promise<void> {
@@ -106,12 +120,12 @@ export class DocumentsRepository {
     projectDir: string,
   ): Promise<Array<{ id: string; path: string; sha: string }>> {
     const rows = await this.db.query<unknown>(
-      "MATCH (d:Document) RETURN d.id AS id, d.sha AS sha",
+      "MATCH (d:Document) RETURN d.id AS id, d.sha AS sha, d.title AS title",
     );
     return z.array(PathRowSchema).parse(rows).map((r) => ({
       id: r.id,
       sha: r.sha,
-      path: documentJsonPath(projectDir, r.id),
+      path: documentJsonPath(projectDir, r.id, r.title),
     }));
   }
 

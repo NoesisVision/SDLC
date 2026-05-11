@@ -37,6 +37,8 @@ import { LockedFieldsBlockedError } from "@noesis/mcp/noesis-graph/knowledge/doc
 import {
   decisionJsonPath,
   documentJsonPath,
+  findDecisionJsonById,
+  findTopicJsonById,
   topicJsonPath,
 } from "@noesis/shared-contracts/source-files.js";
 
@@ -78,10 +80,13 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
         designDocJsonPath: null,
       });
     });
-    await then("the document file lands at noesis/documents/<id>.json with all fragments", () => {
+    await then("the document file lands at the slug-prefixed canonical path with all fragments", () => {
       const file = DocumentFileNewSchema.parse(
         JSON.parse(
-          readFileSync(documentJsonPath(ctx.projectDir, "doc-1"), "utf-8"),
+          readFileSync(
+            documentJsonPath(ctx.projectDir, "doc-1", "Design Draft"),
+            "utf-8",
+          ),
         ),
       );
       expect(file.title).toBe("Design Draft");
@@ -102,10 +107,10 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
     await and("the result enumerates the produced canonical paths and reports no design-doc and no cleared locks", () => {
       expect(result?.document_id).toBe("doc-1");
       expect(result?.topic_paths).toEqual([
-        topicJsonPath(ctx.projectDir, "doc-topic-1"),
+        topicJsonPath(ctx.projectDir, "doc-topic-1", "Feature X"),
       ]);
       expect(result?.decision_paths).toEqual([
-        decisionJsonPath(ctx.projectDir, "doc-decision-1"),
+        decisionJsonPath(ctx.projectDir, "doc-decision-1", "Ship feature X"),
       ]);
       expect(result?.decision_attachments).toBe(0);
       expect(result?.design_doc_path).toBeNull();
@@ -561,7 +566,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
     let path = "";
 
     await given("a structured document file on disk that has not yet been indexed", () => {
-      path = documentJsonPath(ctx.projectDir, "doc-1");
+      path = documentJsonPath(ctx.projectDir, "doc-1", "Design Draft");
       ctx.documentsRepository.writeFile(path, sampleDocumentFile());
     });
     await when("indexing the document file", async () => {
@@ -580,7 +585,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
     let secondOutcome: { status: string } | null = null;
 
     await given("a structured document file indexed once", async () => {
-      path = documentJsonPath(ctx.projectDir, "doc-1");
+      path = documentJsonPath(ctx.projectDir, "doc-1", "Design Draft");
       ctx.documentsRepository.writeFile(path, sampleDocumentFile());
       await ctx.documents.indexFile(path);
     });
@@ -596,7 +601,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
     let path = "";
 
     await given("an indexed document whose source file lives on disk", async () => {
-      path = documentJsonPath(ctx.projectDir, "doc-1");
+      path = documentJsonPath(ctx.projectDir, "doc-1", "Design Draft");
       ctx.documentsRepository.writeFile(path, sampleDocumentFile());
       await ctx.documents.indexFile(path);
     });
@@ -616,7 +621,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
     let path = "";
 
     await given("an indexed document whose source file has been removed from disk", async () => {
-      path = documentJsonPath(ctx.projectDir, "doc-1");
+      path = documentJsonPath(ctx.projectDir, "doc-1", "Design Draft");
       ctx.documentsRepository.writeFile(path, sampleDocumentFile());
       await ctx.documents.indexFile(path);
       rmSync(path, { force: true });
@@ -820,19 +825,20 @@ function seedTopicFile(
   ctx: KnowledgeNewTestContext,
   overrides: Record<string, unknown>,
 ): void {
+  const file = TopicFileNewSchema.parse({
+    id: "doc-topic-1",
+    parent_id: null,
+    title: "Feature X",
+    short_summary: "Decision on feature X.",
+    long_summary: "We chose to ship feature X based on the draft.",
+    items: [],
+    reviewed: true,
+    decisions_extracted: true,
+    ...overrides,
+  });
   ctx.topicsRepository.writeFile(
-    topicJsonPath(ctx.projectDir, (overrides.id as string | undefined) ?? "doc-topic-1"),
-    TopicFileNewSchema.parse({
-      id: "doc-topic-1",
-      parent_id: null,
-      title: "Feature X",
-      short_summary: "Decision on feature X.",
-      long_summary: "We chose to ship feature X based on the draft.",
-      items: [],
-      reviewed: true,
-      decisions_extracted: true,
-      ...overrides,
-    }),
+    topicJsonPath(ctx.projectDir, file.id, file.title),
+    file,
   );
 }
 
@@ -841,39 +847,40 @@ function seedDecisionFile(
   overrides: Partial<DecisionFileNew> & { id?: string },
 ): void {
   const id = overrides.id ?? "doc-decision-1";
+  const file = DecisionFileNewSchema.parse({
+    id,
+    topic_id: "doc-topic-1",
+    title: "Ship feature X",
+    status: "accepted",
+    referenced_items: [],
+    context: {
+      text: "Need feature X.",
+      supporting_item_indices: [],
+    },
+    decision: {
+      text: "Ship feature X.",
+      rationale: "Customer demand.",
+      supporting_item_indices: [],
+    },
+    alternative_options: [],
+    ...overrides,
+  });
   ctx.decisionsRepository.writeFile(
-    decisionJsonPath(ctx.projectDir, id),
-    DecisionFileNewSchema.parse({
-      id,
-      topic_id: "doc-topic-1",
-      title: "Ship feature X",
-      status: "accepted",
-      referenced_items: [],
-      context: {
-        text: "Need feature X.",
-        supporting_item_indices: [],
-      },
-      decision: {
-        text: "Ship feature X.",
-        rationale: "Customer demand.",
-        supporting_item_indices: [],
-      },
-      alternative_options: [],
-      ...overrides,
-    }),
+    decisionJsonPath(ctx.projectDir, file.id, file.title),
+    file,
   );
 }
 
 function readTopic(ctx: KnowledgeNewTestContext, id: string) {
-  return TopicFileNewSchema.parse(
-    JSON.parse(readFileSync(topicJsonPath(ctx.projectDir, id), "utf-8")),
-  );
+  const path = findTopicJsonById(ctx.projectDir, id);
+  if (path === null) throw new Error(`Topic not found on disk: ${id}`);
+  return TopicFileNewSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
 }
 
 function readDecision(ctx: KnowledgeNewTestContext, id: string) {
-  return DecisionFileNewSchema.parse(
-    JSON.parse(readFileSync(decisionJsonPath(ctx.projectDir, id), "utf-8")),
-  );
+  const path = findDecisionJsonById(ctx.projectDir, id);
+  if (path === null) throw new Error(`Decision not found on disk: ${id}`);
+  return DecisionFileNewSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
 }
 
 function readDesignDocById(

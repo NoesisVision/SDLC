@@ -1,18 +1,18 @@
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { createHash } from "crypto";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
 import { parseTranscript } from "./structure-transcript.js";
-import { CONVERSATION_ID_PATTERN, type RawTranscript } from "./types.js";
+import { type RawTranscript } from "./types.js";
 import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
 } from "../../shared-contracts/skills/analyze-conversation/output.js";
 import { resolveWorkingDir } from "../../shared-contracts/plugin-paths.js";
-import { conversationMdPath } from "../../shared-contracts/source-files.js";
+import { contentHashAsUuid } from "../../shared-contracts/uuid.js";
 
 const SKILL_NAME = "noesis:analyze-conversation";
 const FILE_MODE = 0o600;
+const CLEANED_MD_FILENAME = "cleaned.md";
 
 interface PrepareOptions {
   workingDirBase?: string;
@@ -31,13 +31,11 @@ interface PrepareResult {
 // --- Public functions ---
 
 export function buildCleanedMarkdown(
-  conversationId: string,
   time: string,
   mainTopic: string,
   transcript: RawTranscript
 ): string {
   const lines: string[] = [];
-  lines.push(`<!-- conversation_id: ${conversationId} -->`);
   lines.push(`<!-- time: ${time} -->`);
   lines.push(`<!-- main_topic: ${mainTopic} -->`);
   lines.push("");
@@ -52,37 +50,33 @@ export function buildCleanedMarkdown(
   return lines.join("\n");
 }
 
-export function getCanonicalConversationPath(projectDir: string, conversationId: string): string {
-  return conversationMdPath(projectDir, conversationId);
-}
-
 export function prepareConversation(
   transcriptPath: string,
   conversationTime: string,
   mainTopic: string,
   options: PrepareOptions = {}
 ): PrepareResult {
-  const projectDir = resolveProjectDir(options.projectDir);
+  resolveProjectDir(options.projectDir);
 
   const rawText = readFileSync(transcriptPath, "utf-8");
-  const conversationId = resolveConversationId(rawText);
-  const cleanedPath = getCanonicalConversationPath(projectDir, conversationId);
+  const conversationId = contentHashAsUuid(rawText);
 
   const parsed = parseTranscript(rawText, conversationId);
   if (parsed.status === "Error") {
     throw new Error(parsed.message);
   }
 
+  const workingDir = resolveWorkingDir(SKILL_NAME, conversationId, options.workingDirBase);
+  mkdirSync(workingDir, { recursive: true });
+
+  const cleanedPath = join(workingDir, CLEANED_MD_FILENAME);
   const cleanedMarkdown = buildCleanedMarkdown(
-    conversationId,
     conversationTime,
     mainTopic,
     parsed.transcript
   );
   mkdirSync(dirname(cleanedPath), { recursive: true });
-  writeFileSync(cleanedPath, cleanedMarkdown, "utf-8");
-
-  const workingDir = resolveWorkingDir(SKILL_NAME, conversationId, options.workingDirBase);
+  writeFileSync(cleanedPath, cleanedMarkdown, { encoding: "utf-8", mode: FILE_MODE });
 
   const output: AnalyzeConversationOutput = {
     conversation: {
@@ -112,29 +106,6 @@ export function prepareConversation(
 }
 
 // --- Private functions ---
-
-function extractIdFromContent(content: string): string | null {
-  const firstLine = content.split("\n", 1)[0];
-  const match = CONVERSATION_ID_PATTERN.exec(firstLine);
-  return match !== null ? match[1] : null;
-}
-
-function deriveIdFromContent(content: string): string {
-  const hex = createHash("sha256").update(content).digest("hex");
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20, 32),
-  ].join("-");
-}
-
-function resolveConversationId(rawText: string): string {
-  const stamped = extractIdFromContent(rawText);
-  if (stamped !== null) return stamped;
-  return deriveIdFromContent(rawText);
-}
 
 function resolveProjectDir(explicit: string | undefined): string {
   if (explicit !== undefined && explicit !== "") return explicit;

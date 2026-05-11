@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { existsSync } from "fs";
+import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
 import {
   DecisionFileNewSchema,
@@ -10,6 +10,7 @@ import {
 import {
   computeFileSha,
   decisionJsonPath,
+  findDecisionJsonById,
   readSidecar,
   writeSidecar,
 } from "../../../../shared-contracts/source-files.js";
@@ -64,7 +65,11 @@ const StoredDecisionRowSchema = z.object({
 type StoredDecisionRow = z.infer<typeof StoredDecisionRowSchema>;
 
 const StaleRowSchema = z.object({ is_stale: z.boolean() });
-const PathRowSchema = z.object({ id: z.string(), sha: z.string() });
+const PathRowSchema = z.object({
+  id: z.string(),
+  sha: z.string(),
+  title: z.string(),
+});
 
 export interface StoredDecision {
   id: string;
@@ -81,8 +86,8 @@ export interface StoredDecision {
 export class DecisionsRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  canonicalPath(projectDir: string, decisionId: string): string {
-    return decisionJsonPath(projectDir, decisionId);
+  canonicalPath(projectDir: string, decisionId: string, title: string): string {
+    return decisionJsonPath(projectDir, decisionId, title);
   }
 
   async delete(decisionId: string): Promise<void> {
@@ -101,12 +106,20 @@ export class DecisionsRepository {
     return rows.length > 0;
   }
 
+  deleteFile(absPath: string): void {
+    if (existsSync(absPath)) unlinkSync(absPath);
+  }
+
   fileExists(absPath: string): boolean {
     return existsSync(absPath);
   }
 
   fileSha(absPath: string): string {
     return computeFileSha(absPath);
+  }
+
+  findFileById(projectDir: string, decisionId: string): string | null {
+    return findDecisionJsonById(projectDir, decisionId);
   }
 
   async initSchema(): Promise<void> {
@@ -136,12 +149,12 @@ export class DecisionsRepository {
     projectDir: string,
   ): Promise<Array<{ id: string; path: string; sha: string }>> {
     const rows = await this.db.query<unknown>(
-      "MATCH (d:Decision) RETURN d.id AS id, d.sha AS sha",
+      "MATCH (d:Decision) RETURN d.id AS id, d.sha AS sha, d.title AS title",
     );
     return z.array(PathRowSchema).parse(rows).map((r) => ({
       id: r.id,
       sha: r.sha,
-      path: decisionJsonPath(projectDir, r.id),
+      path: decisionJsonPath(projectDir, r.id, r.title),
     }));
   }
 

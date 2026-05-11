@@ -22,7 +22,7 @@ export const SOURCE_FILE_KINDS: readonly SourceFileKind[] = [
   "design_doc",
 ];
 
-export const SOURCE_FILE_EXTENSIONS = [".md", ".json"] as const;
+export const SOURCE_FILE_EXTENSIONS = [".json"] as const;
 export type SourceFileExtension = (typeof SOURCE_FILE_EXTENSIONS)[number];
 
 export const SUBDIR_FOR_KIND: Record<SourceFileKind, string> = {
@@ -49,6 +49,9 @@ const ID_FIELD_FOR_KIND: Record<SourceFileKind, string> = {
   design_doc: "design_doc_id",
 };
 
+const SLUG_MAX = 30;
+const ID_SUFFIX_MIN = 8;
+
 export function noesisRoot(projectDir: string): string {
   return resolve(projectDir, NOESIS_DIR_NAME);
 }
@@ -57,136 +60,108 @@ export function noesisSubdirPath(projectDir: string, kind: SourceFileKind): stri
   return resolve(noesisRoot(projectDir), SUBDIR_FOR_KIND[kind]);
 }
 
-export function conversationMdPath(projectDir: string, id: string): string {
-  return resolve(noesisSubdirPath(projectDir, "conversation"), `${id}.md`);
+export function canonicalFilename(
+  projectDir: string,
+  kind: SourceFileKind,
+  id: string,
+  name: string,
+): string {
+  const slug = slugifyForFilename(name).slice(0, SLUG_MAX);
+  const idSuffix = pickUniqueIdSuffix(projectDir, kind, id);
+  const stem = slug === "" ? idSuffix : `${slug}-${idSuffix}`;
+  return `${stem}.json`;
 }
 
-export function conversationJsonPath(projectDir: string, id: string): string {
-  return resolve(noesisSubdirPath(projectDir, "conversation"), `${id}.json`);
-}
-
-export function documentMdPath(projectDir: string, id: string): string {
-  return resolve(noesisSubdirPath(projectDir, "document"), `${id}.md`);
-}
-
-export function documentJsonPath(projectDir: string, id: string): string {
-  return resolve(noesisSubdirPath(projectDir, "document"), `${id}.json`);
-}
-
-export function topicJsonPath(projectDir: string, id: string): string {
-  return resolve(noesisSubdirPath(projectDir, "topic"), `${id}.json`);
-}
-
-export function decisionJsonPath(projectDir: string, id: string): string {
-  return resolve(noesisSubdirPath(projectDir, "decision"), `${id}.json`);
-}
-
-const DESIGN_DOC_SLUG_MAX = 20;
-const DESIGN_DOC_ID_SUFFIX_MIN = 8;
-
-export function designDocCanonicalFilename(projectDir: string, id: string, name: string): string {
-  const slug = slugifyForFilename(name).slice(0, DESIGN_DOC_SLUG_MAX);
-  const idSuffix = pickUniqueIdSuffix(projectDir, id);
-  return slug === "" ? `${idSuffix}.json` : `${slug}-${idSuffix}.json`;
-}
-
-export function designDocCanonicalPath(projectDir: string, id: string, name: string): string {
+export function canonicalPath(
+  projectDir: string,
+  kind: SourceFileKind,
+  id: string,
+  name: string,
+): string {
   return resolve(
-    noesisSubdirPath(projectDir, "design_doc"),
-    designDocCanonicalFilename(projectDir, id, name)
+    noesisSubdirPath(projectDir, kind),
+    canonicalFilename(projectDir, kind, id, name),
   );
 }
 
-export function findDesignDocFileById(
+export function findFileById(
   projectDir: string,
+  kind: SourceFileKind,
   id: string,
-  exclude?: ReadonlySet<string>
+  exclude?: ReadonlySet<string>,
 ): string | null {
-  const dir = noesisSubdirPath(projectDir, "design_doc");
+  const dir = noesisSubdirPath(projectDir, kind);
   if (!existsSync(dir)) return null;
   for (const entry of readdirSync(dir)) {
     if (!entry.endsWith(".json")) continue;
     const abs = resolve(dir, entry);
     if (exclude !== undefined && exclude.has(abs)) continue;
-    const fileId = readIdFromDesignDocFile(abs);
+    const fileId = readIdFromJsonFile(abs, kind);
     if (fileId === id) return abs;
   }
   return null;
 }
 
-export function readIdFromDesignDocFile(absPath: string): string | null {
+export function conversationJsonPath(projectDir: string, id: string, name: string): string {
+  return canonicalPath(projectDir, "conversation", id, name);
+}
+
+export function documentJsonPath(projectDir: string, id: string, name: string): string {
+  return canonicalPath(projectDir, "document", id, name);
+}
+
+export function topicJsonPath(projectDir: string, id: string, name: string): string {
+  return canonicalPath(projectDir, "topic", id, name);
+}
+
+export function decisionJsonPath(projectDir: string, id: string, name: string): string {
+  return canonicalPath(projectDir, "decision", id, name);
+}
+
+export function designDocCanonicalFilename(projectDir: string, id: string, name: string): string {
+  return canonicalFilename(projectDir, "design_doc", id, name);
+}
+
+export function designDocCanonicalPath(projectDir: string, id: string, name: string): string {
+  return canonicalPath(projectDir, "design_doc", id, name);
+}
+
+export function findConversationJsonById(projectDir: string, id: string): string | null {
+  return findFileById(projectDir, "conversation", id);
+}
+
+export function findDocumentJsonById(projectDir: string, id: string): string | null {
+  return findFileById(projectDir, "document", id);
+}
+
+export function findTopicJsonById(projectDir: string, id: string): string | null {
+  return findFileById(projectDir, "topic", id);
+}
+
+export function findDecisionJsonById(projectDir: string, id: string): string | null {
+  return findFileById(projectDir, "decision", id);
+}
+
+export function findDesignDocFileById(
+  projectDir: string,
+  id: string,
+  exclude?: ReadonlySet<string>,
+): string | null {
+  return findFileById(projectDir, "design_doc", id, exclude);
+}
+
+export function readIdFromJsonFile(absPath: string, kind: SourceFileKind): string | null {
   if (!existsSync(absPath)) return null;
   try {
-    const parsed = JSON.parse(readFileSync(absPath, "utf-8")) as {
-      id?: unknown;
-    };
-    return typeof parsed.id === "string" ? parsed.id : null;
+    const raw = readFileSync(absPath, "utf-8");
+    return readIdFromJson(raw, kind);
   } catch {
     return null;
   }
 }
 
-export function designDocJsonPath(projectDir: string, id: string): string {
-  return resolve(noesisSubdirPath(projectDir, "design_doc"), `${id}.json`);
-}
-
-function slugifyForFilename(input: string): string {
-  return input
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-}
-
-function pickUniqueIdSuffix(projectDir: string, id: string): string {
-  const dir = noesisSubdirPath(projectDir, "design_doc");
-  const otherHexIds: string[] = [];
-  if (existsSync(dir)) {
-    for (const entry of readdirSync(dir)) {
-      if (!entry.endsWith(".json")) continue;
-      const fullId = readIdFromDesignDocFile(resolve(dir, entry));
-      if (fullId !== null && fullId !== id) {
-        otherHexIds.push(stripDashes(fullId));
-      }
-    }
-  }
-  const idHex = stripDashes(id);
-  for (let len = DESIGN_DOC_ID_SUFFIX_MIN; len <= idHex.length; len++) {
-    const candidate = idHex.slice(-len);
-    if (otherHexIds.every((other) => !other.endsWith(candidate))) {
-      return candidate;
-    }
-  }
-  return idHex;
-}
-
-function stripDashes(s: string): string {
-  return s.replace(/-/g, "");
-}
-
-export function idLineComment(kind: SourceFileKind, id: string): string {
-  return `<!-- ${ID_FIELD_FOR_KIND[kind]}: ${id} -->`;
-}
-
-export function extractIdFromMd(content: string, kind: SourceFileKind): string | null {
-  const firstLine = content.split(/\r?\n/, 1)[0] ?? "";
-  const pattern = new RegExp(`^<!--\\s*${ID_FIELD_FOR_KIND[kind]}\\s*:\\s*([^\\s>]+)\\s*-->\\s*$`);
-  const match = firstLine.match(pattern);
-  return match === null ? null : match[1];
-}
-
-export function stampIdLine(content: string, kind: SourceFileKind, id: string): string {
-  const stripped = stripIdLine(content);
-  const header = idLineComment(kind, id);
-  if (stripped === "") return `${header}\n`;
-  return `${header}\n${stripped}`;
-}
-
-export function stripIdLine(content: string): string {
-  const match = content.match(/^<!--\s*[a-z_]+_id\s*:\s*[^\s>]+\s*-->\s*\r?\n?/);
-  if (match === null) return content;
-  return content.slice(match[0].length);
+export function readIdFromDesignDocFile(absPath: string): string | null {
+  return readIdFromJsonFile(absPath, "design_doc");
 }
 
 export function computeContentSha(content: string | Buffer): string {
@@ -257,6 +232,54 @@ export function classifySourceFilePath(
   const ext = extname(segments[segments.length - 1]);
   if (!isSourceFileExtension(ext)) return null;
   return { kind, subdirRelative: segments.slice(1).join(sep), ext };
+}
+
+function slugifyForFilename(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function pickUniqueIdSuffix(
+  projectDir: string,
+  kind: SourceFileKind,
+  id: string,
+): string {
+  const dir = noesisSubdirPath(projectDir, kind);
+  const otherHexIds: string[] = [];
+  if (existsSync(dir)) {
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith(".json")) continue;
+      const fullId = readIdFromJsonFile(resolve(dir, entry), kind);
+      if (fullId !== null && fullId !== id) {
+        otherHexIds.push(stripDashes(fullId));
+      }
+    }
+  }
+  const idHex = stripDashes(id);
+  for (let len = ID_SUFFIX_MIN; len <= idHex.length; len++) {
+    const candidate = idHex.slice(-len);
+    if (otherHexIds.every((other) => !other.endsWith(candidate))) {
+      return candidate;
+    }
+  }
+  return idHex;
+}
+
+function readIdFromJson(raw: string, kind: SourceFileKind): string | null {
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  const direct = parsed["id"];
+  if (typeof direct === "string") return direct;
+  const fieldName = ID_FIELD_FOR_KIND[kind];
+  const namespaced = parsed[fieldName];
+  return typeof namespaced === "string" ? namespaced : null;
+}
+
+function stripDashes(s: string): string {
+  return s.replace(/-/g, "");
 }
 
 function hasValidSourceFileExtension(filename: string): boolean {

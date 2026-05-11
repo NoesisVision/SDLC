@@ -229,14 +229,6 @@ export class IndexerService implements OnApplicationBootstrap {
   }
 
   private async indexOne(kind: SourceFileKind, path: string): Promise<void> {
-    if (
-      (kind === "conversation" || kind === "document") &&
-      path.endsWith(".md")
-    ) {
-      // The .md file is the human-readable source; the .json sidecar is what
-      // the indexer tracks for change detection.
-      return;
-    }
     switch (kind) {
       case "conversation":
         await this.conversations.indexFile(path);

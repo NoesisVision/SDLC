@@ -40,19 +40,39 @@ The graph DB and the on-disk JSON files describe the same domain but are **two d
 
 ## File-first persistence
 
-- **Source of truth lives on disk** under `<projectDir>/noesis/`:
-  - `conversations/<conversation_id>.{md,json}` — cleaned transcript (md) + sidecar (turns/idea_units).
-  - `documents/<document_id>.{md,json}` — source markdown + sidecar (fragments + section tree).
-  - `topics/<topic_id>.json` — flat topic file with `parent_id`, items carry `source_sha`.
-  - `decisions/<decision_id>.json` — decision file with `topic_id`, referenced items carry `source_sha`.
-  - `design-docs/<design_doc_id>.json` — design doc.
-- The graph DB is a **cache rebuilt from these files**. Skills produce the same output they always have; each domain service splits that output into its canonical files inline (e.g. `conversations.uploadAnalysis`, `documents.merge`, `designDocs.persistFile`). There is no separate splitter or file-sync layer.
+- **Source of truth lives on disk** under `<projectDir>/noesis/` as JSON sidecars only. **No markdown files are stored in `noesis/`.** The user's original transcripts and document drafts live wherever the user keeps them and are never copied, modified, or stamped by the plugin; if a user happens to place an md file inside `noesis/`, the indexer ignores it.
+  - `conversations/<slug>-<id-suffix>.json` — full conversation sidecar (turns, idea units, main_topic, time).
+  - `documents/<slug>-<id-suffix>.json` — full document sidecar (the raw markdown lives in the sidecar's `content` field; fragments + section tree alongside).
+  - `topics/<slug>-<id-suffix>.json` — flat topic file with `parent_id`; items carry `source_sha`.
+  - `decisions/<slug>-<id-suffix>.json` — decision file with `topic_id`; referenced items carry `source_sha`.
+  - `design-docs/<slug>-<id-suffix>.json` — design doc.
+
+  `<slug>` is the entity's name/title slugified and capped at 30 chars (kebab-case); `<id-suffix>` is the last 8 hex chars of the id (extended only on collision). Filename helpers live in `shared-contracts/source-files.ts`.
+
+- **Source file extensions allowlist**: `SOURCE_FILE_EXTENSIONS = [".json"]` — `discoverSourceFiles` only picks up sidecars. Stray `.md` files in any `noesis/` subdir are not indexed and do not produce DB rows.
+
+- **ID rules**:
+  - **Conversation `id` and Document `id` are content-hash UUIDs**: the sha-256 of the raw md input bytes, formatted as a UUID (8-4-4-4-12). The hash is computed by `contentHashAsUuid(content)` in `shared-contracts/uuid.ts`. Re-running the prepare script on the same source bytes produces the same id, which is how duplicate detection works.
+  - **The id is never written into the md** — the user's source file is read but not modified, and the hash covers the original bytes. Anything that would mutate the input (stamping, normalisation) is forbidden.
+  - **Topic, Decision, DesignDoc, Actor ids are UUID v7**: `Bun.randomUUIDv7()` (`newUuid()`). Time-ordered, random tail.
+  - **Duplicate detection is the skill's responsibility**: after `prepare.ts` returns the content-hash id, the skill MUST call `noesis-graph:has_conversation` / `noesis-graph:has_document` before analysis. If `exists: true` the skill aborts with a "duplicate" message — the source has already been processed.
+
+- The graph DB is a **cache rebuilt from these JSON sidecars**. Skills produce the same output they always have; each domain service splits that output into its canonical files inline (e.g. `conversations.uploadAnalysis`, `documents.uploadAnalysis`, `designDocs.persistFile`). There is no separate splitter or file-sync layer.
 - **User edits are protected per-field via `*_locked` flags** (e.g. `title_locked`, `short_summary_locked`, `decision.text_locked`). The UI edit methods (`editFieldsAndLock`, `editTopFieldsAndLock`, `editAlternativeOptionAndLock`) set the lock when a field is changed. On the next skill-driven upload/merge, the service preserves any locked field instead of overwriting it; unlocked fields are replaced as usual.
-- **Cross-file references store `source_sha`** (sha-256 of the referenced file at ref-creation time). Mismatches are how the indexer detects stale dependents.
+- **Cross-file references store `source_sha`** (sha-256 of the referenced sidecar at ref-creation time). Mismatches are how the indexer detects stale dependents.
 - **Indexer**: `IndexerService` (`mcp/noesis-graph/indexer/indexer.service.ts`) owns index state (`idle` / `indexing` / `consistent` / `error`) and drives `runFullIndex`. A pass discovers source files under `<projectDir>/noesis/`, calls each domain service's `indexFile(path)` (which computes the file sha and upserts to the DB only when it differs from the stored sha), drops DB rows for vanished files via each domain's `deleteForFile(path)`, and finally calls `topics.refreshStaleFlags` / `decisions.refreshStaleFlags` to recompute `is_stale` from cross-ref `source_sha` vs current node sha. Concurrent calls coalesce: at most one pass runs and at most one follow-up is queued.
 - **Per-domain services own projection**: each domain (`conversations` / `documents` / `topics` / `decisions` / `design-docs`) has its own `*.service.ts` + `*.repository.ts` pair. The repository holds the node sha (`c.sha`, `d.sha`, etc.) on the DB node directly — there is no separate `SourceFile` registry table. The service's `indexFile` is the single bridge from disk file → DB row.
-- **File watcher (optional, opt-in)**: `IndexerServiceNew.startWatching()` watches `<projectDir>/noesis/` with a debounced re-index. It has no `OnApplicationBootstrap` hook — production code or tests that want filesystem-driven re-indexing must call `startWatching()` explicitly. Knowledge-domain tests deliberately leave it off so writes don't trigger async re-index events; only indexer-level tests turn the watcher on.
-- **Conversation IDs are content-addressed**: derived from a sha-256 of the source transcript. Same source → same id across reruns.
+- **File watcher (optional, opt-in)**: `IndexerService.startWatching()` watches `<projectDir>/noesis/` with a debounced re-index. It has no `OnApplicationBootstrap` hook — production code or tests that want filesystem-driven re-indexing must call `startWatching()` explicitly. Knowledge-domain tests deliberately leave it off so writes don't trigger async re-index events; only indexer-level tests turn the watcher on.
+
+## Skill md-input contract
+
+Skills whose input is a markdown file (`analyze-conversation`, `analyze-design-draft`) follow a fixed contract enforced by their `prepare.ts`:
+
+1. `prepare.ts` reads the user-provided md path. It NEVER modifies the source file and NEVER copies it into `noesis/`.
+2. The id is `contentHashAsUuid(rawInputBytes)`. Same bytes → same id.
+3. `prepare.ts` writes its artifacts to a transient working directory (`<working_dir>/output.json`, and for conversations also `<working_dir>/cleaned.md`). Nothing under `noesis/` is touched.
+4. The skill calls the matching MCP existence-check tool (`has_conversation` / `has_document`) before running analysis. If the id is already in the graph, the skill aborts with a duplicate message.
+5. On `merge_conversation` / `merge_document`, the service writes only the JSON sidecar under `noesis/`. The original md remains untouched at the user's path.
 
 ## Dev seed coverage
 

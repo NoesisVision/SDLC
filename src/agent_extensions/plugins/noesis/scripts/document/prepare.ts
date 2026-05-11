@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
-import { basename, dirname, join } from "path";
-import { newUuid } from "../../shared-contracts/uuid.js";
+import { basename, join } from "path";
+import { contentHashAsUuid } from "../../shared-contracts/uuid.js";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
 import { fragmentMarkdown } from "./fragment-markdown.js";
 import {
@@ -9,15 +9,9 @@ import {
 } from "../../shared-contracts/skills/analyze-design-draft/output.js";
 import { formatSectionTreeMarkdown } from "../../shared-contracts/documents.js";
 import { resolveWorkingDir } from "../../shared-contracts/plugin-paths.js";
-import {
-  documentMdPath,
-  stampIdLine,
-} from "../../shared-contracts/source-files.js";
 
 const SKILL_NAME = "noesis:analyze-design-draft";
 const FILE_MODE = 0o600;
-
-const DOCUMENT_ID_PATTERN = /^<!--\s*document_id:\s*([\w-]+)\s*-->/;
 
 interface PrepareResult {
   status: "Ok";
@@ -25,7 +19,7 @@ interface PrepareResult {
   document_id: string;
   output_path: string;
   section_tree_path: string;
-  source_md_path: string;
+  source_path: string;
   num_fragments: number;
   design_doc_id: string | null;
   design_doc_title: string | null;
@@ -46,9 +40,9 @@ export function prepareDocument(
   date: string,
   options: PrepareOptions,
 ): PrepareResult {
-  const projectDir = resolveProjectDir(options.projectDir);
+  resolveProjectDir(options.projectDir);
   const sourceContent = readFileSync(documentPath, "utf-8");
-  const documentId = resolveDocumentId(sourceContent);
+  const documentId = contentHashAsUuid(sourceContent);
 
   const resolvedTitle =
     title.trim() !== ""
@@ -62,10 +56,7 @@ export function prepareDocument(
     documentId,
     options.workingDirBase,
   );
-
-  const sourceMdPath = documentMdPath(projectDir, documentId);
-  mkdirSync(dirname(sourceMdPath), { recursive: true });
-  writeFileSync(sourceMdPath, stampIdLine(sourceContent, "document", documentId), "utf-8");
+  mkdirSync(workingDir, { recursive: true });
 
   const output: AnalyzeDesignDraftOutput = {
     document: {
@@ -102,7 +93,7 @@ export function prepareDocument(
     document_id: documentId,
     output_path: outputPath,
     section_tree_path: sectionTreePath,
-    source_md_path: sourceMdPath,
+    source_path: documentPath,
     num_fragments: fragments.length,
     design_doc_id: options.designDocId,
     design_doc_title: options.designDocTitle,
@@ -124,13 +115,6 @@ function extractTitleFromContent(content: string): string | null {
     return null;
   }
   return null;
-}
-
-function resolveDocumentId(sourceContent: string): string {
-  const firstLine = sourceContent.split("\n", 1)[0];
-  const match = DOCUMENT_ID_PATTERN.exec(firstLine);
-  if (match !== null) return match[1];
-  return newUuid();
 }
 
 function resolveProjectDir(explicit: string | undefined): string {

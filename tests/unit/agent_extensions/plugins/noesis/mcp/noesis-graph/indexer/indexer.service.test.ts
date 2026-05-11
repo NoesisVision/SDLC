@@ -28,11 +28,9 @@ import {
 } from "@noesis/shared-contracts/source-file-schemas.js";
 import {
   conversationJsonPath,
-  conversationMdPath,
   decisionJsonPath,
   designDocCanonicalPath,
   documentJsonPath,
-  documentMdPath,
   topicJsonPath,
 } from "@noesis/shared-contracts/source-files.js";
 import { DesignDocFileNewSchema, type DesignDocFileNew } from "@noesis/shared-contracts/design-doc-new.js";
@@ -83,19 +81,19 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
   test("Indexing process every kind of source file present on disk", async () => {
     await given("one file per kind on disk", () => {
       writeJson(
-        conversationJsonPath(ctx.projectDir, "conv-1"),
+        conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"),
         makeConversationFile("conv-1"),
       );
       writeJson(
-        documentJsonPath(ctx.projectDir, "doc-1"),
+        documentJsonPath(ctx.projectDir, "doc-1", "Doc"),
         makeDocumentFile("doc-1"),
       );
       writeJson(
-        topicJsonPath(ctx.projectDir, "topic-1"),
+        topicJsonPath(ctx.projectDir, "topic-1", "Topic"),
         makeTopicFile("topic-1"),
       );
       writeJson(
-        decisionJsonPath(ctx.projectDir, "decision-1"),
+        decisionJsonPath(ctx.projectDir, "decision-1", "Decision"),
         makeDecisionFile("decision-1"),
       );
     });
@@ -117,14 +115,14 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
   test("Indexing deletes DB rows for files that have disappeared on disk", async () => {
     await given("a topic indexed once", async () => {
       writeJson(
-        topicJsonPath(ctx.projectDir, "topic-1"),
+        topicJsonPath(ctx.projectDir, "topic-1", "Topic"),
         makeTopicFile("topic-1"),
       );
       await ctx.indexer.runFullIndex();
       expect(await ctx.topicsRepository.exists("topic-1")).toBe(true);
     });
     await when("the file is removed and indexing runs again", async () => {
-      unlinkSync(topicJsonPath(ctx.projectDir, "topic-1"));
+      unlinkSync(topicJsonPath(ctx.projectDir, "topic-1", "Topic"));
       const result = await ctx.indexer.runFullIndex();
       expect(result.files_deleted).toBe(1);
     });
@@ -135,9 +133,9 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
 
   test("Indexing mark a topic as stale when its referenced conversation has changed sha", async () => {
     await given("a conversation indexed and a topic referencing it", async () => {
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-1"), makeConversationFile("conv-1"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"), makeConversationFile("conv-1"));
       writeJson(
-        topicJsonPath(ctx.projectDir, "topic-1"),
+        topicJsonPath(ctx.projectDir, "topic-1", "Topic"),
         makeTopicFile("topic-1", {
           items: [
             {
@@ -163,9 +161,9 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
 
   test("Indexing mark a decision as stale when its referenced conversation has changed sha", async () => {
     await given("a conversation indexed and a decision referencing it", async () => {
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-1"), makeConversationFile("conv-1"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"), makeConversationFile("conv-1"));
       writeJson(
-        decisionJsonPath(ctx.projectDir, "decision-1"),
+        decisionJsonPath(ctx.projectDir, "decision-1", "Decision"),
         makeDecisionFile("decision-1", {
           referenced_items: [
             {
@@ -196,10 +194,10 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
     let decisionBefore: Awaited<ReturnType<typeof ctx.decisionsRepository.read>> = null;
 
     await given("one file per kind indexed once", async () => {
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-1"), makeConversationFile("conv-1"));
-      writeJson(documentJsonPath(ctx.projectDir, "doc-1"), makeDocumentFile("doc-1"));
-      writeJson(topicJsonPath(ctx.projectDir, "topic-1"), makeTopicFile("topic-1"));
-      writeJson(decisionJsonPath(ctx.projectDir, "decision-1"), makeDecisionFile("decision-1"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"), makeConversationFile("conv-1"));
+      writeJson(documentJsonPath(ctx.projectDir, "doc-1", "Doc"), makeDocumentFile("doc-1"));
+      writeJson(topicJsonPath(ctx.projectDir, "topic-1", "Topic"), makeTopicFile("topic-1"));
+      writeJson(decisionJsonPath(ctx.projectDir, "decision-1", "Decision"), makeDecisionFile("decision-1"));
       await ctx.indexer.runFullIndex();
       conversationBefore = await ctx.conversationsRepository.read("conv-1");
       documentBefore = await ctx.documentsRepository.read("doc-1");
@@ -231,7 +229,7 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
     let stateAfterEverythingDrains: string | null = null;
 
     await given("a conversation file on disk", () => {
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-1"), makeConversationFile("conv-1"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"), makeConversationFile("conv-1"));
     });
     await when("a pass is started and a second one is queued before either completes", async () => {
       const first = ctx.indexer.runFullIndex();
@@ -255,7 +253,7 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
   test("Indexing called twice concurrently yields a single executing pass plus one queued rerun", async () => {
     await given("a conversation file on disk", () => {
       writeJson(
-        conversationJsonPath(ctx.projectDir, "conv-1"),
+        conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"),
         makeConversationFile("conv-1"),
       );
     });
@@ -278,7 +276,7 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
     let thirdResult: unknown = null;
 
     await given("a conversation file on disk", () => {
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-1"), makeConversationFile("conv-1"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"), makeConversationFile("conv-1"));
     });
     await when("three indexing requests are issued back-to-back", async () => {
       const p1 = ctx.indexer.runFullIndex();
@@ -299,7 +297,7 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
       ctx.indexer.startWatching();
     });
     await when("a new conversation file appears on disk", async () => {
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-1"), makeConversationFile("conv-1"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"), makeConversationFile("conv-1"));
       await waitForCondition(
         async () =>
           ctx.indexer.getState() === "consistent" &&
@@ -311,14 +309,14 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
     });
   });
 
-  test("Indexing skips orphan .md files in documents and conversations dirs without erroring", async () => {
-    await given("orphan .md files alongside no .json sidecar", () => {
+  test("Indexing ignores stray .md files placed in documents and conversations subdirs", async () => {
+    await given("stray .md files in the noesis layout that are not source files", () => {
       writeFileSync(
-        documentMdPath(ctx.projectDir, "draft-document"),
+        join(ctx.projectDir, "noesis", "documents", "draft.md"),
         "# Some draft\n\nNot a JSON document.\n",
       );
       writeFileSync(
-        conversationMdPath(ctx.projectDir, "draft-conversation"),
+        join(ctx.projectDir, "noesis", "conversations", "transcript.md"),
         "# Conversation transcript\n",
       );
     });
@@ -328,13 +326,10 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
     await when("indexing runs", async () => {
       result = await ctx.indexer.runFullIndex();
     });
-    await then("indexing settles in consistent state and no JSON-parse error trips the pass", () => {
+    await then("the indexer ignores the .md files entirely and stays in a consistent state", () => {
       expect(ctx.indexer.getState()).toBe("consistent");
-      expect(result?.files_processed).toBe(result?.files_total);
-    });
-    await and("no document or conversation rows are written for the orphan markdown files", async () => {
-      expect(await ctx.documentsRepository.exists("draft-document")).toBe(false);
-      expect(await ctx.conversationsRepository.exists("draft-conversation")).toBe(false);
+      expect(result?.files_total).toBe(0);
+      expect(result?.files_processed).toBe(0);
     });
   });
 
@@ -394,19 +389,19 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
       ctx.indexer.startWatching();
     });
     await when("conversations are added one after another in quick succession", async () => {
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-1"), makeConversationFile("conv-1"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-1", "Discussion"), makeConversationFile("conv-1"));
       await waitForCondition(
         async () =>
           ctx.indexer.getState() === "consistent" &&
           (await ctx.conversationsRepository.exists("conv-1")),
       );
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-2"), makeConversationFile("conv-2"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-2", "Discussion"), makeConversationFile("conv-2"));
       await waitForCondition(
         async () =>
           ctx.indexer.getState() === "consistent" &&
           (await ctx.conversationsRepository.exists("conv-2")),
       );
-      writeJson(conversationJsonPath(ctx.projectDir, "conv-3"), makeConversationFile("conv-3"));
+      writeJson(conversationJsonPath(ctx.projectDir, "conv-3", "Discussion"), makeConversationFile("conv-3"));
       await waitForCondition(
         async () =>
           ctx.indexer.getState() === "consistent" &&

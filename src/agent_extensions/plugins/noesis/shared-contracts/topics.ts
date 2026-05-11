@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto";
 import { z } from "zod";
 import { IdeaUnitRefSchema, type IdeaUnitRef } from "./conversation.js";
 import { DocumentFragmentRefSchema, type DocumentFragmentRef } from "./documents.js";
+import { newUuid } from "./uuid.js";
 
 export const TopicItemSchema = z.union([
   z.lazy(() => IdeaUnitRefSchema),
@@ -27,7 +27,7 @@ export type DecisionStatus = z.infer<typeof DecisionStatusSchema>;
 
 export const DecisionSchema = z
   .object({
-    id: z.string().default(() => randomUUID()),
+    id: z.string().default(() => newUuid()),
     title: z.string(),
     status: DecisionStatusSchema,
     referenced_items: z.array(TopicItemSchema),

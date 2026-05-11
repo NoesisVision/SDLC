@@ -25,7 +25,6 @@ import {
 } from "../../../shared-contracts/source-file-schemas.js";
 import {
   conversationJsonPath,
-  conversationMdPath,
   decisionJsonPath,
   designDocCanonicalPath,
   documentJsonPath,
@@ -1116,24 +1115,20 @@ function changeSet(items: string[]): StringChangeSet {
 // ---------- file writes ----------
 
 function writeConversation(projectDir: string, file: ConversationFileNew): void {
-  const jsonPath = conversationJsonPath(projectDir, file.conversation_id);
+  const jsonPath = conversationJsonPath(projectDir, file.conversation_id, file.main_topic);
   writeJson(jsonPath, file);
-
-  const mdPath = conversationMdPath(projectDir, file.conversation_id);
-  const md = renderConversationMarkdown(file);
-  writeText(mdPath, md);
 }
 
 function writeDocument(projectDir: string, file: DocumentFileNew): void {
-  writeJson(documentJsonPath(projectDir, file.document_id), file);
+  writeJson(documentJsonPath(projectDir, file.document_id, file.title), file);
 }
 
 function writeTopic(projectDir: string, file: TopicFileNew): void {
-  writeJson(topicJsonPath(projectDir, file.id), file);
+  writeJson(topicJsonPath(projectDir, file.id, file.title), file);
 }
 
 function writeDecision(projectDir: string, file: DecisionFileNew): void {
-  writeJson(decisionJsonPath(projectDir, file.id), file);
+  writeJson(decisionJsonPath(projectDir, file.id, file.title), file);
 }
 
 function writeDesignDoc(projectDir: string, file: DesignDocFileNew): void {
@@ -1145,27 +1140,7 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
 }
 
-function writeText(path: string, contents: string): void {
-  ensureDir(path);
-  writeFileSync(path, contents, "utf-8");
-}
-
 function ensureDir(path: string): void {
   const dir = path.slice(0, path.lastIndexOf("/"));
   if (dir.length > 0) mkdirSync(dir, { recursive: true });
-}
-
-function renderConversationMarkdown(file: ConversationFileNew): string {
-  const lines: string[] = [`<!-- conversation_id: ${file.conversation_id} -->`];
-  lines.push(`# ${file.main_topic}`);
-  lines.push("");
-  for (const turn of file.turns) {
-    lines.push(`## Turn ${turn.index} — ${turn.speaker} @ ${turn.time}`);
-    for (const iu of turn.idea_units) {
-      lines.push(`- IU${iu.index} [${iu.categories.join(", ")}]`);
-      for (const sentence of iu.sentences) lines.push(`  - ${sentence}`);
-    }
-    lines.push("");
-  }
-  return lines.join("\n");
 }

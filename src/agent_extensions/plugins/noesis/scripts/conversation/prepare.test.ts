@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import {
   buildCleanedMarkdown,
@@ -20,7 +20,7 @@ function runScript(...args: string[]) {
 }
 
 describe("buildCleanedMarkdown", () => {
-  test("renders header comments and turns", () => {
+  test("renders time and main_topic stamps plus turns, with no conversation_id stamp", () => {
     const transcript: RawTranscript = {
       conversation_id: "cid",
       turns: [
@@ -32,8 +32,8 @@ describe("buildCleanedMarkdown", () => {
         { speaker: "Bob", time: "00:01:00", sentences: ["Fine."] },
       ],
     };
-    const md = buildCleanedMarkdown("cid", "2026-04-25 12:00:00", "topic-x", transcript);
-    expect(md).toContain("<!-- conversation_id: cid -->");
+    const md = buildCleanedMarkdown("2026-04-25 12:00:00", "topic-x", transcript);
+    expect(md).not.toContain("conversation_id:");
     expect(md).toContain("<!-- time: 2026-04-25 12:00:00 -->");
     expect(md).toContain("<!-- main_topic: topic-x -->");
     expect(md).toContain("### [0] 00:00:30 — Alice");
@@ -43,7 +43,7 @@ describe("buildCleanedMarkdown", () => {
 });
 
 describe("prepareConversation", () => {
-  test("generates id, writes cleaned file under noesis/conversations/, initialises output.json", () => {
+  test("hashes the raw transcript, writes cleaned md to the working dir, never to noesis", () => {
     const transcriptPath = join(tmpDir, "meeting.md");
     writeFileSync(
       transcriptPath,
@@ -65,27 +65,35 @@ I think we should start with the database schema. It needs careful planning.
     );
 
     expect(result.status).toBe("Ok");
-    expect(result.cleaned_path).toBe(
-      join(tmpDir, "noesis", "conversations", `${result.conversation_id}.md`),
+    expect(result.conversation_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
-    expect(existsSync(result.cleaned_path)).toBe(true);
     expect(result.working_dir).toBe(
       join(tmpDir, "noesis:analyze-conversation", result.conversation_id),
     );
+    expect(result.cleaned_path).toBe(join(result.working_dir, "cleaned.md"));
+    expect(existsSync(result.cleaned_path)).toBe(true);
     expect(existsSync(result.output_path)).toBe(true);
     expect(result.num_turns).toBe(2);
 
     const cleaned = readFileSync(result.cleaned_path, "utf-8");
-    expect(cleaned).toContain(`<!-- conversation_id: ${result.conversation_id} -->`);
+    expect(cleaned).not.toContain("conversation_id:");
+    expect(cleaned).toContain("<!-- main_topic: Database design -->");
 
     const output = JSON.parse(readFileSync(result.output_path, "utf-8"));
     expect(output.conversation.conversation_id).toBe(result.conversation_id);
     expect(output.conversation.turns).toEqual([]);
     expect(output.conversation.topics).toEqual([]);
     expect(output.potential_topics).toEqual({ topics: [] });
+
+    const noesisDir = join(tmpDir, "noesis");
+    if (existsSync(noesisDir)) {
+      const found = readdirSync(noesisDir, { recursive: true }) as string[];
+      expect(found.filter((p) => p.endsWith(".md"))).toEqual([]);
+    }
   });
 
-  test("reuses existing conversation_id from cleaned file on rerun", () => {
+  test("rerun on the same raw transcript bytes produces the same content-hash id", () => {
     const transcriptPath = join(tmpDir, "rerun.md");
     writeFileSync(
       transcriptPath,

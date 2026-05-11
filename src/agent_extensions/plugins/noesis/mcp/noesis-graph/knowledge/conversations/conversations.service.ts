@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { existsSync, readFileSync, rmSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import {
   buildTurnMap,
   formatEnrichedTopicMarkdown,
@@ -24,12 +24,8 @@ import {
 import {
   computeContentSha,
   computeFileSha,
-  conversationJsonPath,
-  conversationMdPath,
-  decisionJsonPath,
-  documentJsonPath,
-  stampIdLine,
-  topicJsonPath,
+  findConversationJsonById,
+  findDocumentJsonById,
 } from "../../../../shared-contracts/source-files.js";
 import type {
   ConversationDecisionRef,
@@ -66,7 +62,6 @@ export {
 
 export interface ConversationAnalysisOutput {
   outputJsonPath: string;
-  cleanedMdPath: string;
   confirmed_edits?: ConfirmedEdit[];
 }
 
@@ -100,13 +95,27 @@ export class ConversationsService {
   async deleteForFile(
     absPath: string,
   ): Promise<{ conversation_id: string } | null> {
-    const id = inferConversationIdFromPath(absPath);
-    if (id === null) return null;
-    if (!(await this.repository.exists(id))) return null;
-    await this.repository.delete(id);
-    rmSync(conversationJsonPath(this.projectDir, id), { force: true });
-    rmSync(conversationMdPath(this.projectDir, id), { force: true });
-    return { conversation_id: id };
+    const stored = await this.findStoredForFile(absPath);
+    if (stored === null) return null;
+    await this.repository.delete(stored.id);
+    const json = this.repository.findJsonById(this.projectDir, stored.id);
+    if (json !== null) this.repository.deleteFile(json);
+    return { conversation_id: stored.id };
+  }
+
+  private async findStoredForFile(
+    absPath: string,
+  ): Promise<{ id: string; main_topic: string } | null> {
+    const all = await this.repository.listAll();
+    for (const c of all) {
+      const json = this.repository.canonicalJsonPath(
+        this.projectDir,
+        c.id,
+        c.main_topic,
+      );
+      if (json === absPath) return c;
+    }
+    return null;
   }
 
   async getConversationDetail(
@@ -256,8 +265,7 @@ export class ConversationsService {
       throw new LockedFieldsBlockedError(conflicts);
     }
     const confirmedSet = new Set((input.confirmed_edits ?? []).map(confirmedKey));
-    const cleanedMd = this.loadCleanedMd(input.cleanedMdPath);
-    return this.split(output, cleanedMd, confirmedSet);
+    return this.split(output, confirmedSet);
   }
 
   // ----- private: merge pipeline -----
@@ -269,13 +277,6 @@ export class ConversationsService {
     const raw = readFileSync(path, "utf-8");
     const parsed = JSON.parse(raw);
     return AnalyzeConversationOutputSchema.parse(parsed);
-  }
-
-  private loadCleanedMd(path: string): string {
-    if (!existsSync(path)) {
-      throw new Error(`Cleaned conversation md not found at ${path}`);
-    }
-    return readFileSync(path, "utf-8");
   }
 
   private validate(output: AnalyzeConversationOutput): void {
@@ -318,15 +319,22 @@ export class ConversationsService {
   ): ConfirmedEdit[] {
     const conflicts: ConfirmedEdit[] = [];
     for (const topic of output.conversation.topics) {
-      const existingTopic = readTopicIfExists(
-        topicJsonPath(this.projectDir, topic.id),
+      const topicPath = this.topicsRepository.findFileById(
+        this.projectDir,
+        topic.id,
       );
+      const existingTopic =
+        topicPath === null ? null : readTopicIfExists(topicPath);
       conflicts.push(...detectTopicConflicts(existingTopic, topic));
       for (const decision of topic.decisions) {
-        const dpath = decisionJsonPath(this.projectDir, decision.id);
-        const existingDecision = this.decisionsRepository.fileExists(dpath)
-          ? this.decisionsRepository.readFile(dpath)
-          : null;
+        const dpath = this.decisionsRepository.findFileById(
+          this.projectDir,
+          decision.id,
+        );
+        const existingDecision =
+          dpath !== null && this.decisionsRepository.fileExists(dpath)
+            ? this.decisionsRepository.readFile(dpath)
+            : null;
         conflicts.push(...detectDecisionConflicts(existingDecision, decision));
       }
     }
@@ -335,13 +343,9 @@ export class ConversationsService {
 
   private split(
     output: AnalyzeConversationOutput,
-    cleanedMd: string,
     confirmed: Set<string>,
   ): UploadConversationAnalysisResult {
     const conv = output.conversation;
-    const stampedMd = stampIdLine(cleanedMd, "conversation", conv.conversation_id);
-    const mdPath = this.canonicalMdPath(conv.conversation_id);
-    this.repository.writeCleanedMd(mdPath, stampedMd);
 
     const conversationFile: ConversationFileNew = {
       conversation_id: conv.conversation_id,
@@ -349,8 +353,7 @@ export class ConversationsService {
       main_topic: conv.main_topic,
       turns: conv.turns,
     };
-    const jsonPath = this.canonicalJsonPath(conv.conversation_id);
-    this.repository.writeJsonFile(jsonPath, conversationFile);
+    const jsonPath = this.persistJson(conversationFile);
 
     const conversationSha = computeFileSha(jsonPath);
     const parentLookup = new Map<string, string | null>();
@@ -400,9 +403,13 @@ export class ConversationsService {
     cache: Map<string, string>,
     confirmed: Set<string>,
   ): { path: string; cleared: ConfirmedEdit[] } {
-    const path = topicJsonPath(this.projectDir, topic.id);
     const items = withItemShas(topic.items as TopicItemRefNew[], this.projectDir, cache);
-    const existing = readTopicIfExists(path);
+    const existingPath = this.topicsRepository.findFileById(
+      this.projectDir,
+      topic.id,
+    );
+    const existing =
+      existingPath === null ? null : readTopicIfExists(existingPath);
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveTopicLockedFields(existing, topic, confirmed, cleared);
     const next: TopicFileNew = {
@@ -419,8 +426,16 @@ export class ConversationsService {
       decisions_extracted: topic.decisions_extracted,
       is_stale: existing?.is_stale ?? false,
     };
-    this.topicsRepository.writeFile(path, next);
-    return { path, cleared };
+    const newPath = this.topicsRepository.canonicalPath(
+      this.projectDir,
+      next.id,
+      next.title,
+    );
+    if (existingPath !== null && existingPath !== newPath) {
+      this.topicsRepository.deleteFile(existingPath);
+    }
+    this.topicsRepository.writeFile(newPath, next);
+    return { path: newPath, cleared };
   }
 
   private writeDecisionFile(
@@ -429,15 +444,19 @@ export class ConversationsService {
     cache: Map<string, string>,
     confirmed: Set<string>,
   ): { path: string; cleared: ConfirmedEdit[] } {
-    const path = decisionJsonPath(this.projectDir, decision.id);
+    const existingPath = this.decisionsRepository.findFileById(
+      this.projectDir,
+      decision.id,
+    );
     const referenced = withItemShas(
       decision.referenced_items as TopicItemRefNew[],
       this.projectDir,
       cache,
     );
-    const existing = this.decisionsRepository.fileExists(path)
-      ? this.decisionsRepository.readFile(path)
-      : null;
+    const existing =
+      existingPath !== null && this.decisionsRepository.fileExists(existingPath)
+        ? this.decisionsRepository.readFile(existingPath)
+        : null;
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveDecisionLockedFields(existing, decision, confirmed, cleared);
     const next: DecisionFileNew = {
@@ -469,16 +488,33 @@ export class ConversationsService {
       })),
       is_stale: existing?.is_stale ?? false,
     };
-    this.decisionsRepository.writeFile(path, next);
-    return { path, cleared };
+    const newPath = this.decisionsRepository.canonicalPath(
+      this.projectDir,
+      next.id,
+      next.title,
+    );
+    if (existingPath !== null && existingPath !== newPath) {
+      this.decisionsRepository.deleteFile(existingPath);
+    }
+    this.decisionsRepository.writeFile(newPath, next);
+    return { path: newPath, cleared };
   }
 
-  private canonicalJsonPath(conversationId: string): string {
-    return this.repository.canonicalJsonPath(this.projectDir, conversationId);
-  }
-
-  private canonicalMdPath(conversationId: string): string {
-    return this.repository.canonicalMdPath(this.projectDir, conversationId);
+  private persistJson(file: ConversationFileNew): string {
+    const newPath = this.repository.canonicalJsonPath(
+      this.projectDir,
+      file.conversation_id,
+      file.main_topic,
+    );
+    const previous = this.repository.findJsonById(
+      this.projectDir,
+      file.conversation_id,
+    );
+    if (previous !== null && previous !== newPath) {
+      this.repository.deleteFile(previous);
+    }
+    this.repository.writeJsonFile(newPath, file);
+    return newPath;
   }
 
   private async collectLinkedDecisions(
@@ -487,11 +523,11 @@ export class ConversationsService {
     const stored = await this.decisionsRepository.listAll();
     const out: ConversationDecisionRef[] = [];
     for (const decision of stored) {
-      const path = this.decisionsRepository.canonicalPath(
+      const path = this.decisionsRepository.findFileById(
         this.projectDir,
         decision.id,
       );
-      if (!this.decisionsRepository.fileExists(path)) continue;
+      if (path === null) continue;
       const file = this.decisionsRepository.readFile(path);
       if (!fileReferencesConversation(file.referenced_items, conversationId)) {
         continue;
@@ -512,11 +548,8 @@ export class ConversationsService {
     const stored = await this.topicsRepository.listAll();
     const out: ConversationTopicRef[] = [];
     for (const topic of stored) {
-      const path = this.topicsRepository.canonicalPath(
-        this.projectDir,
-        topic.id,
-      );
-      if (!this.topicsRepository.fileExists(path)) continue;
+      const path = this.topicsRepository.findFileById(this.projectDir, topic.id);
+      if (path === null) continue;
       const file = this.topicsRepository.readFile(path);
       if (!fileReferencesConversation(file.items, conversationId)) continue;
       out.push({ topic_id: topic.id, title: topic.title });
@@ -529,8 +562,8 @@ export class ConversationsService {
     topicId: string,
     excludeConversationId: string,
   ): Promise<IdeaUnitDetail[]> {
-    const path = this.topicsRepository.canonicalPath(this.projectDir, topicId);
-    if (!this.topicsRepository.fileExists(path)) return [];
+    const path = this.topicsRepository.findFileById(this.projectDir, topicId);
+    if (path === null) return [];
     const file = this.topicsRepository.readFile(path);
     const positionsByConv = new Map<
       string,
@@ -599,9 +632,9 @@ function resolveSourceSha(
   if (cache.has(key)) return cache.get(key);
   const path =
     item.type === "idea_unit_ref"
-      ? conversationJsonPath(projectDir, item.conversation_id)
-      : documentJsonPath(projectDir, item.document_id);
-  if (!existsSync(path)) return undefined;
+      ? findConversationJsonById(projectDir, item.conversation_id)
+      : findDocumentJsonById(projectDir, item.document_id);
+  if (path === null || !existsSync(path)) return undefined;
   const sha = computeContentSha(readFileSync(path));
   cache.set(key, sha);
   return sha;
@@ -635,11 +668,6 @@ function readTopicIfExists(absPath: string): TopicFileNew | null {
   } catch {
     return null;
   }
-}
-
-function inferConversationIdFromPath(absPath: string): string | null {
-  const match = /\/conversations\/([^/]+)\.json$/.exec(absPath);
-  return match === null ? null : match[1];
 }
 
 function fileReferencesConversation(

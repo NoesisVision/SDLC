@@ -43,6 +43,7 @@ describe("TopicsService — paginated reads, lookups, lineage and cross-domain p
 
   beforeEach(async () => {
     await clearGraphNew(ctx.db);
+    rmSync(join(ctx.projectDir, "noesis"), { recursive: true, force: true });
   });
 
   test("Generating topic ids returns the requested count of distinct identifiers", () => {
@@ -573,8 +574,8 @@ async function indexTopic(
   ctx: KnowledgeNewTestContext,
   file: TopicFileNew,
 ): Promise<void> {
-  const path = topicJsonPath(ctx.projectDir, file.id);
   mkdirSync(join(ctx.projectDir, "noesis", "topics"), { recursive: true });
+  const path = topicJsonPath(ctx.projectDir, file.id, file.title);
   writeFileSync(path, JSON.stringify(file, null, 2));
   await ctx.topics.indexFile(path);
 }
@@ -583,8 +584,12 @@ async function indexConversation(
   ctx: KnowledgeNewTestContext,
   file: ConversationFileNew,
 ): Promise<void> {
-  const path = conversationJsonPath(ctx.projectDir, file.conversation_id);
   mkdirSync(join(ctx.projectDir, "noesis", "conversations"), { recursive: true });
+  const path = conversationJsonPath(
+    ctx.projectDir,
+    file.conversation_id,
+    file.main_topic,
+  );
   writeFileSync(path, JSON.stringify(file, null, 2));
   await ctx.conversations.indexFile(path);
 }
@@ -593,8 +598,8 @@ async function indexDocument(
   ctx: KnowledgeNewTestContext,
   file: DocumentFileNew,
 ): Promise<void> {
-  const path = documentJsonPath(ctx.projectDir, file.document_id);
   mkdirSync(join(ctx.projectDir, "noesis", "documents"), { recursive: true });
+  const path = documentJsonPath(ctx.projectDir, file.document_id, file.title);
   writeFileSync(path, JSON.stringify(file, null, 2));
   await ctx.documents.indexFile(path);
 }

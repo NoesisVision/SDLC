@@ -1,8 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
-import { AnalyzeConversationOutputSchema } from "../../../../shared-contracts/skills/analyze-conversation/output.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -31,7 +29,9 @@ function registerHasConversation(
     "has_conversation",
     {
       description:
-        "Check whether a Conversation with the given id is already in the knowledge graph.",
+        "Check whether a Conversation with the given id is already in the knowledge graph. " +
+        "Skills MUST call this with the sha-derived id returned by prepare.ts before running " +
+        "analysis. If `exists: true`, abort: the source has already been processed.",
       inputSchema: {
         conversation_id: z.string().describe("Conversation id to look up."),
       },
@@ -53,27 +53,20 @@ function registerMergeConversation(
     {
       description:
         "Merge a completed conversation analysis into the knowledge graph. Reads " +
-        "`<working_dir>/output.json` (matching AnalyzeConversationOutput) and the cleaned transcript " +
-        "(defaults to `<working_dir>/<conversation_id>.md`; override with `cleaned_md_filename`). " +
-        "Splits the analysis into source files under `<projectDir>/noesis/`: the Conversation sidecar " +
-        "JSON, per-topic JSON files, and per-decision JSON files. Runs business-level validation (refs " +
-        "resolve, all topics reviewed, etc.) and rejects before any file write on validation errors. " +
-        "If a previously-saved topic/decision has any user-edited (`*_locked: true`) field whose value " +
-        "would be overwritten by the merge, the call rejects with a list of blocked locked fields; " +
-        "re-call with `confirmed_edits` containing only the locks the user explicitly approved to " +
-        "overwrite. Returns the canonical paths of the files written.",
+        "`<working_dir>/output.json` (matching AnalyzeConversationOutput) and splits it into source " +
+        "files under `<projectDir>/noesis/`: the Conversation sidecar JSON, per-topic JSON files, " +
+        "and per-decision JSON files. No markdown is written to noesis. Runs business-level " +
+        "validation (refs resolve, all topics reviewed, etc.) and rejects before any file write on " +
+        "validation errors. Rejects with a duplicate error if a Conversation with the same id is " +
+        "already in the graph. If a previously-saved topic/decision has any user-edited " +
+        "(`*_locked: true`) field whose value would be overwritten by the merge, the call rejects " +
+        "with a list of blocked locked fields; re-call with `confirmed_edits` containing only the " +
+        "locks the user explicitly approved to overwrite. Returns the canonical paths of the files written.",
       inputSchema: {
         working_dir: z
           .string()
           .describe(
-            "Absolute path to the analysis working directory containing output.json and the cleaned md.",
-          ),
-        cleaned_md_filename: z
-          .string()
-          .optional()
-          .describe(
-            "Filename (within the working directory) of the cleaned conversation md. " +
-              "Defaults to `<conversation_id>.md` derived from output.json.",
+            "Absolute path to the analysis working directory containing output.json.",
           ),
         confirmed_edits: z
           .array(ConfirmedEditSchema)
@@ -86,14 +79,10 @@ function registerMergeConversation(
           ),
       },
     },
-    async ({ working_dir, cleaned_md_filename, confirmed_edits }) =>
+    async ({ working_dir, confirmed_edits }) =>
       runInlineJsonTool(() =>
         conversations.uploadAnalysis({
           outputJsonPath: join(working_dir, "output.json"),
-          cleanedMdPath: join(
-            working_dir,
-            cleaned_md_filename ?? defaultCleanedMdFilename(working_dir),
-          ),
           confirmed_edits,
         }),
       ),
@@ -156,17 +145,6 @@ function registerValidateOutput(
     async ({ working_dir }) =>
       runInlineJsonTool(() => conversations.validateOutput(working_dir)),
   );
-}
-
-function defaultCleanedMdFilename(workingDir: string): string {
-  const outputPath = join(workingDir, "output.json");
-  if (!existsSync(outputPath)) {
-    throw new Error(`output.json not found at ${outputPath}`);
-  }
-  const parsed = AnalyzeConversationOutputSchema.parse(
-    JSON.parse(readFileSync(outputPath, "utf-8")),
-  );
-  return `${parsed.conversation.conversation_id}.md`;
 }
 
 function formatBundle(bundle: ReviewBundle): string {

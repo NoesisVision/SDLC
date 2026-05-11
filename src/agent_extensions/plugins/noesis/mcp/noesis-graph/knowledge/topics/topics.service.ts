@@ -1,10 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { rmSync } from "fs";
 import type {
   TopicFileNew,
   TopicItemRefNew,
 } from "../../../../shared-contracts/source-file-schemas.js";
-import { topicJsonPath } from "../../../../shared-contracts/source-files.js";
 import { newUuid } from "../../../../shared-contracts/uuid.js";
 import type {
   TopicConversationDetail,
@@ -99,17 +97,16 @@ export class TopicsService {
     private readonly documentsRepository: DocumentsRepository,
   ) {}
 
-  canonicalPath(topicId: string): string {
-    return this.repository.canonicalPath(this.projectDir, topicId);
+  canonicalPath(topicId: string, title: string): string {
+    return this.repository.canonicalPath(this.projectDir, topicId, title);
   }
 
   async deleteForFile(absPath: string): Promise<{ topic_id: string } | null> {
-    const id = inferTopicIdFromPath(absPath);
-    if (id === null) return null;
-    if (!(await this.repository.exists(id))) return null;
-    await this.repository.delete(id);
-    rmSync(topicJsonPath(this.projectDir, id), { force: true });
-    return { topic_id: id };
+    const stored = await this.findStoredTopicForFile(absPath);
+    if (stored === null) return null;
+    await this.repository.delete(stored.id);
+    this.repository.deleteFile(absPath);
+    return { topic_id: stored.id };
   }
 
   async editFieldsAndLock(
@@ -117,14 +114,14 @@ export class TopicsService {
     fields: TopicEditableFields,
     confirmedByUser: boolean,
   ): Promise<{ updated: LockedField[] }> {
-    const path = this.canonicalPath(topicId);
-    if (!this.repository.fileExists(path)) {
-      throw new Error(`Topic file not found: ${path}`);
+    const path = this.repository.findFileById(this.projectDir, topicId);
+    if (path === null) {
+      throw new Error(`Topic file not found: ${topicId}`);
     }
     const file = this.repository.readFile(path);
     const next = applyTopicEdits(file, fields, confirmedByUser);
     if (next.changes.length === 0) return { updated: [] };
-    this.repository.writeFile(path, next.file);
+    this.persistFile(next.file, path);
     return { updated: next.changes };
   }
 
@@ -310,8 +307,8 @@ export class TopicsService {
     const stored = await this.repository.listAll();
     let staleCount = 0;
     for (const topic of stored) {
-      const path = this.canonicalPath(topic.id);
-      if (!this.repository.fileExists(path)) continue;
+      const path = this.repository.findFileById(this.projectDir, topic.id);
+      if (path === null) continue;
       const file = this.repository.readFile(path);
       const isStale = computeStaleFromItems(file.items, snapshot);
       if (isStale !== file.is_stale) {
@@ -494,9 +491,33 @@ export class TopicsService {
     return out;
   }
 
+  private async findStoredTopicForFile(
+    absPath: string,
+  ): Promise<StoredTopic | null> {
+    const all = await this.repository.listAll();
+    for (const topic of all) {
+      const path = this.repository.canonicalPath(
+        this.projectDir,
+        topic.id,
+        topic.title,
+      );
+      if (path === absPath) return topic;
+    }
+    return null;
+  }
+
+  private persistFile(file: TopicFileNew, previousPath: string | null): string {
+    const newPath = this.canonicalPath(file.id, file.title);
+    if (previousPath !== null && previousPath !== newPath) {
+      this.repository.deleteFile(previousPath);
+    }
+    this.repository.writeFile(newPath, file);
+    return newPath;
+  }
+
   private tryReadTopicFile(topicId: string): TopicFileNew | null {
-    const path = this.canonicalPath(topicId);
-    if (!this.repository.fileExists(path)) return null;
+    const path = this.repository.findFileById(this.projectDir, topicId);
+    if (path === null) return null;
     return this.repository.readFile(path);
   }
 }
@@ -639,11 +660,6 @@ function fileReferencesAny(
 function hasUserLocks(file: TopicFileNew | undefined): boolean {
   if (file === undefined) return false;
   return file.title_locked || file.short_summary_locked || file.long_summary_locked;
-}
-
-function inferTopicIdFromPath(absPath: string): string | null {
-  const match = /\/topics\/([^/]+)\.json$/.exec(absPath);
-  return match === null ? null : match[1];
 }
 
 function isFragmentRefForDocument(

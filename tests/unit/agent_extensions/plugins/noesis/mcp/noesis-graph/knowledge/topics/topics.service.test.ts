@@ -25,7 +25,10 @@ import {
   TopicFileNewSchema,
   type TopicFileNew,
 } from "@noesis/shared-contracts/source-file-schemas.js";
-import { topicJsonPath } from "@noesis/shared-contracts/source-files.js";
+import {
+  findTopicJsonById,
+  topicJsonPath,
+} from "@noesis/shared-contracts/source-files.js";
 
 describe("TopicsService — indexing, editing with locks, staleness, deletion", () => {
   let ctx: KnowledgeNewTestContext;
@@ -125,14 +128,26 @@ describe("TopicsService — indexing, editing with locks, staleness, deletion", 
       expect(result?.updated).toEqual(["title"]);
     });
     await and("the new title is written to disk, its lock is set, and untouched fields keep their previous lock state", () => {
+      const current = findTopicJsonById(ctx.projectDir, "topic-1");
+      expect(current).not.toBeNull();
       const file = TopicFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
+        JSON.parse(readFileSync(current!, "utf-8")),
       );
       expect(file.title).toBe("Authentication");
       expect(file.short_summary).toBe("Auth scope");
       expect(file.title_locked).toBe(true);
       expect(file.short_summary_locked).toBe(false);
     });
+    await and(
+      "the old filename has been replaced with the slug derived from the new title",
+      () => {
+        expect(existsSync(path)).toBe(false);
+        const current = findTopicJsonById(ctx.projectDir, "topic-1");
+        expect(current).toBe(
+          `${ctx.projectDir}/noesis/topics/authentication-topic1.json`,
+        );
+      },
+    );
   });
 
   test("Editing a topic with a value identical to the stored one performs no write", async () => {
@@ -341,9 +356,9 @@ describe("TopicsService — indexing, editing with locks, staleness, deletion", 
     });
   });
 
-  test("The canonical topic path follows the noesis/topics/<id>.json convention", () => {
-    expect(ctx.topics.canonicalPath("topic-99")).toBe(
-      `${ctx.projectDir}/noesis/topics/topic-99.json`,
+  test("The canonical topic path follows the noesis/topics/<slug>-<id-suffix>.json convention", () => {
+    expect(ctx.topics.canonicalPath("topic-99", "Pricing review")).toBe(
+      `${ctx.projectDir}/noesis/topics/pricing-review-topic99.json`,
     );
   });
 });
@@ -364,8 +379,8 @@ function topicFile(overrides: Partial<TopicFileNew> = {}): TopicFileNew {
 }
 
 function writeTopicFile(projectDir: string, file: TopicFileNew): string {
-  const path = topicJsonPath(projectDir, file.id);
   mkdirSync(join(projectDir, "noesis", "topics"), { recursive: true });
+  const path = topicJsonPath(projectDir, file.id, file.title);
   writeFileSync(path, JSON.stringify(file, null, 2));
   return path;
 }

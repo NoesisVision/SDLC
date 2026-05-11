@@ -21,7 +21,7 @@ Get from `$ARGUMENTS`, ask the user if missing:
 
 Run `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/conversation/prepare.ts <transcript_path> "<conversation_time>" "<main_topic>"`.
 
-The script generates a stable `conversation_id`, sentence-segments the transcript, writes `<transcript>-cleaned.md` next to the source, creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeConversationOutput`: `{ conversation: { conversation_id, time, main_topic, turns: [], topics: [] }, potential_topics: { topics: [] } }`).
+The script computes `conversation_id` as the sha-256 of the raw transcript bytes formatted as a UUID, sentence-segments the transcript, creates a private working directory under the plugin's per-project data dir, writes the cleaned-md rendering of the transcript to `<working_dir>/cleaned.md`, and initializes `<working_dir>/output.json` (matching `AnalyzeConversationOutput`: `{ conversation: { conversation_id, time, main_topic, turns: [], topics: [] }, potential_topics: { topics: [] } }`). The user's source transcript is **not** modified. No file is written under `<projectDir>/noesis/`.
 
 It returns:
 ```json
@@ -29,7 +29,7 @@ It returns:
   "status": "Ok",
   "working_dir": "<absolute path returned by the script>",
   "conversation_id": "<id>",
-  "cleaned_path": "<transcript>-cleaned.md",
+  "cleaned_path": "<working_dir>/cleaned.md",
   "output_path": "<working_dir>/output.json",
   "num_turns": <n>
 }
@@ -37,7 +37,7 @@ It returns:
 
 Treat `working_dir` as an opaque absolute path — always use the value returned by the script, never construct it yourself.
 
-Then call MCP tool `noesis-graph:has_conversation` with `conversation_id`. If `exists: true`, report "Conversation already in the graph" and stop.
+Then call MCP tool `noesis-graph:has_conversation` with `conversation_id`. If `exists: true`, report "This conversation is a duplicate of one already in the graph; analysis aborted." and stop — the id is the content hash, so an existing row means these exact bytes were already processed.
 
 ### Step 2: Find existing topics (Goldilocks)
 

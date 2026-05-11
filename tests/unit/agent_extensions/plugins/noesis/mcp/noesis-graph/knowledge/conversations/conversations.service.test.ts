@@ -24,6 +24,8 @@ import { LockedFieldsBlockedError } from "@noesis/mcp/noesis-graph/knowledge/con
 import {
   conversationJsonPath,
   decisionJsonPath,
+  findDecisionJsonById,
+  findTopicJsonById,
   topicJsonPath,
 } from "@noesis/shared-contracts/source-files.js";
 
@@ -63,22 +65,22 @@ describe("ConversationsService — accept skill output, validate, split, save", 
     await when("the skill output is uploaded", async () => {
       result = await ctx.conversations.uploadAnalysis({
         outputJsonPath: join(workingDir, "output.json"),
-        cleanedMdPath: join(workingDir, "cleaned.md"),
       });
     });
-    await then("the conversation file lands at noesis/conversations/<id>.json", () => {
-      const conversationPath = conversationJsonPath(ctx.projectDir, "conv-1");
+    await then("the conversation file lands at the slug-prefixed canonical path", () => {
+      const conversationPath = conversationJsonPath(
+        ctx.projectDir,
+        "conv-1",
+        "Authentication strategy",
+      );
       const conversation = ConversationFileNewSchema.parse(
         JSON.parse(readFileSync(conversationPath, "utf-8")),
       );
       expect(conversation.conversation_id).toBe("conv-1");
       expect(conversation.turns).toHaveLength(1);
     });
-    await and("the topic file lands at noesis/topics/<id>.json with source sha set", () => {
-      const topicPath = topicJsonPath(ctx.projectDir, "topic-1");
-      const topic = TopicFileNewSchema.parse(
-        JSON.parse(readFileSync(topicPath, "utf-8")),
-      );
+    await and("the topic file lands at the slug-prefixed canonical path with source sha set", () => {
+      const topic = readTopic(ctx, "topic-1");
       expect(topic.parent_id).toBeNull();
       expect(topic.title_locked).toBe(false);
       expect(topic.items.length).toBeGreaterThan(0);
@@ -86,11 +88,8 @@ describe("ConversationsService — accept skill output, validate, split, save", 
         expect(item.source_sha).toBeDefined();
       }
     });
-    await and("the decision file lands at noesis/decisions/<id>.json with source sha set on each reference", () => {
-      const decisionPath = decisionJsonPath(ctx.projectDir, "decision-1");
-      const decision = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(decisionPath, "utf-8")),
-      );
+    await and("the decision file lands at the slug-prefixed canonical path with source sha set on each reference", () => {
+      const decision = readDecision(ctx, "decision-1");
       expect(decision.title).toBe("Adopt JWT");
       expect(decision.referenced_items.length).toBeGreaterThan(0);
       for (const item of decision.referenced_items) {
@@ -99,10 +98,10 @@ describe("ConversationsService — accept skill output, validate, split, save", 
     });
     await and("the result enumerates the produced canonical paths", () => {
       expect(result?.topic_paths).toEqual([
-        topicJsonPath(ctx.projectDir, "topic-1"),
+        topicJsonPath(ctx.projectDir, "topic-1", "JWT decision"),
       ]);
       expect(result?.decision_paths).toEqual([
-        decisionJsonPath(ctx.projectDir, "decision-1"),
+        decisionJsonPath(ctx.projectDir, "decision-1", "Adopt JWT"),
       ]);
     });
   });
@@ -119,7 +118,6 @@ describe("ConversationsService — accept skill output, validate, split, save", 
       try {
         await ctx.conversations.uploadAnalysis({
           outputJsonPath: join(workingDir, "output.json"),
-          cleanedMdPath: join(workingDir, "cleaned.md"),
         });
       } catch (e) {
         thrown = e as Error;
@@ -153,7 +151,6 @@ describe("ConversationsService — accept skill output, validate, split, save", 
       try {
         await ctx.conversations.uploadAnalysis({
           outputJsonPath: join(workingDir, "output.json"),
-          cleanedMdPath: join(workingDir, "cleaned.md"),
         });
       } catch (e) {
         thrown = e as Error;
@@ -191,7 +188,6 @@ describe("ConversationsService — accept skill output, validate, split, save", 
       );
       await ctx.conversations.uploadAnalysis({
         outputJsonPath: join(workingDir, "output.json"),
-        cleanedMdPath: join(workingDir, "cleaned.md"),
       });
     });
     await then("the on-disk topic file keeps the title locked at the same value", () => {
@@ -218,7 +214,6 @@ describe("ConversationsService — accept skill output, validate, split, save", 
       );
       result = await ctx.conversations.uploadAnalysis({
         outputJsonPath: join(workingDir, "output.json"),
-        cleanedMdPath: join(workingDir, "cleaned.md"),
         confirmed_edits: [
           { kind: "topic", topic_id: "topic-1", field: "title" },
         ],
@@ -256,7 +251,6 @@ describe("ConversationsService — accept skill output, validate, split, save", 
       );
       await ctx.conversations.uploadAnalysis({
         outputJsonPath: join(workingDir, "output.json"),
-        cleanedMdPath: join(workingDir, "cleaned.md"),
         confirmed_edits: [
           { kind: "topic", topic_id: "topic-1", field: "title" },
         ],
@@ -296,7 +290,6 @@ describe("ConversationsService — accept skill output, validate, split, save", 
       try {
         await ctx.conversations.uploadAnalysis({
           outputJsonPath: join(workingDir, "output.json"),
-          cleanedMdPath: join(workingDir, "cleaned.md"),
         });
       } catch (e) {
         thrown = e as Error;
@@ -330,7 +323,6 @@ describe("ConversationsService — accept skill output, validate, split, save", 
       );
       await ctx.conversations.uploadAnalysis({
         outputJsonPath: join(workingDir, "output.json"),
-        cleanedMdPath: join(workingDir, "cleaned.md"),
         confirmed_edits: [
           { kind: "decision", decision_id: "decision-1", field: "decision.text" },
         ],
@@ -372,7 +364,6 @@ describe("ConversationsService — accept skill output, validate, split, save", 
       try {
         await ctx.conversations.uploadAnalysis({
           outputJsonPath: join(workingDir, "output.json"),
-          cleanedMdPath: join(workingDir, "cleaned.md"),
         });
       } catch (e) {
         thrown = e as Error;
@@ -392,7 +383,7 @@ describe("ConversationsService — accept skill output, validate, split, save", 
     let path = "";
 
     await given("a structured conversation file on disk that has not yet been indexed", () => {
-      path = conversationJsonPath(ctx.projectDir, "conv-1");
+      path = conversationJsonPath(ctx.projectDir, "conv-1", "Authentication strategy");
       ctx.conversationsRepository.writeJsonFile(path, sampleConversationFile());
     });
     await when("indexing the conversation file", async () => {
@@ -475,7 +466,7 @@ describe("ConversationsService — accept skill output, validate, split, save", 
     let jsonPath = "";
 
     await given("an indexed conversation whose structured conversation file lives on disk", async () => {
-      jsonPath = conversationJsonPath(ctx.projectDir, "conv-1");
+      jsonPath = conversationJsonPath(ctx.projectDir, "conv-1", "Authentication strategy");
       ctx.conversationsRepository.writeJsonFile(jsonPath, sampleConversationFile());
       await ctx.conversations.indexFile(jsonPath);
     });
@@ -495,7 +486,7 @@ describe("ConversationsService — accept skill output, validate, split, save", 
     let jsonPath = "";
 
     await given("an indexed conversation whose structured conversation file has been removed from disk", async () => {
-      jsonPath = conversationJsonPath(ctx.projectDir, "conv-1");
+      jsonPath = conversationJsonPath(ctx.projectDir, "conv-1", "Authentication strategy");
       ctx.conversationsRepository.writeJsonFile(jsonPath, sampleConversationFile());
       await ctx.conversations.indexFile(jsonPath);
       rmSync(jsonPath, { force: true });
@@ -618,18 +609,19 @@ function seedTopicFile(
   ctx: KnowledgeNewTestContext,
   overrides: Record<string, unknown>,
 ): void {
+  const file = TopicFileNewSchema.parse({
+    id: "topic-1",
+    title: "JWT decision",
+    short_summary: "Authentication choice.",
+    long_summary: "We chose JWTs for stateless authentication.",
+    items: [],
+    reviewed: true,
+    decisions_extracted: true,
+    ...overrides,
+  });
   ctx.topicsRepository.writeFile(
-    topicJsonPath(ctx.projectDir, "topic-1"),
-    TopicFileNewSchema.parse({
-      id: "topic-1",
-      title: "JWT decision",
-      short_summary: "Authentication choice.",
-      long_summary: "We chose JWTs for stateless authentication.",
-      items: [],
-      reviewed: true,
-      decisions_extracted: true,
-      ...overrides,
-    }),
+    topicJsonPath(ctx.projectDir, file.id, file.title),
+    file,
   );
 }
 
@@ -637,38 +629,43 @@ function seedDecisionFile(
   ctx: KnowledgeNewTestContext,
   overrides: Record<string, unknown>,
 ): void {
+  const file = DecisionFileNewSchema.parse({
+    id: "decision-1",
+    topic_id: "topic-1",
+    title: "Adopt JWT",
+    status: "accepted",
+    referenced_items: [],
+    context: {
+      text: "Need stateless auth.",
+      supporting_item_indices: [],
+    },
+    decision: {
+      text: "Use JWT.",
+      rationale: "Standard.",
+      supporting_item_indices: [],
+    },
+    alternative_options: [],
+    ...overrides,
+  });
   ctx.decisionsRepository.writeFile(
-    decisionJsonPath(ctx.projectDir, "decision-1"),
-    DecisionFileNewSchema.parse({
-      id: "decision-1",
-      topic_id: "topic-1",
-      title: "Adopt JWT",
-      status: "accepted",
-      referenced_items: [],
-      context: {
-        text: "Need stateless auth.",
-        supporting_item_indices: [],
-      },
-      decision: {
-        text: "Use JWT.",
-        rationale: "Standard.",
-        supporting_item_indices: [],
-      },
-      alternative_options: [],
-      ...overrides,
-    }),
+    decisionJsonPath(ctx.projectDir, file.id, file.title),
+    file,
   );
 }
 
 function readTopic(ctx: KnowledgeNewTestContext, id: string) {
+  const path = findTopicJsonById(ctx.projectDir, id);
+  if (path === null) throw new Error(`Topic not found on disk: ${id}`);
   return TopicFileNewSchema.parse(
-    JSON.parse(readFileSync(topicJsonPath(ctx.projectDir, id), "utf-8")),
+    JSON.parse(readFileSync(path, "utf-8")),
   );
 }
 
 function readDecision(ctx: KnowledgeNewTestContext, id: string) {
+  const path = findDecisionJsonById(ctx.projectDir, id);
+  if (path === null) throw new Error(`Decision not found on disk: ${id}`);
   return DecisionFileNewSchema.parse(
-    JSON.parse(readFileSync(decisionJsonPath(ctx.projectDir, id), "utf-8")),
+    JSON.parse(readFileSync(path, "utf-8")),
   );
 }
 
@@ -702,12 +699,10 @@ function sampleConversationFile() {
 function writeWorkingDirFiles(
   workingDir: string,
   output: unknown,
-  cleanedMd: string,
-): { outputJsonPath: string; cleanedMdPath: string } {
+  _cleanedMd: string,
+): { outputJsonPath: string } {
   mkdirSync(workingDir, { recursive: true });
   const outputJsonPath = join(workingDir, "output.json");
-  const cleanedMdPath = join(workingDir, "cleaned.md");
   writeFileSync(outputJsonPath, JSON.stringify(output, null, 2));
-  writeFileSync(cleanedMdPath, cleanedMd);
-  return { outputJsonPath, cleanedMdPath };
+  return { outputJsonPath };
 }

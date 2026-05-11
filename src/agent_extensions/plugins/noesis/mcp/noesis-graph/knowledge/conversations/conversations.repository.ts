@@ -1,6 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { mkdirSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
 import type { Turn } from "../../../../shared-contracts/conversation.js";
 import {
@@ -10,7 +9,7 @@ import {
 import {
   computeFileSha,
   conversationJsonPath,
-  conversationMdPath,
+  findConversationJsonById,
   readSidecar,
   writeSidecar,
 } from "../../../../shared-contracts/source-files.js";
@@ -31,7 +30,11 @@ const SCHEMA_STATEMENTS = [
   "CREATE REL TABLE IF NOT EXISTS SPEAKER_TURN_HAS_IDEA_UNIT(FROM SpeakerTurn TO IdeaUnit)",
 ];
 
-const PathRowSchema = z.object({ id: z.string(), sha: z.string() });
+const PathRowSchema = z.object({
+  id: z.string(),
+  sha: z.string(),
+  main_topic: z.string(),
+});
 const StoredConversationRowSchema = z.object({
   id: z.string(),
   sha: z.string(),
@@ -75,12 +78,20 @@ export interface IdeaUnitPosition {
 export class ConversationsRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  canonicalJsonPath(projectDir: string, conversationId: string): string {
-    return conversationJsonPath(projectDir, conversationId);
+  canonicalJsonPath(
+    projectDir: string,
+    conversationId: string,
+    mainTopic: string,
+  ): string {
+    return conversationJsonPath(projectDir, conversationId, mainTopic);
   }
 
-  canonicalMdPath(projectDir: string, conversationId: string): string {
-    return conversationMdPath(projectDir, conversationId);
+  deleteFile(absPath: string): void {
+    if (existsSync(absPath)) unlinkSync(absPath);
+  }
+
+  findJsonById(projectDir: string, conversationId: string): string | null {
+    return findConversationJsonById(projectDir, conversationId);
   }
 
   async delete(conversationId: string): Promise<void> {
@@ -159,12 +170,12 @@ export class ConversationsRepository {
     projectDir: string,
   ): Promise<Array<{ id: string; path: string; sha: string }>> {
     const rows = await this.db.query<unknown>(
-      "MATCH (c:Conversation) RETURN c.id AS id, c.sha AS sha",
+      "MATCH (c:Conversation) RETURN c.id AS id, c.sha AS sha, c.main_topic AS main_topic",
     );
     return z.array(PathRowSchema).parse(rows).map((r) => ({
       id: r.id,
       sha: r.sha,
-      path: conversationJsonPath(projectDir, r.id),
+      path: conversationJsonPath(projectDir, r.id, r.main_topic),
     }));
   }
 
@@ -194,11 +205,6 @@ export class ConversationsRepository {
       },
     );
     await this.replaceTurns(file.conversation_id, file.turns);
-  }
-
-  writeCleanedMd(absPath: string, content: string): void {
-    mkdirSync(dirname(absPath), { recursive: true });
-    writeFileSync(absPath, content, "utf-8");
   }
 
   writeJsonFile(absPath: string, file: ConversationFileNew): void {

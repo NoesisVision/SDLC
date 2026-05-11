@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { existsSync, readFileSync, rmSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
 import { isIrrelevantFragment } from "../../../../shared-contracts/documents.js";
 import {
@@ -23,11 +23,8 @@ import {
 import {
   computeContentSha,
   computeFileSha,
-  conversationJsonPath,
-  decisionJsonPath,
-  documentJsonPath,
-  documentMdPath,
-  topicJsonPath,
+  findConversationJsonById,
+  findDocumentJsonById,
 } from "../../../../shared-contracts/source-files.js";
 import type {
   DocumentDecisionRef,
@@ -100,13 +97,23 @@ export class DocumentsService {
   async deleteForFile(
     absPath: string,
   ): Promise<{ document_id: string } | null> {
-    const id = inferDocumentIdFromPath(absPath);
-    if (id === null) return null;
-    if (!(await this.repository.exists(id))) return null;
-    await this.repository.delete(id);
-    rmSync(documentJsonPath(this.projectDir, id), { force: true });
-    rmSync(documentMdPath(this.projectDir, id), { force: true });
-    return { document_id: id };
+    const stored = await this.findStoredForFile(absPath);
+    if (stored === null) return null;
+    await this.repository.delete(stored.id);
+    const json = this.repository.findJsonById(this.projectDir, stored.id);
+    if (json !== null) this.repository.deleteFile(json);
+    return { document_id: stored.id };
+  }
+
+  private async findStoredForFile(
+    absPath: string,
+  ): Promise<{ id: string; title: string } | null> {
+    const all = await this.repository.listAll();
+    for (const d of all) {
+      const json = this.repository.canonicalPath(this.projectDir, d.id, d.title);
+      if (json === absPath) return d;
+    }
+    return null;
   }
 
   async getAllUnreviewedTopicsForDocument(
@@ -258,15 +265,22 @@ export class DocumentsService {
   ): ConfirmedEdit[] {
     const conflicts: ConfirmedEdit[] = [];
     for (const topic of output.topics) {
-      const existingTopic = readTopicIfExists(
-        topicJsonPath(this.projectDir, topic.id),
+      const topicPath = this.topicsRepository.findFileById(
+        this.projectDir,
+        topic.id,
       );
+      const existingTopic =
+        topicPath === null ? null : readTopicIfExists(topicPath);
       conflicts.push(...detectTopicConflicts(existingTopic, topic));
       for (const decision of topic.decisions) {
-        const dpath = decisionJsonPath(this.projectDir, decision.id);
-        const existingDecision = this.decisionsRepository.fileExists(dpath)
-          ? this.decisionsRepository.readFile(dpath)
-          : null;
+        const dpath = this.decisionsRepository.findFileById(
+          this.projectDir,
+          decision.id,
+        );
+        const existingDecision =
+          dpath !== null && this.decisionsRepository.fileExists(dpath)
+            ? this.decisionsRepository.readFile(dpath)
+            : null;
         conflicts.push(...detectDecisionConflicts(existingDecision, decision));
       }
     }
@@ -289,8 +303,7 @@ export class DocumentsService {
       fragments: output.fragments,
       section_tree: output.section_tree,
     };
-    const docPath = this.canonicalPath(output.document.id);
-    this.repository.writeFile(docPath, docFile);
+    const docPath = this.persistDocumentFile(docFile);
     const documentSha = computeFileSha(docPath);
 
     const sourceShaCache = new Map<string, string>();
@@ -354,9 +367,13 @@ export class DocumentsService {
     cache: Map<string, string>,
     confirmed: Set<string>,
   ): { path: string; cleared: ConfirmedEdit[] } {
-    const path = topicJsonPath(this.projectDir, topic.id);
     const items = withItemShas(topic.items as TopicItemRefNew[], this.projectDir, cache);
-    const existing = readTopicIfExists(path);
+    const existingPath = this.topicsRepository.findFileById(
+      this.projectDir,
+      topic.id,
+    );
+    const existing =
+      existingPath === null ? null : readTopicIfExists(existingPath);
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveTopicLockedFields(existing, topic, confirmed, cleared);
     const next: TopicFileNew = {
@@ -373,8 +390,16 @@ export class DocumentsService {
       decisions_extracted: topic.decisions_extracted,
       is_stale: existing?.is_stale ?? false,
     };
-    this.topicsRepository.writeFile(path, next);
-    return { path, cleared };
+    const newPath = this.topicsRepository.canonicalPath(
+      this.projectDir,
+      next.id,
+      next.title,
+    );
+    if (existingPath !== null && existingPath !== newPath) {
+      this.topicsRepository.deleteFile(existingPath);
+    }
+    this.topicsRepository.writeFile(newPath, next);
+    return { path: newPath, cleared };
   }
 
   private writeDecisionFile(
@@ -383,13 +408,17 @@ export class DocumentsService {
     cache: Map<string, string>,
     confirmed: Set<string>,
   ): { path: string; cleared: ConfirmedEdit[] } {
-    const path = decisionJsonPath(this.projectDir, decision.id);
+    const existingPath = this.decisionsRepository.findFileById(
+      this.projectDir,
+      decision.id,
+    );
     const referenced = withItemShas(
       decision.referenced_items as TopicItemRefNew[],
       this.projectDir,
       cache,
     );
-    const existing = readDecisionIfExists(path);
+    const existing =
+      existingPath === null ? null : readDecisionIfExists(existingPath);
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveDecisionLockedFields(
       existing,
@@ -427,8 +456,16 @@ export class DocumentsService {
       })),
       is_stale: existing?.is_stale ?? false,
     };
-    this.decisionsRepository.writeFile(path, next);
-    return { path, cleared };
+    const newPath = this.decisionsRepository.canonicalPath(
+      this.projectDir,
+      next.id,
+      next.title,
+    );
+    if (existingPath !== null && existingPath !== newPath) {
+      this.decisionsRepository.deleteFile(existingPath);
+    }
+    this.decisionsRepository.writeFile(newPath, next);
+    return { path: newPath, cleared };
   }
 
   private applyDecisionAttachments(
@@ -462,10 +499,10 @@ export class DocumentsService {
     }
     let appended = 0;
     for (const [decisionId, refs] of grouped) {
-      const path = decisionJsonPath(this.projectDir, decisionId);
-      if (!this.decisionsRepository.fileExists(path)) {
+      const path = this.decisionsRepository.findFileById(this.projectDir, decisionId);
+      if (path === null) {
         throw new Error(
-          `decision_attachments target ${decisionId} has no source file at ${path}`,
+          `decision_attachments target ${decisionId} has no source file on disk`,
         );
       }
       const file = this.decisionsRepository.readFile(path);
@@ -488,8 +525,21 @@ export class DocumentsService {
     return appended;
   }
 
-  private canonicalPath(documentId: string): string {
-    return this.repository.canonicalPath(this.projectDir, documentId);
+  private persistDocumentFile(file: DocumentFileNew): string {
+    const newPath = this.repository.canonicalPath(
+      this.projectDir,
+      file.document_id,
+      file.title,
+    );
+    const previous = this.repository.findJsonById(
+      this.projectDir,
+      file.document_id,
+    );
+    if (previous !== null && previous !== newPath) {
+      this.repository.deleteFile(previous);
+    }
+    this.repository.writeFile(newPath, file);
+    return newPath;
   }
 
   private async buildTopicReview(
@@ -576,11 +626,11 @@ export class DocumentsService {
     const stored = await this.decisionsRepository.listAll();
     const out: DocumentDecisionRef[] = [];
     for (const decision of stored) {
-      const path = this.decisionsRepository.canonicalPath(
+      const path = this.decisionsRepository.findFileById(
         this.projectDir,
         decision.id,
       );
-      if (!this.decisionsRepository.fileExists(path)) continue;
+      if (path === null) continue;
       const file = this.decisionsRepository.readFile(path);
       if (!fileReferencesDocument(file.referenced_items, documentId)) continue;
       out.push({
@@ -599,11 +649,8 @@ export class DocumentsService {
     const stored = await this.topicsRepository.listAll();
     const out: DocumentTopicRef[] = [];
     for (const topic of stored) {
-      const path = this.topicsRepository.canonicalPath(
-        this.projectDir,
-        topic.id,
-      );
-      if (!this.topicsRepository.fileExists(path)) continue;
+      const path = this.topicsRepository.findFileById(this.projectDir, topic.id);
+      if (path === null) continue;
       const file = this.topicsRepository.readFile(path);
       if (!fileReferencesDocument(file.items, documentId)) continue;
       out.push({ topic_id: topic.id, title: topic.title });
@@ -624,8 +671,8 @@ export class DocumentsService {
       text: string;
     }>
   > {
-    const path = this.topicsRepository.canonicalPath(this.projectDir, topicId);
-    if (!this.topicsRepository.fileExists(path)) return [];
+    const path = this.topicsRepository.findFileById(this.projectDir, topicId);
+    if (path === null) return [];
     const file = this.topicsRepository.readFile(path);
     const rangesByDocument = new Map<
       string,
@@ -689,9 +736,9 @@ function withItemShas(
     if (sha === undefined) {
       const path =
         item.type === "idea_unit_ref"
-          ? conversationJsonPath(projectDir, item.conversation_id)
-          : documentJsonPath(projectDir, item.document_id);
-      if (existsSync(path)) {
+          ? findConversationJsonById(projectDir, item.conversation_id)
+          : findDocumentJsonById(projectDir, item.document_id);
+      if (path !== null && existsSync(path)) {
         sha = computeContentSha(readFileSync(path));
         cache.set(key, sha);
       }
@@ -737,11 +784,6 @@ function readDecisionIfExists(absPath: string): DecisionFileNew | null {
   } catch {
     return null;
   }
-}
-
-function inferDocumentIdFromPath(absPath: string): string | null {
-  const match = /\/documents\/([^/]+)\.json$/.exec(absPath);
-  return match === null ? null : match[1];
 }
 
 function fileReferencesDocument(

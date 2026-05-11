@@ -1,12 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { rmSync } from "fs";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
 import type {
   DecisionFileNew,
   DecisionOptionNew,
   TopicItemRefNew,
 } from "../../../../shared-contracts/source-file-schemas.js";
-import { decisionJsonPath } from "../../../../shared-contracts/source-files.js";
 import type {
   DecisionAlternativeData,
   DecisionConversationDetailData,
@@ -98,10 +96,7 @@ export class DecisionsService {
     items: TopicItemRefNew[],
   ): Promise<{ appended: number }> {
     if (items.length === 0) return { appended: 0 };
-    const path = this.canonicalPath(decisionId);
-    if (!this.repository.fileExists(path)) {
-      throw new Error(`Decision file not found: ${path}`);
-    }
+    const path = this.requireFilePath(decisionId);
     const file = this.repository.readFile(path);
     const seen = new Set(file.referenced_items.map(itemKey));
     const additions: TopicItemRefNew[] = [];
@@ -123,12 +118,11 @@ export class DecisionsService {
   async deleteForFile(
     absPath: string,
   ): Promise<{ decision_id: string } | null> {
-    const id = inferDecisionIdFromPath(absPath);
-    if (id === null) return null;
-    if (!(await this.repository.exists(id))) return null;
-    await this.repository.delete(id);
-    rmSync(decisionJsonPath(this.projectDir, id), { force: true });
-    return { decision_id: id };
+    const stored = await this.findStoredForFile(absPath);
+    if (stored === null) return null;
+    await this.repository.delete(stored.id);
+    this.repository.deleteFile(absPath);
+    return { decision_id: stored.id };
   }
 
   async editAlternativeOptionAndLock(
@@ -136,10 +130,7 @@ export class DecisionsService {
     edit: AlternativeOptionEdit,
     confirmedByUser: boolean,
   ): Promise<{ updated: DecisionLockedField[] }> {
-    const path = this.canonicalPath(decisionId);
-    if (!this.repository.fileExists(path)) {
-      throw new Error(`Decision file not found: ${path}`);
-    }
+    const path = this.requireFilePath(decisionId);
     const file = this.repository.readFile(path);
     if (edit.index < 0 || edit.index >= file.alternative_options.length) {
       throw new Error(
@@ -397,10 +388,7 @@ export class DecisionsService {
     fields: DecisionEditableTopFields,
     confirmedByUser: boolean,
   ): Promise<{ updated: DecisionLockedField[] }> {
-    const path = this.canonicalPath(decisionId);
-    if (!this.repository.fileExists(path)) {
-      throw new Error(`Decision file not found: ${path}`);
-    }
+    const path = this.requireFilePath(decisionId);
     const file = this.repository.readFile(path);
     const updated: DecisionLockedField[] = [];
     let next: DecisionFileNew = file;
@@ -437,7 +425,7 @@ export class DecisionsService {
       );
     }
     if (updated.length === 0) return { updated: [] };
-    this.repository.writeFile(path, next);
+    this.persistFile(next, path);
     return { updated };
   }
 
@@ -466,8 +454,8 @@ export class DecisionsService {
     const stored = await this.repository.listAll();
     let staleCount = 0;
     for (const decision of stored) {
-      const path = this.canonicalPath(decision.id);
-      if (!this.repository.fileExists(path)) continue;
+      const path = this.repository.findFileById(this.projectDir, decision.id);
+      if (path === null) continue;
       const file = this.repository.readFile(path);
       const isStale = computeStale(file.referenced_items, snapshot);
       if (isStale !== file.is_stale) {
@@ -482,8 +470,40 @@ export class DecisionsService {
     return staleCount;
   }
 
-  private canonicalPath(decisionId: string): string {
-    return this.repository.canonicalPath(this.projectDir, decisionId);
+  private canonicalPath(decisionId: string, title: string): string {
+    return this.repository.canonicalPath(this.projectDir, decisionId, title);
+  }
+
+  private async findStoredForFile(
+    absPath: string,
+  ): Promise<{ id: string } | null> {
+    const all = await this.repository.listAll();
+    for (const decision of all) {
+      const path = this.repository.canonicalPath(
+        this.projectDir,
+        decision.id,
+        decision.title,
+      );
+      if (path === absPath) return decision;
+    }
+    return null;
+  }
+
+  private persistFile(file: DecisionFileNew, previousPath: string | null): string {
+    const newPath = this.canonicalPath(file.id, file.title);
+    if (previousPath !== null && previousPath !== newPath) {
+      this.repository.deleteFile(previousPath);
+    }
+    this.repository.writeFile(newPath, file);
+    return newPath;
+  }
+
+  private requireFilePath(decisionId: string): string {
+    const path = this.repository.findFileById(this.projectDir, decisionId);
+    if (path === null) {
+      throw new Error(`Decision file not found: ${decisionId}`);
+    }
+    return path;
   }
 
   private async conversationsByIds(
@@ -514,8 +534,8 @@ export class DecisionsService {
   }
 
   private tryReadFile(decisionId: string): DecisionFileNew | null {
-    const path = this.canonicalPath(decisionId);
-    if (!this.repository.fileExists(path)) return null;
+    const path = this.repository.findFileById(this.projectDir, decisionId);
+    if (path === null) return null;
     return this.repository.readFile(path);
   }
 }
@@ -793,7 +813,3 @@ function itemKey(item: TopicItemRefNew): string {
   return `doc:${item.document_id}:${item.start_offset}:${item.end_offset}`;
 }
 
-function inferDecisionIdFromPath(absPath: string): string | null {
-  const match = /\/decisions\/([^/]+)\.json$/.exec(absPath);
-  return match === null ? null : match[1];
-}

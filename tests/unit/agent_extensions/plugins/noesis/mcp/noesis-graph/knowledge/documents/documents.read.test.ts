@@ -43,6 +43,7 @@ describe("DocumentsService — page, detail, review prep", () => {
 
   beforeEach(async () => {
     await clearGraphNew(ctx.db);
+    rmSync(join(ctx.projectDir, "noesis"), { recursive: true, force: true });
   });
 
   test("hasDocument returns true for an indexed document and false otherwise", async () => {
@@ -334,8 +335,8 @@ async function indexTopic(
   ctx: KnowledgeNewTestContext,
   file: TopicFileNew,
 ): Promise<void> {
-  const path = topicJsonPath(ctx.projectDir, file.id);
   mkdirSync(join(ctx.projectDir, "noesis", "topics"), { recursive: true });
+  const path = topicJsonPath(ctx.projectDir, file.id, file.title);
   writeFileSync(path, JSON.stringify(file, null, 2));
   await ctx.topics.indexFile(path);
 }
@@ -344,8 +345,8 @@ async function indexDocument(
   ctx: KnowledgeNewTestContext,
   file: DocumentFileNew,
 ): Promise<void> {
-  const path = documentJsonPath(ctx.projectDir, file.document_id);
   mkdirSync(join(ctx.projectDir, "noesis", "documents"), { recursive: true });
+  const path = documentJsonPath(ctx.projectDir, file.document_id, file.title);
   writeFileSync(path, JSON.stringify(file, null, 2));
   await ctx.documents.indexFile(path);
 }
@@ -354,8 +355,8 @@ async function indexDecision(
   ctx: KnowledgeNewTestContext,
   file: DecisionFileNew,
 ): Promise<void> {
-  const path = decisionJsonPath(ctx.projectDir, file.id);
   mkdirSync(join(ctx.projectDir, "noesis", "decisions"), { recursive: true });
+  const path = decisionJsonPath(ctx.projectDir, file.id, file.title);
   writeFileSync(path, JSON.stringify(file, null, 2));
   await ctx.decisions.indexFile(path);
 }

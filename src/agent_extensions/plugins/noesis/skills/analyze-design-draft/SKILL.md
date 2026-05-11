@@ -32,7 +32,7 @@ Get from `$ARGUMENTS`, ask if missing:
 
 Run `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/document/prepare.ts <document_path> "<title>" "<date>"` plus optional flags `--design_doc_id <id>` or `--design_doc_title <title>`.
 
-The script generates a `document_id` (or reuses one stamped in the source's first line as `<!-- document_id: X -->`), parses the source Markdown into a section tree + fragment list (with offsets against the raw source), creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], potential_topics: { topics: [] }, design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md`. The source file is **not** modified and **no** sidecar file is written next to it.
+The script computes `document_id` as the sha-256 of the raw document bytes formatted as a UUID, parses the source Markdown into a section tree + fragment list (with offsets against the raw source), creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], potential_topics: { topics: [] }, design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md`. The source file is **not** modified and **no** file is written under `<projectDir>/noesis/`.
 
 It returns:
 ```json
@@ -42,16 +42,17 @@ It returns:
   "document_id": "<id>",
   "output_path": "<working_dir>/output.json",
   "section_tree_path": "<working_dir>/section_tree.md",
+  "source_path": "<the user-provided document_path>",
   "num_fragments": <n>,
   "design_doc_id": <id|null>,
   "design_doc_title": <title|null>
 }
 ```
 
-Treat `working_dir` as an opaque absolute path — always use the value returned by the script, never construct it yourself.
+Treat `working_dir` as an opaque absolute path — always use the value returned by the script, never construct it yourself. Use `source_path` whenever Step 3 instructs you to read the source document end-to-end.
 
 Then call MCP tool `noesis-graph:has_document` with `document_id`:
-- `exists: true` AND no Design-Doc target → "Document already in the graph", stop.
+- `exists: true` AND no Design-Doc target → "This document is a duplicate of one already in the graph; analysis aborted." — the id is the content hash, so an existing row means these exact bytes were already processed. Stop.
 - `exists: true` AND a target was provided → skip Steps 2–5 and jump to Step 6 (re-extract design model only, then merge in Step 7).
 - Otherwise proceed.
 

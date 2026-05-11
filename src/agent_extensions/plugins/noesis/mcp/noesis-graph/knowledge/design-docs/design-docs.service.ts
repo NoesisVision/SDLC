@@ -19,6 +19,7 @@ import type {
   DesignDocSourceData,
 } from "../../ui-contracts/design-docs/design-docs-data.js";
 import { PROJECT_DIR } from "../../config/config.module.js";
+import { newUuid } from "../../../../shared-contracts/uuid.js";
 import {
   detectDesignDocConflicts,
   resolveDesignDocLockedFields,
@@ -474,7 +475,7 @@ export class DesignDocsService {
         };
       }
     }
-    const id = input.id ?? crypto.randomUUID();
+    const id = input.id ?? newUuid();
     return {
       status: "Ok",
       id,

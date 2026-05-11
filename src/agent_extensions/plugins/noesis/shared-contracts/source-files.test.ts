@@ -7,21 +7,15 @@ import {
   computeContentSha,
   computeFileSha,
   conversationJsonPath,
-  conversationMdPath,
   decisionJsonPath,
   designDocCanonicalFilename,
   designDocCanonicalPath,
-  designDocJsonPath,
+  discoverSourceFiles,
   documentJsonPath,
-  documentMdPath,
-  extractIdFromMd,
-  idLineComment,
   isUnderNoesisRoot,
   noesisRoot,
   noesisSubdirPath,
   readSidecar,
-  stampIdLine,
-  stripIdLine,
   topicJsonPath,
   writeSidecar,
 } from "./source-files.js";
@@ -51,88 +45,43 @@ describe("path helpers", () => {
     );
   });
 
-  test("entity-specific path helpers compose root + subdir + filename", () => {
-    expect(conversationMdPath("/p", "abc")).toBe(
-      resolve("/p/noesis/conversations/abc.md"),
+  test("entity-specific path helpers use {slug}-{id-suffix}.json in their kind subdir", () => {
+    const proj = join(tmpRoot, "path-helpers");
+    const id = "019ddea6-262b-7000-a160-f38c6b4cb4b7";
+    expect(conversationJsonPath(proj, id, "Pricing review meeting")).toBe(
+      resolve(proj, "noesis/conversations/pricing-review-meeting-6b4cb4b7.json"),
     );
-    expect(conversationJsonPath("/p", "abc")).toBe(
-      resolve("/p/noesis/conversations/abc.json"),
+    expect(documentJsonPath(proj, id, "Onboarding spec draft")).toBe(
+      resolve(proj, "noesis/documents/onboarding-spec-draft-6b4cb4b7.json"),
     );
-    expect(documentMdPath("/p", "id")).toBe(
-      resolve("/p/noesis/documents/id.md"),
+    expect(topicJsonPath(proj, id, "Sales pipeline metrics")).toBe(
+      resolve(proj, "noesis/topics/sales-pipeline-metrics-6b4cb4b7.json"),
     );
-    expect(documentJsonPath("/p", "id")).toBe(
-      resolve("/p/noesis/documents/id.json"),
-    );
-    expect(topicJsonPath("/p", "t1")).toBe(
-      resolve("/p/noesis/topics/t1.json"),
-    );
-    expect(decisionJsonPath("/p", "d1")).toBe(
-      resolve("/p/noesis/decisions/d1.json"),
-    );
-    expect(designDocJsonPath("/p", "dd1")).toBe(
-      resolve("/p/noesis/design-docs/dd1.json"),
+    expect(decisionJsonPath(proj, id, "Adopt Postgres for ledger")).toBe(
+      resolve(proj, "noesis/decisions/adopt-postgres-for-ledger-6b4cb4b7.json"),
     );
   });
 
   test("isUnderNoesisRoot recognises canonical paths", () => {
-    expect(isUnderNoesisRoot("/proj", "/proj/noesis/conversations/x.md")).toBe(
+    expect(isUnderNoesisRoot("/proj", "/proj/noesis/conversations/x.json")).toBe(
       true,
     );
-    expect(isUnderNoesisRoot("/proj", "/proj/other/x.md")).toBe(false);
+    expect(isUnderNoesisRoot("/proj", "/proj/other/x.json")).toBe(false);
   });
 });
 
-describe("ID-line stamping", () => {
-  test("idLineComment emits the canonical HTML comment for each kind", () => {
-    expect(idLineComment("conversation", "abc")).toBe(
-      "<!-- conversation_id: abc -->",
-    );
-    expect(idLineComment("document", "abc")).toBe(
-      "<!-- document_id: abc -->",
-    );
-  });
-
-  test("extractIdFromMd reads the id back when first line matches", () => {
-    const md = "<!-- conversation_id: my-id -->\n# Hello\nbody";
-    expect(extractIdFromMd(md, "conversation")).toBe("my-id");
-  });
-
-  test("extractIdFromMd returns null when no id line is present", () => {
-    expect(extractIdFromMd("# Hello\nbody", "conversation")).toBeNull();
-  });
-
-  test("extractIdFromMd ignores id lines for other kinds", () => {
-    const md = "<!-- document_id: doc-1 -->\nbody";
-    expect(extractIdFromMd(md, "conversation")).toBeNull();
-  });
-
-  test("stampIdLine prepends id when missing", () => {
-    expect(stampIdLine("# Title\n", "conversation", "abc")).toBe(
-      "<!-- conversation_id: abc -->\n# Title\n",
-    );
-  });
-
-  test("stampIdLine replaces an existing id line", () => {
-    const stamped = stampIdLine(
-      "<!-- conversation_id: old -->\n# Title\n",
-      "conversation",
-      "new",
-    );
-    expect(extractIdFromMd(stamped, "conversation")).toBe("new");
-    expect(stamped).toBe("<!-- conversation_id: new -->\n# Title\n");
-  });
-
-  test("stripIdLine removes the leading id line if any", () => {
-    expect(stripIdLine("<!-- conversation_id: a -->\nrest")).toBe("rest");
-    expect(stripIdLine("rest")).toBe("rest");
-  });
-
-  test("stamping then extracting roundtrips for both .md kinds", () => {
-    const stampedConvo = stampIdLine("body\n", "conversation", "c-1");
-    const stampedDoc = stampIdLine("body\n", "document", "d-1");
-    expect(extractIdFromMd(stampedConvo, "conversation")).toBe("c-1");
-    expect(extractIdFromMd(stampedDoc, "document")).toBe("d-1");
+describe("discoverSourceFiles", () => {
+  test("returns only .json sidecars and ignores stray .md files in noesis subdirs", () => {
+    const proj = join(tmpRoot, "discover");
+    const conversationsDir = noesisSubdirPath(proj, "conversation");
+    mkdirSync(conversationsDir, { recursive: true });
+    const json = join(conversationsDir, "x-12345678.json");
+    const md = join(conversationsDir, "stray.md");
+    writeFileSync(json, "{}", "utf-8");
+    writeFileSync(md, "ignored", "utf-8");
+    const found = discoverSourceFiles(proj).map((d) => d.path);
+    expect(found).toContain(json);
+    expect(found).not.toContain(md);
   });
 });
 
@@ -183,11 +132,11 @@ describe("sidecar IO", () => {
 });
 
 describe("designDocCanonicalFilename", () => {
-  test("uses <slug>-<id-suffix>.json with 20-char slug and 8-char hex suffix", () => {
+  test("uses <slug>-<id-suffix>.json with 30-char slug and 8-char hex suffix", () => {
     const proj = join(tmpRoot, "ddc-empty");
     const id = "019ddea6-262b-7000-a160-f38c6b4cb4b7";
     expect(designDocCanonicalFilename(proj, id, "footprint-calculation-engine")).toBe(
-      "footprint-calculatio-6b4cb4b7.json",
+      "footprint-calculation-engine-6b4cb4b7.json",
     );
   });
 

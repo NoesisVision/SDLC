@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
-import { randomUUID } from "crypto";
+import { newUuid } from "../../shared-contracts/uuid.js";
 
 const FALLBACK_DIR = join(tmpdir(), "noesis-graph");
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -85,7 +85,7 @@ function writeOutputFile(
   extras: Record<string, unknown> = {},
 ): ToolResponse {
   mkdirSync(outputDir, { recursive: true, mode: DIR_MODE });
-  const file = join(outputDir, `${toolName}-${randomUUID()}.${extension}`);
+  const file = join(outputDir, `${toolName}-${newUuid()}.${extension}`);
   writeFileSync(file, content, { encoding: "utf-8", mode: FILE_MODE });
   const summary = {
     status: "Ok",
