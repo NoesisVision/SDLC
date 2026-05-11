@@ -19,7 +19,7 @@ Get from `$ARGUMENTS`, ask the user if missing:
 
 ### Step 1: Prepare
 
-Run `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/conversation/prepare.ts <transcript_path> "<conversation_time>" "<main_topic>"`.
+Run `NOESIS_PROJECT_DIR=$(pwd) bun run ${CLAUDE_PLUGIN_ROOT}/scripts/conversation/prepare.ts <transcript_path> "<conversation_time>" "<main_topic>"`.
 
 The script computes `conversation_id` as the sha-256 of the raw transcript bytes formatted as a UUID, sentence-segments the transcript, creates a private working directory under the plugin's per-project data dir, writes the cleaned-md rendering of the transcript to `<working_dir>/cleaned.md`, and initializes `<working_dir>/output.json` (matching `AnalyzeConversationOutput`: `{ conversation: { conversation_id, time, main_topic, turns: [], topics: [] }, potential_topics: { topics: [] } }`). The user's source transcript is **not** modified. No file is written under `<projectDir>/noesis/`.
 

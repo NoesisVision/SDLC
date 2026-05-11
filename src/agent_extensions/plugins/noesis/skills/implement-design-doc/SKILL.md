@@ -31,7 +31,7 @@ Parse `$ARGUMENTS` for a single token: a Design Doc reference (id or name).
 Resolve a `<working_dir>` for coordinator scratch files by running:
 
 ```
-bun run ${CLAUDE_PLUGIN_ROOT}/scripts/resolve-working-dir.ts noesis:implement-design-doc <execution_id>
+NOESIS_PROJECT_DIR=$(pwd) bun run ${CLAUDE_PLUGIN_ROOT}/scripts/resolve-working-dir.ts noesis:implement-design-doc <execution_id>
 ```
 
 Use the resolved `design_doc_id` as `<execution_id>`. The script returns JSON `{ "status": "Ok", "working_dir": "...", "skill_name": "...", "execution_id": "..." }`. Treat `working_dir` as an opaque absolute path and use it verbatim for `batches.md` and any subagent reports. **Lifetime:** kept across runs for debugging; the skill never deletes it. The directory lives under the plugin's per-project tmp area outside the repository, so no `.gitignore` entry is required.

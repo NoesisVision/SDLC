@@ -58,11 +58,11 @@ Structure the description as:
 
 For algorithmic rules, give a short pseudocode block or a numbered step list. Tautologies that paraphrase `name` are rejected. Pure rationale without an algorithm is rejected.
 
-**Good** (rule name `"Realna delta stornuje wszystkie prognozy w tej samej kategorii kosztu"`):
+**Good** (rule name `"Real delta cancels all forecasts in the same cost category"` — note the name is English even if the source document is in another language; the description below may follow the source language):
 
 > Pre: a real delta is registered in cost category K on PriceState P. Algorithm: find every active (non-storno) delta on P with `flag = forecast` AND `costCategory = K`; for each, create a storno delta (`stornoOf = original_id, amount = -original_amount`) — never UPDATE the existing delta; then register the new real delta. Post: zero active forecasts in K on P; sum of delta amounts in K equals the new real amount. Edge: when real amount equals the forecast sum, effective change is zero, but storno deltas must still be recorded for audit. All operations atomic in one transaction.
 
-**Bad** (`name: "Storno + nowy zapis (nie update)"`, `description: "Gwarantuje audyt i prosty zrzut do hurtowni danych."`) — pure rationale, no algorithm, no shape of the storno record. Rejected.
+**Bad** (`name: "Storno plus new record (not update)"`, `description: "Gwarantuje audyt i prosty zrzut do hurtowni danych."`) — pure rationale, no algorithm, no shape of the storno record. Rejected. (Name translated to English per the language rule; the *content* problem here is the missing algorithm, not the language of the description.)
 
 For `modified` rules, omit `description` when the change does not touch it. Only emit a description when you are deliberately replacing the existing one — and the new value must still meet the ≥80-char bar.
 
@@ -131,4 +131,7 @@ The model is persisted by `save_design_doc` (Step 6); topics, fragments, decisio
 
 ## Language
 
-Match the source document's language for all field values.
+Two separate rules — do not conflate them:
+
+- **Names / identifiers → English**, always. This covers every `name` on a BoundedContext, DesignedDomainModule, DesignedBuildingBlock, DesignedBehaviour, DesignedRule, DesignedScenario, DesignedProperty, DesignedQualityAttribute, plus every cross-reference value (`input`, `output`, `usedBuildingBlocks`, `implements`, `properties[].type`, `behaviour.actor`). Apply the naming conventions in `shared-contracts/design-doc-schema.md` §4 (PascalCase for BBs / behaviours, sentence-form for rule names, etc.). Translate freely from the source language; preserve ubiquitous-language tokens (proper nouns, established domain terms with no clean English equivalent) verbatim and gloss them in English in the matching `description` on first use.
+- **Free-text fields → source language is required.** `description`, BDD `given` / `when` / `then`, and any prose body MUST match the source document's language. Do **not** translate prose to English. Mixing English names with source-language descriptions is the intended shape — never collapse the design doc to a single language.
