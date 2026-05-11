@@ -84,18 +84,17 @@ Run only when iterating (i.e. `design_doc_id` was provided in Setup). Call `noes
 
 If creating a new Design Doc (`design_doc_title` was provided), skip this sub-step.
 
-#### 1.0a Implementation status
+#### 1.0a Implementation status (informational)
 
-Determine whether the in-scope Bounded Context(s) have been **implemented in code**. Sources of evidence, in order:
+The Step 4 bucketing rule (`added` / `modified` / `removed` / omit) is decided **per item** by checking whether that item is already in code. This sub-step gathers the evidence you'll need to answer that question quickly when authoring the diff — it does NOT pre-pin every item to `added`.
 
-1. Explicit user statement in the invocation message (e.g. *"this BC has not been implemented yet"*).
+Sources of evidence, in order:
+
+1. Explicit user statement in the invocation message (e.g. *"this BC has not been implemented yet"*, *"`FootprintParameters` already exists in code"*).
 2. `noesis-graph` provenance fields, when exposed, indicating whether `implement-design-doc` has run on the prior design doc.
-3. The codebase, when accessible from this invocation — search for the modules / building blocks named in §1.0.
+3. The codebase, when accessible from this invocation — search for the modules / building blocks named in §1.0 and for any cross-BC types that may be referenced (e.g. types already implemented in a neighbouring BC).
 
-When unsure, ask via `AskUserQuestion`. The answer pins the diff baseline used in Step 4:
-
-- **Green-field implementation status** (no `implement-design-doc` run yet — the typical case for a first or second authoring pass): every item belongs in `added` regardless of what §1.0 contains. `modified` and `removed` stay empty.
-- **Post-implementation status** (one or more `implement-design-doc` runs have produced code from this design): the diff is against the resulting code; §1.0 is a hint, the code is the system of record.
+Record findings in `<working_dir>/analysis-implementation-status.md` as a per-item / per-BC table noting "in code" vs "not in code" and the evidence. Step 4 uses this table when bucketing each item. There is no global "green-field switch" — each item is judged on its own.
 
 #### 1.1 Topic long summaries
 
@@ -237,19 +236,18 @@ Write findings to `<working_dir>/analysis-qualities.md`:
 
 Build a `DesignDoc` payload using the schema rules already loaded in **Pre-flight reads**.
 
-**The diff baseline is the currently implemented codebase**, not the prior Design Doc record (§1.0). Bucket each item by asking *"is this item already in code?"* — pinned by the implementation status determined in §1.0a:
+**The diff baseline is the currently implemented codebase as a whole** — not the prior Design Doc record (§1.0), and not "the code this particular design doc has produced." Bucket each item by asking *"is this item already in code, anywhere in the codebase?"* using the evidence collected in §1.0a:
 
-- **Green-field implementation status** (no `implement-design-doc` run yet, even when §1.0 already lists items): every item goes in `added`. `modified` and `removed` stay empty. A second authoring pass against the same unimplemented design keeps items in `added` (with refined definitions), it does **not** move them to `modified`.
-- **Post-implementation status** (code exists for this design):
-    - **Not in code** → `added`. The implementer needs to bring it into existence.
-    - **In code, definition unchanged** → omit. Do not restate.
-    - **In code, definition changed** → `modified` with only the changed sub-fields plus the identity `name`.
-    - **In code, no longer wanted** → `removed` (by name).
-    - Apply this rule recursively to nested ChangeSets. Use §1.0 only as a hint about what was last asked-for; the code is the system of record.
+- **Not in code** → `added`. The implementer needs to bring it into existence.
+- **In code, definition unchanged** → omit. Do not restate, even when §1.0 already lists it. References from this doc resolve against the prior model (see schema doc §6.5), so re-declaring an unchanged item just to satisfy a reference is wrong.
+- **In code, definition changed** → `modified` with only the changed sub-fields plus the identity `name`.
+- **In code, no longer wanted** → `removed` (by name).
+
+Apply this rule recursively to nested ChangeSets. Use §1.0 only as a hint about what was last asked-for; the code is the system of record.
 
 **Empty ChangeSets may be omitted.** When `added`, `modified`, and `removed` are all empty for a given collection field, drop the field entirely rather than emitting `{ "added": [], "modified": [], "removed": [] }`.
 
-**Renames** (post-implementation only). When renaming a Building Block, Behaviour, Property or Rule that already exists in code, emit `removed: ["<old>"]` and `added: [<full new spec>]`. Then **double-check** that the old name does not appear elsewhere in the JSON (any `input`, `output`, `usedBuildingBlocks`, `properties[].type`, `behaviour.actor`, behaviour-host reference, or `implements` entry). If it does, those references must point at the new name. In green-field status renames don't exist as remove+add — the old name was never in code, so just emit the new name in `added`.
+**Renames.** When renaming a Building Block, Behaviour, Property or Rule that already exists in code, emit `removed: ["<old>"]` and `added: [<full new spec>]`. Then **double-check** that the old name does not appear elsewhere in the JSON (any `input`, `output`, `usedBuildingBlocks`, `properties[].type`, `behaviour.actor`, behaviour-host reference, or `implements` entry). If it does, those references must point at the new name. When the item being renamed is *not* in code yet, there is nothing to remove — just emit the new name in `added`.
 
 #### Step 4.0 — Register new actors
 

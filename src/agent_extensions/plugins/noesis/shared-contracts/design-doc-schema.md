@@ -114,21 +114,16 @@ ChangeSet<T> { added: T[]; modified: T[]; removed: string[] }    // removed by n
 
 ## 3. ChangeSet rules
 
-The diff baseline is the **currently implemented codebase** (what `noesis:implement-design-doc` will read as the starting state of the codebase), **not** the prior Design Doc record. Bucket every item by asking *"is this item already in code?"*:
+The diff baseline is the **currently implemented codebase as a whole** (what `noesis:implement-design-doc` will read as the starting state) — *not* "the code this particular design doc has produced," and *not* the prior Design Doc record. Bucket every item by asking *"is this item already in code, anywhere in the codebase?"*:
 
 - **Not in code** → `added`. The implementer needs to bring it into existence.
-- **In code, definition unchanged** → omit (don't restate).
+- **In code, definition unchanged** → omit (don't restate). References to it from this doc still resolve against the prior model (see §6.5), so there is no need to re-declare it just to reference it.
 - **In code, definition changed** → `modified` with only the changed sub-fields plus the identity `name`.
 - **In code, no longer wanted** → `removed` (by name).
 
 For nested `ChangeSet`s (e.g. `DesignedBuildingBlock.properties`), recurse with the same baseline question per item. A `modified` building block whose only change is a new property emits `{ name: "...", properties: { added: [{name, type}] } }`.
 
 When all of `added`, `modified` and `removed` are empty for a given collection field, **omit the field entirely** rather than emitting `{ "added": [], "modified": [], "removed": [] }`.
-
-**Implementation status — pin the baseline before authoring the diff.**
-
-- **Green-field implementation status** (no `implement-design-doc` run has materialised this design in code yet — the typical case for a first or second authoring pass): every item belongs in `added`, even when a prior Design Doc record already lists them. `modified` and `removed` stay empty until implementation has happened. A second authoring pass against the same unimplemented design keeps items in `added` (with refined definitions); it does **not** move them to `modified`.
-- **Post-implementation status** (one or more `implement-design-doc` runs have produced code from this design): the diff is against the resulting code. The prior Design Doc record is a *hint* about what was last asked-for; the system of record is the code.
 
 **Identity.** `name` is the identity key for every entity. A rename of an item already in code is `removed: ["<old>"]` + `added: [<new>]`, plus a sweep of cross-references (`input`, `output`, `usedBuildingBlocks`, `properties[].type`, `implements`, `behaviour.actor`) to point at the new name. A rename of an item *not* in code is just `added: [<new>]` — the prior design doc's `<old>` is irrelevant because no code has it yet.
 
@@ -212,7 +207,7 @@ The triple-backtick `mermaid` opener and the trailing triple-backtick close the 
 2. Call `noesis-graph:list_actors` and keep the catalog handy — it is the deduplication source for `behaviour.actor` names.
 3. Walk model-bearing fragments grouped by Bounded Context.
 4. For each entity built, set its name from the source heading or the first declarative sentence; do NOT invent names that are absent from the draft.
-5. Validate locally: every `usedBuildingBlocks` / `input` / `output` reference, every `properties[].type`, every entry in `implements`, and every `behaviour.actor` must resolve — BB references against BBs in this doc (existing or `added`), actor names against the catalog (or new actors you will introduce). Unknown references are bugs in extraction — flag and either drop the reference, promote the missing block to `added`, or call `upsert_actor` for a new actor before save.
+5. Validate locally: every `usedBuildingBlocks` / `input` / `output` reference, every `properties[].type`, every entry in `implements`, and every `behaviour.actor` must resolve. BB references resolve against either (a) BBs declared in this doc (in `added` or `modified`), or (b) BBs already present in the prior model (i.e. in the implemented codebase). Do NOT re-declare a BB in `added` just to satisfy a reference when it already exists in the prior model and you are not changing it. Actor names resolve against the catalog (or new actors you will introduce). Unknown references are bugs in extraction — flag and either drop the reference, promote a genuinely-missing block to `added`, or call `upsert_actor` for a new actor before save.
 6. Before `save_design_doc`, call `noesis-graph:upsert_actor` for every new actor name introduced — the save fails if a referenced actor isn't in the catalog.
 7. SKILL.md Step 4 owns the Save flow (write the JSON, run the pre-save check, call `save_design_doc`). Do not duplicate Save instructions here.
 
@@ -220,7 +215,7 @@ The triple-backtick `mermaid` opener and the trailing triple-backtick close the 
 
 ### 7.1 Green-field iteration (no code yet)
 
-Second authoring pass on a Design Doc whose `implement-design-doc` has **not** run. The prior Design Doc record lists `PlaceOrder` with `description: "..."` (300 chars). The new authoring pass refines the description to 480 chars, adds a new property to `Order`, attaches an actor and a behaviour-scoped quality attribute.
+Second authoring pass on a Design Doc whose `implement-design-doc` has **not** run, and whose Bounded Context does not yet exist in code. The prior Design Doc record lists `PlaceOrder` with `description: "..."` (300 chars). The new authoring pass refines the description to 480 chars, adds a new property to `Order`, attaches an actor and a behaviour-scoped quality attribute.
 
 Correct ChangeSets:
 
