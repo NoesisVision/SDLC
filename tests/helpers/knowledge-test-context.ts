@@ -93,6 +93,14 @@ export async function clearGraphNew(db: DatabaseService): Promise<void> {
     "DecisionOption",
     "DesignDoc",
     "Actor",
+    "DesignedBoundedContext",
+    "DesignedDomainModule",
+    "DesignedBuildingBlock",
+    "DesignedBehaviour",
+    "DesignedProperty",
+    "DesignedRule",
+    "DesignedScenario",
+    "DesignedQualityAttribute",
   ];
   const conn = db.getConnection();
   for (const label of labels) {
