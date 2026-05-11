@@ -328,7 +328,7 @@ export class DecisionsService {
       const topicTitle = await this.lookupTopicTitle(file.topic_id);
       out.push({
         id: head.id,
-        topic_id: head.topic_id,
+        topic_id: file.topic_id,
         topic_title: topicTitle,
         title: head.title,
         status: head.status,

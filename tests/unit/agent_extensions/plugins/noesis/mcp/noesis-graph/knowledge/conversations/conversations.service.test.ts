@@ -388,7 +388,7 @@ describe("ConversationsService — accept skill output, validate, split, save", 
     });
   });
 
-  test("Indexing a conversation file projects it into Conversation, Turn and IdeaUnit nodes", async () => {
+  test("Indexing a conversation file projects it into Conversation, SpeakerTurn and IdeaUnit nodes", async () => {
     let path = "";
 
     await given("a structured conversation file on disk that has not yet been indexed", () => {
@@ -413,8 +413,8 @@ describe("ConversationsService — accept skill output, validate, split, save", 
         speaker: string;
         time: string;
       }>(
-        "MATCH (c:Conversation)-[:CONVERSATION_HAS_TURN]->(t:Turn) WHERE c.id = $cid " +
-          "RETURN t.id AS id, t.conversation_id AS conversation_id, t.turn_index AS turn_index, " +
+        "MATCH (c:Conversation)-[:CONVERSATION_HAS_SPEAKER_TURN]->(t:SpeakerTurn) WHERE c.id = $cid " +
+          "RETURN t.id AS id, c.id AS conversation_id, t.turn_index AS turn_index, " +
           "t.speaker AS speaker, t.time AS time ORDER BY t.turn_index",
         { cid: "conv-1" },
       );
@@ -437,10 +437,11 @@ describe("ConversationsService — accept skill output, validate, split, save", 
         sentences: string[];
         categories: string[];
       }>(
-        "MATCH (t:Turn)-[:TURN_HAS_IDEA_UNIT]->(u:IdeaUnit) WHERE u.conversation_id = $cid " +
-          "RETURN u.id AS id, u.conversation_id AS conversation_id, u.turn_index AS turn_index, " +
+        "MATCH (c:Conversation)-[:CONVERSATION_HAS_SPEAKER_TURN]->(t:SpeakerTurn)-[:SPEAKER_TURN_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
+          "WHERE c.id = $cid " +
+          "RETURN u.id AS id, c.id AS conversation_id, t.turn_index AS turn_index, " +
           "u.idea_unit_index AS idea_unit_index, u.sentences AS sentences, u.categories AS categories " +
-          "ORDER BY u.turn_index, u.idea_unit_index",
+          "ORDER BY t.turn_index, u.idea_unit_index",
         { cid: "conv-1" },
       );
       expect(

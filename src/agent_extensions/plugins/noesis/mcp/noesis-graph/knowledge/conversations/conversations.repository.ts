@@ -20,15 +20,15 @@ const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS Conversation(" +
     "id STRING, sha STRING, time STRING, main_topic STRING, " +
     "PRIMARY KEY(id))",
-  "CREATE NODE TABLE IF NOT EXISTS Turn(" +
-    "id STRING, conversation_id STRING, turn_index INT64, speaker STRING, time STRING, " +
+  "CREATE NODE TABLE IF NOT EXISTS SpeakerTurn(" +
+    "id STRING, turn_index INT64, speaker STRING, time STRING, " +
     "PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS IdeaUnit(" +
-    "id STRING, conversation_id STRING, turn_index INT64, idea_unit_index INT64, " +
+    "id STRING, idea_unit_index INT64, " +
     "sentences STRING[], categories STRING[], " +
     "PRIMARY KEY(id))",
-  "CREATE REL TABLE IF NOT EXISTS CONVERSATION_HAS_TURN(FROM Conversation TO Turn)",
-  "CREATE REL TABLE IF NOT EXISTS TURN_HAS_IDEA_UNIT(FROM Turn TO IdeaUnit)",
+  "CREATE REL TABLE IF NOT EXISTS CONVERSATION_HAS_SPEAKER_TURN(FROM Conversation TO SpeakerTurn)",
+  "CREATE REL TABLE IF NOT EXISTS SPEAKER_TURN_HAS_IDEA_UNIT(FROM SpeakerTurn TO IdeaUnit)",
 ];
 
 const PathRowSchema = z.object({ id: z.string(), sha: z.string() });
@@ -136,12 +136,12 @@ export class ConversationsRepository {
       (p) => `${conversationId}|T${p.turn_index}|IU${p.idea_unit_index}`,
     );
     const rows = await this.db.query<unknown>(
-      "MATCH (t:Turn)-[:TURN_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
+      "MATCH (c:Conversation)-[:CONVERSATION_HAS_SPEAKER_TURN]->(t:SpeakerTurn)-[:SPEAKER_TURN_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
         "WHERE u.id IN $ids " +
-        "RETURN u.conversation_id AS conversation_id, u.turn_index AS turn_index, " +
+        "RETURN c.id AS conversation_id, t.turn_index AS turn_index, " +
         "u.idea_unit_index AS idea_unit_index, t.speaker AS speaker, t.time AS time, " +
         "u.sentences AS sentences, u.categories AS categories " +
-        "ORDER BY u.turn_index, u.idea_unit_index",
+        "ORDER BY t.turn_index, u.idea_unit_index",
       { ids },
     );
     return z.array(IdeaUnitDetailRowSchema).parse(rows).map((r) => ({
@@ -213,34 +213,31 @@ export class ConversationsRepository {
     for (const turn of turns) {
       const turnId = `${conversationId}|T${turn.index}`;
       await this.db.query(
-        "CREATE (t:Turn {id: $id, conversation_id: $cid, turn_index: $idx, speaker: $speaker, time: $time})",
+        "CREATE (t:SpeakerTurn {id: $id, turn_index: $idx, speaker: $speaker, time: $time})",
         {
           id: turnId,
-          cid: conversationId,
           idx: turn.index,
           speaker: turn.speaker,
           time: turn.time,
         },
       );
       await this.db.query(
-        "MATCH (c:Conversation), (t:Turn) WHERE c.id = $cid AND t.id = $tid CREATE (c)-[:CONVERSATION_HAS_TURN]->(t)",
+        "MATCH (c:Conversation), (t:SpeakerTurn) WHERE c.id = $cid AND t.id = $tid CREATE (c)-[:CONVERSATION_HAS_SPEAKER_TURN]->(t)",
         { cid: conversationId, tid: turnId },
       );
       for (const iu of turn.idea_units) {
         const iuId = `${conversationId}|T${turn.index}|IU${iu.index}`;
         await this.db.query(
-          "CREATE (u:IdeaUnit {id: $id, conversation_id: $cid, turn_index: $tidx, idea_unit_index: $iuidx, sentences: $sentences, categories: $categories})",
+          "CREATE (u:IdeaUnit {id: $id, idea_unit_index: $iuidx, sentences: $sentences, categories: $categories})",
           {
             id: iuId,
-            cid: conversationId,
-            tidx: turn.index,
             iuidx: iu.index,
             sentences: iu.sentences,
             categories: iu.categories,
           },
         );
         await this.db.query(
-          "MATCH (t:Turn), (u:IdeaUnit) WHERE t.id = $tid AND u.id = $uid CREATE (t)-[:TURN_HAS_IDEA_UNIT]->(u)",
+          "MATCH (t:SpeakerTurn), (u:IdeaUnit) WHERE t.id = $tid AND u.id = $uid CREATE (t)-[:SPEAKER_TURN_HAS_IDEA_UNIT]->(u)",
           { tid: turnId, uid: iuId },
         );
       }
@@ -249,11 +246,12 @@ export class ConversationsRepository {
 
   private async deleteTurns(conversationId: string): Promise<void> {
     await this.db.query(
-      "MATCH (u:IdeaUnit) WHERE u.conversation_id = $cid DETACH DELETE u",
+      "MATCH (c:Conversation)-[:CONVERSATION_HAS_SPEAKER_TURN]->(:SpeakerTurn)-[:SPEAKER_TURN_HAS_IDEA_UNIT]->(u:IdeaUnit) " +
+        "WHERE c.id = $cid DETACH DELETE u",
       { cid: conversationId },
     );
     await this.db.query(
-      "MATCH (t:Turn) WHERE t.conversation_id = $cid DETACH DELETE t",
+      "MATCH (c:Conversation)-[:CONVERSATION_HAS_SPEAKER_TURN]->(t:SpeakerTurn) WHERE c.id = $cid DETACH DELETE t",
       { cid: conversationId },
     );
   }

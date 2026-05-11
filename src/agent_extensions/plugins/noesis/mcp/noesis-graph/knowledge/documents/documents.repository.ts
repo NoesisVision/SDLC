@@ -17,7 +17,7 @@ const SCHEMA_STATEMENTS = [
     "id STRING, sha STRING, title STRING, date STRING, content STRING, " +
     "PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS DocumentFragment(" +
-    "id STRING, document_id STRING, start_offset INT64, end_offset INT64, " +
+    "id STRING, start_offset INT64, end_offset INT64, " +
     "kind STRING, text STRING, " +
     "PRIMARY KEY(id))",
   "CREATE REL TABLE IF NOT EXISTS DOCUMENT_HAS_FRAGMENT(FROM Document TO DocumentFragment)",
@@ -156,10 +156,9 @@ export class DocumentsRepository {
     for (const frag of fragments) {
       const fragId = `${documentId}|F${frag.start_offset}-${frag.end_offset}`;
       await this.db.query(
-        "CREATE (f:DocumentFragment {id: $id, document_id: $did, start_offset: $startOffset, end_offset: $endOffset, kind: $kind, text: $text})",
+        "CREATE (f:DocumentFragment {id: $id, start_offset: $startOffset, end_offset: $endOffset, kind: $kind, text: $text})",
         {
           id: fragId,
-          did: documentId,
           startOffset: frag.start_offset,
           endOffset: frag.end_offset,
           kind: frag.kind,
@@ -175,7 +174,8 @@ export class DocumentsRepository {
 
   private async deleteFragments(documentId: string): Promise<void> {
     await this.db.query(
-      "MATCH (f:DocumentFragment) WHERE f.document_id = $did DETACH DELETE f",
+      "MATCH (d:Document)-[:DOCUMENT_HAS_FRAGMENT]->(f:DocumentFragment) " +
+        "WHERE d.id = $did DETACH DELETE f",
       { did: documentId },
     );
   }

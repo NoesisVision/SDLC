@@ -19,6 +19,16 @@ Layered on `src/agent_extensions/CLAUDE.md` and `SDLC/CLAUDE.md`. Only the noesi
 - **One step → one struct → one MCP tool**: each workflow step gets a single dedicated structure returned by a single tool. Avoid chatty round-trips.
 - **Minimal returns**: return only what the agent or UI needs next. `{ status: "Ok" }` or `{ id }` is fine; per-slot breakdowns usually aren't.
 
+## Graph model
+
+The graph DB and the on-disk JSON files describe the same domain but are **two different models by nature** — do not collapse them into one shape.
+
+- **JSON files store cross-entity references as scalar fields** (e.g. `Topic.parent_id`, `Decision.topic_id`, `referenced_items[].source_sha`). That is the right shape for a file: flat, self-contained, diff-friendly.
+- **The DB is a graph.** Every cross-entity reference between node types MUST be modelled as a `CREATE REL TABLE` edge — never as a scalar foreign-key column on the node. The Schema Explorer is the canonical view of the DB model; if a node looks "orphan" there, the model is wrong.
+- **Repositories translate between the two**: the JSON-side scalar field becomes a graph edge on `upsert` (DELETE the existing edge, then `MATCH ... CREATE (a)-[:REL]->(b)`), and reads project the edge target's id back as the scalar field on the stored type via `OPTIONAL MATCH (n)-[:REL]->(target) ... RETURN target.id AS <field>`. Service-layer code keeps consuming the scalar field unchanged.
+- **Indexer ordering matters**: when one entity's edge points at another (e.g. Decision → Topic), the target node must already exist when the source is upserted. Discovery iterates `SOURCE_FILE_KINDS` in declaration order (`source-files.ts`) and a single full re-index pass is the only re-indexing path, so list the kinds in dependency order (parents before children) and the invariant holds.
+- **Exception**: only skip the rel table if the user explicitly says so, and write down the reason on the field that stays scalar.
+
 ## Boundaries
 
 - **No LLM in the MCP server**: `noesis-graph` has no Anthropic API access. All semantic reasoning (Goldilocks topic search, summarisation, decision/design extraction) happens in the agent driving the skill. The server provides deterministic data access only.

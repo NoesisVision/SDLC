@@ -57,10 +57,10 @@ export async function createKnowledgeNewTestModule(): Promise<KnowledgeNewTestCo
     ],
   }).compile();
   await module.init();
-  await module.get(TopicsRepository).initSchema();
-  await module.get(DecisionsRepository).initSchema();
   await module.get(ConversationsRepository).initSchema();
   await module.get(DocumentsRepository).initSchema();
+  await module.get(TopicsRepository).initSchema();
+  await module.get(DecisionsRepository).initSchema();
   await module.get(DesignDocsRepository).initSchema();
   return {
     module,
@@ -83,12 +83,14 @@ export async function createKnowledgeNewTestModule(): Promise<KnowledgeNewTestCo
 export async function clearGraphNew(db: DatabaseService): Promise<void> {
   const labels = [
     "Conversation",
-    "Turn",
+    "SpeakerTurn",
     "IdeaUnit",
     "Document",
     "DocumentFragment",
     "Topic",
     "Decision",
+    "DecisionContext",
+    "DecisionOption",
     "DesignDoc",
     "Actor",
   ];

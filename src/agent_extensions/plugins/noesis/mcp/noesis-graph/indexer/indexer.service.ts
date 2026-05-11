@@ -90,10 +90,10 @@ export class IndexerService implements OnApplicationBootstrap {
   }
 
   private async bootstrapSchema(): Promise<void> {
-    await this.topicsRepository.initSchema();
-    await this.decisionsRepository.initSchema();
     await this.conversationsRepository.initSchema();
     await this.documentsRepository.initSchema();
+    await this.topicsRepository.initSchema();
+    await this.decisionsRepository.initSchema();
     await this.designDocsRepository.initSchema();
   }
 
