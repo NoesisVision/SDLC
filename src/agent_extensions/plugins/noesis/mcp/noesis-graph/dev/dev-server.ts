@@ -4,7 +4,6 @@ import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { ensureNoesisLayout } from "../../../shared-contracts/source-files.js";
 import { AppModule } from "../app.module.js";
 import { IndexerService } from "../indexer/indexer.service.js";
 import { clearDiscovery, writeDiscovery } from "./dev-discovery.js";
@@ -19,7 +18,6 @@ export async function startDevServer(): Promise<void> {
   const projectDir =
     externalProjectDir ?? mkdtempSync(join(tmpdir(), "noesis-graph-dev-project-"));
   const ownsProjectDir = externalProjectDir === null;
-  ensureNoesisLayout(projectDir);
   const skipSeed = process.env["NOESIS_DEV_NO_SEED"] === "1";
   logger.log(`Data dir: ${dataDir}${ownsDataDir ? " (ephemeral)" : ""}`);
   logger.log(`Project dir: ${projectDir}${ownsProjectDir ? " (ephemeral)" : ""}`);

@@ -29,7 +29,6 @@ import {
   decisionJsonPath,
   designDocCanonicalPath,
   documentJsonPath,
-  ensureNoesisLayout,
   topicJsonPath,
 } from "../../../shared-contracts/source-files.js";
 import { IndexerService } from "../indexer/indexer.service.js";
@@ -49,7 +48,6 @@ export async function seedDevDatabase(
   indexer: IndexerService,
 ): Promise<void> {
   const logger = new Logger("DevSeed");
-  ensureNoesisLayout(projectDir);
 
   for (const conversation of seedConversations()) {
     writeConversation(projectDir, conversation);

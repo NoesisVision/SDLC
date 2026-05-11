@@ -12,7 +12,6 @@ import {
   type DesignedRuleNew,
   type DesignedScenarioNew,
 } from "../../../../shared-contracts/design-doc-new.js";
-import { ensureNoesisLayout } from "../../../../shared-contracts/source-files.js";
 import type {
   DesignDocDetailData,
   DesignDocListItem,
@@ -313,7 +312,6 @@ export class DesignDocsService {
    * through persistFromWorkingFile instead.
    */
   persistFile(file: DesignDocFileNew): string {
-    ensureNoesisLayout(this.projectDir);
     const newPath = this.canonicalPath(file.id, file.name);
     const previous = this.repository.findFileById(this.projectDir, file.id);
     if (previous !== null && previous !== newPath) {
@@ -477,7 +475,6 @@ export class DesignDocsService {
       }
     }
     const id = input.id ?? crypto.randomUUID();
-    ensureNoesisLayout(this.projectDir);
     return {
       status: "Ok",
       id,

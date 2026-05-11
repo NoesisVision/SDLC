@@ -3,7 +3,6 @@ import { unwatchFile, watchFile } from 'fs';
 import { assertNever } from '../../../shared-contracts/assert-never.js';
 import {
   discoverSourceFiles,
-  ensureNoesisLayout,
   noesisRoot,
   noesisSubdirPath,
   SOURCE_FILE_KINDS,
@@ -152,7 +151,6 @@ export class IndexerService implements OnApplicationBootstrap {
   startWatching(): void {
     if (this.watching) return;
     this.watching = true;
-    ensureNoesisLayout(this.projectDir);
     for (const kind of SOURCE_FILE_KINDS) {
       const subdir = noesisSubdirPath(this.projectDir, kind);
       watchFile(subdir, { interval: WATCH_POLL_INTERVAL_MS }, () => {
@@ -203,7 +201,6 @@ export class IndexerService implements OnApplicationBootstrap {
   }
 
   private async executeFullIndex(): Promise<IndexResult> {
-    ensureNoesisLayout(this.projectDir);
     const discovered = discoverSourceFiles(this.projectDir);
     let processed = 0;
     const seenPaths = new Set<string>();

@@ -28,7 +28,6 @@ import {
   conversationMdPath,
   decisionJsonPath,
   documentJsonPath,
-  ensureNoesisLayout,
   stampIdLine,
   topicJsonPath,
 } from "../../../../shared-contracts/source-files.js";
@@ -339,7 +338,6 @@ export class ConversationsService {
     cleanedMd: string,
     confirmed: Set<string>,
   ): UploadConversationAnalysisResult {
-    ensureNoesisLayout(this.projectDir);
     const conv = output.conversation;
     const stampedMd = stampIdLine(cleanedMd, "conversation", conv.conversation_id);
     const mdPath = this.canonicalMdPath(conv.conversation_id);

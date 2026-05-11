@@ -213,12 +213,6 @@ export function writeSidecar<S extends z.ZodType>(
   writeFileSync(absPath, `${JSON.stringify(validated, null, 2)}\n`, "utf-8");
 }
 
-export function ensureNoesisLayout(projectDir: string): void {
-  for (const kind of Object.keys(SUBDIR_FOR_KIND) as SourceFileKind[]) {
-    mkdirSync(noesisSubdirPath(projectDir, kind), { recursive: true });
-  }
-}
-
 export function isUnderNoesisRoot(projectDir: string, absPath: string): boolean {
   const root = noesisRoot(projectDir);
   const target = resolve(absPath);

@@ -27,7 +27,6 @@ import {
   decisionJsonPath,
   documentJsonPath,
   documentMdPath,
-  ensureNoesisLayout,
   topicJsonPath,
 } from "../../../../shared-contracts/source-files.js";
 import type {
@@ -282,7 +281,6 @@ export class DocumentsService {
     designDocJsonPath: string | null,
     confirmed: Set<string>,
   ): UploadDocumentAnalysisResult {
-    ensureNoesisLayout(this.projectDir);
     const docFile: DocumentFileNew = {
       document_id: output.document.id,
       title: output.document.title,

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { z } from "zod";
@@ -14,7 +14,6 @@ import {
   designDocJsonPath,
   documentJsonPath,
   documentMdPath,
-  ensureNoesisLayout,
   extractIdFromMd,
   idLineComment,
   isUnderNoesisRoot,
@@ -186,7 +185,6 @@ describe("sidecar IO", () => {
 describe("designDocCanonicalFilename", () => {
   test("uses <slug>-<id-suffix>.json with 20-char slug and 8-char hex suffix", () => {
     const proj = join(tmpRoot, "ddc-empty");
-    ensureNoesisLayout(proj);
     const id = "019ddea6-262b-7000-a160-f38c6b4cb4b7";
     expect(designDocCanonicalFilename(proj, id, "footprint-calculation-engine")).toBe(
       "footprint-calculatio-6b4cb4b7.json",
@@ -195,15 +193,14 @@ describe("designDocCanonicalFilename", () => {
 
   test("falls back to id suffix when slug is empty", () => {
     const proj = join(tmpRoot, "ddc-empty-slug");
-    ensureNoesisLayout(proj);
     const id = "019ddea6-262b-7000-a160-f38c6b4cb4b7";
     expect(designDocCanonicalFilename(proj, id, "!!!")).toBe("6b4cb4b7.json");
   });
 
   test("extends the id suffix when another doc shares the 8-char tail", () => {
     const proj = join(tmpRoot, "ddc-collide");
-    ensureNoesisLayout(proj);
     const dir = noesisSubdirPath(proj, "design_doc");
+    mkdirSync(dir, { recursive: true });
     writeFileSync(
       resolve(dir, "other-cccccccc.json"),
       JSON.stringify({ id: "0000-0000-0000-0000-aaaa6b4cb4b7", name: "other" }),
@@ -217,23 +214,10 @@ describe("designDocCanonicalFilename", () => {
 
   test("designDocCanonicalPath joins the design-docs subdir", () => {
     const proj = join(tmpRoot, "ddc-path");
-    ensureNoesisLayout(proj);
     const id = "019ddea6-262b-7000-a160-f38c6b4cb4b7";
     expect(designDocCanonicalPath(proj, id, "auth")).toBe(
       resolve(proj, "noesis/design-docs/auth-6b4cb4b7.json"),
     );
-  });
-});
-
-describe("ensureNoesisLayout", () => {
-  test("creates every subdirectory under <projectDir>/noesis", () => {
-    const proj = join(tmpRoot, "layout-proj");
-    ensureNoesisLayout(proj);
-    expect(existsSync(noesisSubdirPath(proj, "conversation"))).toBe(true);
-    expect(existsSync(noesisSubdirPath(proj, "document"))).toBe(true);
-    expect(existsSync(noesisSubdirPath(proj, "topic"))).toBe(true);
-    expect(existsSync(noesisSubdirPath(proj, "decision"))).toBe(true);
-    expect(existsSync(noesisSubdirPath(proj, "design_doc"))).toBe(true);
   });
 });
 
