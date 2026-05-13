@@ -245,6 +245,8 @@ Build a `DesignDoc` payload using the schema rules already loaded in **Pre-fligh
 
 Apply this rule recursively to nested ChangeSets. Use §1.0 only as a hint about what was last asked-for; the code is the system of record.
 
+**The upload is a delta, not a replacement.** `save_design_doc` merges the incoming JSON into the canonical file: at every ChangeSet level (and inside `input` / `output` / `usedBuildingBlocks`), items the upload does not mention survive untouched, items present in `added` or `modified` extend or override their existing peers by name, and items in `removed` drop their existing peers by name. Slot transitions are honoured — a name appearing in incoming `modified` moves from existing `added` to `modified`, and a name appearing in incoming `removed` is dropped from wherever it lived. This is exactly why unchanged items must be omitted (§4 bucketing) — re-stating them is at best a no-op and at worst overwrites a user-edited field on disk.
+
 **Empty ChangeSets may be omitted.** When `added`, `modified`, and `removed` are all empty for a given collection field, drop the field entirely rather than emitting `{ "added": [], "modified": [], "removed": [] }`.
 
 **Renames.** When renaming a Building Block, Behaviour, Property or Rule that already exists in code, emit `removed: ["<old>"]` and `added: [<full new spec>]`. Then **double-check** that the old name does not appear elsewhere in the JSON (any `input`, `output`, `usedBuildingBlocks`, `properties[].type`, `behaviour.actor`, behaviour-host reference, or `implements` entry). If it does, those references must point at the new name. When the item being renamed is *not* in code yet, there is nothing to remove — just emit the new name in `added`.

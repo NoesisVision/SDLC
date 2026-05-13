@@ -25,6 +25,7 @@ import {
   resolveDesignDocLockedFields,
   type ConfirmedEdit,
 } from "../locks.js";
+import { mergeDesignDocFiles } from "./design-docs.merge.js";
 import { DesignDocsRepository } from "./design-docs.repository.js";
 
 export interface IndexFileOutcome {
@@ -323,11 +324,11 @@ export class DesignDocsService {
   }
 
   /**
-   * DocumentsService calls this with the working-dir path to the design-doc JSON.
-   * Reads + validates + writes to the canonical path, removing the prior canonical
-   * file when the rename changes the filename. Locked fields whose value would change
-   * are preserved unless the corresponding ConfirmedEdit is present in `confirmed`.
-   * For each cleared lock, the new value is written and the lock flag is reset to false.
+   * Save-time entry point for a working-dir design-doc JSON. The incoming file is
+   * treated as a *delta* against the canonical file: unmentioned items survive,
+   * named items in the incoming ChangeSets override or extend their existing peers,
+   * and explicit `removed` entries drop items by name. Locked top-level fields
+   * (`name`, `description`) are preserved unless `confirmed` carries an override.
    */
   persistFromWorkingFile(
     workingDirPath: string,
@@ -337,13 +338,14 @@ export class DesignDocsService {
     const existing = this.readCanonicalIfExists(file.id);
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveDesignDocLockedFields(existing, file, confirmed, cleared);
-    const merged: DesignDocFileNew = {
+    const withResolvedLocks: DesignDocFileNew = {
       ...file,
       name: resolved.name,
       name_locked: resolved.name_locked,
       description: resolved.description,
       description_locked: resolved.description_locked,
     };
+    const merged = mergeDesignDocFiles(existing, withResolvedLocks);
     return { path: this.persistFile(merged), cleared };
   }
 

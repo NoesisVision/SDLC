@@ -13,17 +13,28 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import {
+  IconApps,
   IconBolt,
+  IconBroadcast,
+  IconBuildingFactory2,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
   IconCube,
+  IconDatabase,
+  IconDiamond,
   IconFileDescription,
+  IconHexagon,
+  IconId,
   IconLayoutGrid,
   IconList,
   IconPackage,
+  IconPlug,
   IconScale,
+  IconSearch,
   IconShield,
+  IconTerminal2,
+  IconTool,
 } from "@tabler/icons-react";
 import type {
   ChangeStatus,
@@ -544,7 +555,15 @@ function TreeItem({
           ) : (
             <Box w={18} />
           )}
-          <NodeIcon kind={node.kind} status={node.status} />
+          <NodeIcon
+            kind={node.kind}
+            status={node.status}
+            buildingBlockType={
+              node.payload?.kind === "buildingBlock"
+                ? node.payload.data?.type ?? null
+                : null
+            }
+          />
           <Text
             size="sm"
             fw={node.kind === "section" ? 700 : active ? 600 : 500}
@@ -579,12 +598,14 @@ function TreeItem({
 function NodeIcon({
   kind,
   status,
+  buildingBlockType,
 }: {
   kind: TreeNodeKind;
   status: ChangeStatus | null;
+  buildingBlockType: string | null;
 }) {
   const color = status === null ? "noesisBlue" : statusMantineColor(status);
-  const icon = nodeIcon(kind);
+  const icon = nodeIcon(kind, buildingBlockType);
   return (
     <ThemeIcon size="sm" variant="light" color={color} radius="sm">
       {icon}
@@ -592,7 +613,10 @@ function NodeIcon({
   );
 }
 
-function nodeIcon(kind: TreeNodeKind): React.ReactNode {
+function nodeIcon(
+  kind: TreeNodeKind,
+  buildingBlockType: string | null,
+): React.ReactNode {
   switch (kind) {
     case "section":
       return <IconList size={14} stroke={1.5} />;
@@ -601,7 +625,7 @@ function nodeIcon(kind: TreeNodeKind): React.ReactNode {
     case "module":
       return <IconPackage size={14} stroke={1.5} />;
     case "buildingBlock":
-      return <IconCube size={14} stroke={1.5} />;
+      return buildingBlockIcon(buildingBlockType);
     case "behavior":
       return <IconBolt size={14} stroke={1.5} />;
     case "rule":
@@ -610,6 +634,35 @@ function nodeIcon(kind: TreeNodeKind): React.ReactNode {
       return <IconCheck size={14} stroke={1.5} />;
     case "qualityAttribute":
       return <IconShield size={14} stroke={1.5} />;
+  }
+}
+
+function buildingBlockIcon(type: string | null): React.ReactNode {
+  switch (type) {
+    case "aggregate":
+      return <IconHexagon size={14} stroke={1.5} />;
+    case "entity":
+      return <IconId size={14} stroke={1.5} />;
+    case "value_object":
+      return <IconDiamond size={14} stroke={1.5} />;
+    case "domain_event":
+      return <IconBroadcast size={14} stroke={1.5} />;
+    case "domain_command":
+      return <IconTerminal2 size={14} stroke={1.5} />;
+    case "domain_query":
+      return <IconSearch size={14} stroke={1.5} />;
+    case "domain_service":
+      return <IconTool size={14} stroke={1.5} />;
+    case "application_service":
+      return <IconApps size={14} stroke={1.5} />;
+    case "repository":
+      return <IconDatabase size={14} stroke={1.5} />;
+    case "factory":
+      return <IconBuildingFactory2 size={14} stroke={1.5} />;
+    case "external_integration":
+      return <IconPlug size={14} stroke={1.5} />;
+    default:
+      return <IconCube size={14} stroke={1.5} />;
   }
 }
 
@@ -652,7 +705,7 @@ function NodeDetailsView({
             color={node.status !== null ? statusMantineColor(node.status) : "noesisBlue"}
             radius="sm"
           >
-            {nodeIcon(node.kind)}
+            {nodeIcon(node.kind, null)}
           </ThemeIcon>
           <Stack gap={2}>
             <Title order={1} size="h3" c="gray.1" fw={700}>
@@ -755,6 +808,7 @@ function DetailsHeader({
   subtitle,
   path,
   onEdit,
+  buildingBlockType = null,
 }: {
   kind: TreeNodeKind;
   name: string;
@@ -762,6 +816,7 @@ function DetailsHeader({
   subtitle?: string;
   path?: ElementPathSegment[];
   onEdit?: EditFn | null;
+  buildingBlockType?: string | null;
 }) {
   const color = status !== null ? statusMantineColor(status) : "noesisBlue";
   const titleNode = (
@@ -773,7 +828,7 @@ function DetailsHeader({
     <Box className={classes.section}>
       <Group gap="sm" align="center" wrap="nowrap">
         <ThemeIcon size="lg" variant="light" color={color} radius="sm">
-          {nodeIcon(kind)}
+          {nodeIcon(kind, buildingBlockType)}
         </ThemeIcon>
         <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
           {onEdit !== undefined && onEdit !== null && path !== undefined ? (
@@ -993,6 +1048,7 @@ function BuildingBlockDetails({
         subtitle={data?.type ?? undefined}
         path={path}
         onEdit={onEdit}
+        buildingBlockType={data?.type ?? null}
       />
       {data !== null && (
         <DescriptionSection value={data.description} path={path} onEdit={onEdit} />

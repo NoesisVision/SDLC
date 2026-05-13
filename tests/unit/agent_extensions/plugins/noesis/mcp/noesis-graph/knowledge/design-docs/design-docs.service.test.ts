@@ -439,6 +439,177 @@ describe("DesignDocsService — canonical paths, locks, sealing on implemented, 
     });
   });
 
+  test("Iterating a design doc with only a new scenario keeps the original scenarios under the same behaviour", async () => {
+    const id = "01928000-0000-7000-8000-cccc00000004";
+    const workingDir = join(ctx.projectDir, "design-doc-iteration");
+
+    await given("a design doc on disk whose AddItem behaviour already carries one scenario", () => {
+      ctx.designDocs.persistFile(
+        designDoc({
+          id,
+          name: "sales",
+          boundedContexts: {
+            added: [
+              {
+                name: "Sales",
+                name_locked: false,
+                description: "Sales BC",
+                description_locked: false,
+                buildingBlocks: {
+                  added: [
+                    {
+                      name: "Cart",
+                      name_locked: false,
+                      type: "aggregate",
+                      type_locked: false,
+                      description: "Customer cart",
+                      description_locked: false,
+                      behaviours: {
+                        added: [
+                          {
+                            name: "AddItem",
+                            name_locked: false,
+                            description: "Add an item to the cart",
+                            description_locked: false,
+                            type: "command",
+                            type_locked: false,
+                            isPublic: true,
+                            actor: null,
+                            actor_locked: false,
+                            scenarios: {
+                              added: [
+                                {
+                                  name: "ItemAdded",
+                                  name_locked: false,
+                                  description: "Happy path",
+                                  description_locked: false,
+                                  given: "empty cart",
+                                  given_locked: false,
+                                  when: "AddItem command",
+                                  when_locked: false,
+                                  then: "cart has one line",
+                                  then_locked: false,
+                                },
+                              ],
+                              modified: [],
+                              removed: [],
+                            },
+                          },
+                        ],
+                        modified: [],
+                        removed: [],
+                      },
+                    },
+                  ],
+                  modified: [],
+                  removed: [],
+                },
+              },
+            ],
+            modified: [],
+            removed: [],
+          },
+        }),
+      );
+    });
+
+    await when(
+      "a working file containing only a second scenario under the same behaviour is persisted",
+      () => {
+        mkdirSync(workingDir, { recursive: true });
+        const wpath = join(workingDir, "design-doc.json");
+        writeFileSync(
+          wpath,
+          JSON.stringify(
+            designDoc({
+              id,
+              name: "sales",
+              boundedContexts: {
+                added: [
+                  {
+                    name: "Sales",
+                    name_locked: false,
+                    description: "Sales BC",
+                    description_locked: false,
+                    buildingBlocks: {
+                      added: [
+                        {
+                          name: "Cart",
+                          name_locked: false,
+                          type: "aggregate",
+                          type_locked: false,
+                          description: "Customer cart",
+                          description_locked: false,
+                          behaviours: {
+                            added: [
+                              {
+                                name: "AddItem",
+                                name_locked: false,
+                                description: "Add an item to the cart",
+                                description_locked: false,
+                                type: "command",
+                                type_locked: false,
+                                isPublic: true,
+                                actor: null,
+                                actor_locked: false,
+                                scenarios: {
+                                  added: [
+                                    {
+                                      name: "AddItemRejectedWhenOutOfStock",
+                                      name_locked: false,
+                                      description: "Out-of-stock guard",
+                                      description_locked: false,
+                                      given: "item is out of stock",
+                                      given_locked: false,
+                                      when: "AddItem command",
+                                      when_locked: false,
+                                      then: "AddItem is rejected",
+                                      then_locked: false,
+                                    },
+                                  ],
+                                  modified: [],
+                                  removed: [],
+                                },
+                              },
+                            ],
+                            modified: [],
+                            removed: [],
+                          },
+                        },
+                      ],
+                      modified: [],
+                      removed: [],
+                    },
+                  },
+                ],
+                modified: [],
+                removed: [],
+              },
+            }),
+            null,
+            2,
+          ),
+        );
+        ctx.designDocs.persistFromWorkingFile(wpath);
+      },
+    );
+
+    await then("the on-disk design doc lists both scenarios under AddItem", () => {
+      const found = ctx.designDocsRepository.findFileById(ctx.projectDir, id);
+      expect(found).not.toBeNull();
+      const persisted = DesignDocFileNewSchema.parse(
+        JSON.parse(readFileSync(found as string, "utf-8")),
+      );
+      const scenarios =
+        persisted.boundedContexts!.added[0]!.buildingBlocks!.added[0]!.behaviours!
+          .added[0]!.scenarios!.added;
+      expect(scenarios.map((s) => s.name).sort()).toEqual([
+        "AddItemRejectedWhenOutOfStock",
+        "ItemAdded",
+      ]);
+    });
+  });
+
   test("Persisting a working file without confirmed_edits silently preserves a locked field value", () => {
     const id = "01928000-0000-7000-8000-cccc00000003";
     const workingDir = join(ctx.projectDir, "design-doc-working-2");
