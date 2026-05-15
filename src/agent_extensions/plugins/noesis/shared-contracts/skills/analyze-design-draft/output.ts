@@ -8,7 +8,7 @@ import {
   buildFragmentMap,
   type DocumentFragment,
 } from "../../documents.js";
-import { PotentialTopicsSchema, TopicSchema } from "../../topics.js";
+import { AnalyzedTopicSchema } from "../analyzed-topic.js";
 
 export const DecisionSlotSchema = z.enum([
   "context",
@@ -29,9 +29,8 @@ export const AnalyzeDesignDraftOutputSchema = z.object({
   document: DocumentSchema,
   fragments: z.array(DocumentFragmentSchema),
   section_tree: z.array(SectionNodeSchema),
-  topics: z.array(TopicSchema),
+  topics: z.array(AnalyzedTopicSchema),
   decision_attachments: z.array(AttachToDecisionSchema).default(() => []),
-  potential_topics: PotentialTopicsSchema,
   design_doc_id: z.string().nullable().default(null),
   design_doc_title: z.string().nullable().default(null),
   design_doc_extracted: z.boolean().default(false),

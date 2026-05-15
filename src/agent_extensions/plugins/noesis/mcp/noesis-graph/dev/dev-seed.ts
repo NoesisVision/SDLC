@@ -324,69 +324,82 @@ function seedDecisions(): DecisionFileNew[] {
       topic_id: "topic-auth",
       title: "Adopt OAuth2 with PKCE",
       status: "accepted",
-      referenced_items: [
-        {
-          type: "idea_unit_ref",
-          conversation_id: "conv-kickoff",
-          turn_index: 1,
-          idea_unit_index: 0,
-        },
-        {
-          type: "idea_unit_ref",
-          conversation_id: "conv-kickoff",
-          turn_index: 1,
-          idea_unit_index: 1,
-        },
-        {
-          type: "document_fragment_ref",
-          document_id: "doc-vision",
-          start_offset: 13,
-          end_offset: visionContentLength(),
-        },
-      ],
       context: {
         text:
           "We need a unified auth protocol that works for web and mobile, and " +
           "supports SSO follow-on work without redesign.",
-        supporting_item_indices: [2],
+        supporting_content: [
+          {
+            type: "document_fragment_ref",
+            document_id: "doc-vision",
+            start_offset: 13,
+            end_offset: visionContentLength(),
+          },
+        ],
       },
       decision: {
         text: "Use OAuth2 with PKCE for all first-party clients.",
         rationale:
           "PKCE handles native clients safely; PKCE + OAuth2 is the industry default and unblocks SSO.",
-        supporting_item_indices: [0, 1],
+        supporting_content: [
+          {
+            type: "idea_unit_ref",
+            conversation_id: "conv-kickoff",
+            turn_index: 1,
+            idea_unit_index: 0,
+          },
+          {
+            type: "idea_unit_ref",
+            conversation_id: "conv-kickoff",
+            turn_index: 1,
+            idea_unit_index: 1,
+          },
+        ],
       },
       alternative_options: [
         {
           text: "Custom session cookies + CSRF tokens.",
           rationale:
             "Simpler to bootstrap but doesn't generalise to mobile or third-party SSO.",
-          supporting_item_indices: [0],
+          supporting_content: [
+            {
+              type: "idea_unit_ref",
+              conversation_id: "conv-kickoff",
+              turn_index: 1,
+              idea_unit_index: 0,
+            },
+          ],
         },
       ],
     }),
-    // Second decision exercises empty alternative_options + minimal supporting indices.
+    // Second decision exercises empty alternative_options + minimal supporting content.
     DecisionFileNewSchema.parse({
       id: "decision-no-vendor-lock",
       topic_id: "topic-auth",
       title: "No vendor-lock for the IdP",
       status: "proposed",
-      referenced_items: [
-        {
-          type: "idea_unit_ref",
-          conversation_id: "conv-followup",
-          turn_index: 0,
-          idea_unit_index: 1,
-        },
-      ],
       context: {
         text: "We may revisit IdP later; keep the abstraction provider-neutral.",
-        supporting_item_indices: [0],
+        supporting_content: [
+          {
+            type: "idea_unit_ref",
+            conversation_id: "conv-followup",
+            turn_index: 0,
+            idea_unit_index: 1,
+          },
+        ],
       },
       decision: {
         text: "Wrap the IdP behind an internal interface; no SDK leaks into app code.",
         rationale: "Lets us swap IdP without touching application services.",
-        supporting_item_indices: [0],
+        supporting_content: [
+          {
+            type: "idea_unit_ref",
+            conversation_id: "conv-followup",
+            turn_index: 0,
+            idea_unit_index: 1,
+          },
+        ],
       },
       alternative_options: [],
     }),

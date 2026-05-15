@@ -7,6 +7,7 @@ import {
   type DecisionContextNew,
   type DecisionOptionNew,
 } from "../../../../shared-contracts/source-file-schemas.js";
+import type { SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import {
   computeFileSha,
   decisionJsonPath,
@@ -14,7 +15,6 @@ import {
   readSourceFile,
   writeSourceFile,
 } from "../../../../shared-contracts/source-files.js";
-import type { TopicItemRefNew } from "../../../../shared-contracts/source-file-schemas.js";
 import { DatabaseService, type QueryParams } from "../../database/database.service.js";
 
 const SCHEMA_STATEMENTS = [
@@ -239,12 +239,7 @@ export class DecisionsRepository {
         "CREATE (d)-[:DECISION_HAS_CONTEXT]->(c)",
       { did: file.id, cid: contextId },
     );
-    await this.linkSlotItems(
-      contextId,
-      "DecisionContext",
-      file.context,
-      file.referenced_items,
-    );
+    await this.linkSlotItems(contextId, "DecisionContext", file.context);
   }
 
   private async createChosenOption(file: DecisionFileNew): Promise<void> {
@@ -266,12 +261,7 @@ export class DecisionsRepository {
         "CREATE (d)-[:DECISION_HAS_CHOSEN_OPTION]->(o)",
       { did: file.id, oid: optionId },
     );
-    await this.linkSlotItems(
-      optionId,
-      "DecisionOption",
-      file.decision,
-      file.referenced_items,
-    );
+    await this.linkSlotItems(optionId, "DecisionOption", file.decision);
   }
 
   private async createAlternativeOptions(file: DecisionFileNew): Promise<void> {
@@ -296,12 +286,7 @@ export class DecisionsRepository {
           "CREATE (d)-[:DECISION_HAS_ALTERNATIVE_OPTION]->(o)",
         { did: file.id, oid: optionId },
       );
-      await this.linkSlotItems(
-        optionId,
-        "DecisionOption",
-        option,
-        file.referenced_items,
-      );
+      await this.linkSlotItems(optionId, "DecisionOption", option);
     }
   }
 
@@ -324,7 +309,6 @@ export class DecisionsRepository {
     slotId: string,
     slotLabel: "DecisionContext" | "DecisionOption",
     slot: DecisionContextNew | DecisionOptionNew,
-    referencedItems: TopicItemRefNew[],
   ): Promise<void> {
     const ideaUnitRel =
       slotLabel === "DecisionContext"
@@ -334,25 +318,33 @@ export class DecisionsRepository {
       slotLabel === "DecisionContext"
         ? "DECISION_CONTEXT_IS_DEFINED_BY_DOCUMENT_FRAGMENT"
         : "DECISION_OPTION_IS_DEFINED_BY_DOCUMENT_FRAGMENT";
-    for (const idx of slot.supporting_item_indices) {
-      const item = referencedItems[idx];
-      if (item === undefined) continue;
-      const sourceSha = item.source_sha ?? "";
-      if (item.type === "idea_unit_ref") {
-        const ideaUnitId = `${item.conversation_id}|T${item.turn_index}|IU${item.idea_unit_index}`;
-        await this.db.query(
-          `MATCH (s:${slotLabel}), (u:IdeaUnit) WHERE s.id = $sid AND u.id = $uid ` +
-            `CREATE (s)-[:${ideaUnitRel} {source_sha: $sha}]->(u)`,
-          { sid: slotId, uid: ideaUnitId, sha: sourceSha },
-        );
-      } else {
-        const fragmentId = `${item.document_id}|F${item.start_offset}-${item.end_offset}`;
-        await this.db.query(
-          `MATCH (s:${slotLabel}), (f:DocumentFragment) WHERE s.id = $sid AND f.id = $fid ` +
-            `CREATE (s)-[:${fragmentRel} {source_sha: $sha}]->(f)`,
-          { sid: slotId, fid: fragmentId, sha: sourceSha },
-        );
-      }
+    for (const item of slot.supporting_content) {
+      await this.linkSourceContent(slotId, slotLabel, ideaUnitRel, fragmentRel, item);
+    }
+  }
+
+  private async linkSourceContent(
+    slotId: string,
+    slotLabel: "DecisionContext" | "DecisionOption",
+    ideaUnitRel: string,
+    fragmentRel: string,
+    item: SourceContentRef,
+  ): Promise<void> {
+    const sourceSha = item.source_sha ?? "";
+    if (item.type === "idea_unit_ref") {
+      const ideaUnitId = `${item.conversation_id}|T${item.turn_index}|IU${item.idea_unit_index}`;
+      await this.db.query(
+        `MATCH (s:${slotLabel}), (u:IdeaUnit) WHERE s.id = $sid AND u.id = $uid ` +
+          `CREATE (s)-[:${ideaUnitRel} {source_sha: $sha}]->(u)`,
+        { sid: slotId, uid: ideaUnitId, sha: sourceSha },
+      );
+    } else {
+      const fragmentId = `${item.document_id}|F${item.start_offset}-${item.end_offset}`;
+      await this.db.query(
+        `MATCH (s:${slotLabel}), (f:DocumentFragment) WHERE s.id = $sid AND f.id = $fid ` +
+          `CREATE (s)-[:${fragmentRel} {source_sha: $sha}]->(f)`,
+        { sid: slotId, fid: fragmentId, sha: sourceSha },
+      );
     }
   }
 

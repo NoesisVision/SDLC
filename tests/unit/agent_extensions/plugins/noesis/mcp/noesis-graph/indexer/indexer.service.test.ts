@@ -167,15 +167,19 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
       writeJson(
         decisionJsonPath(ctx.projectDir, "decision-1", "Decision"),
         makeDecisionFile("decision-1", {
-          referenced_items: [
-            {
-              type: "idea_unit_ref",
-              conversation_id: "conv-1",
-              turn_index: 0,
-              idea_unit_index: 0,
-              source_sha: "stale-sha",
-            },
-          ],
+          decision: {
+            text: "dec",
+            rationale: "r",
+            supporting_content: [
+              {
+                type: "idea_unit_ref",
+                conversation_id: "conv-1",
+                turn_index: 0,
+                idea_unit_index: 0,
+                source_sha: "stale-sha",
+              },
+            ],
+          },
         })
       );
       await ctx.indexer.runFullIndex();
@@ -482,9 +486,8 @@ function makeDecisionFile(id: string, overrides: Partial<DecisionFileNew> = {}):
     topic_id: "topic-1",
     title: "Decision",
     status: "accepted",
-    referenced_items: [],
-    context: { text: "ctx", supporting_item_indices: [] },
-    decision: { text: "dec", rationale: "r", supporting_item_indices: [] },
+    context: { text: "ctx", supporting_content: [] },
+    decision: { text: "dec", rationale: "r", supporting_content: [] },
     alternative_options: [],
     is_stale: false,
     ...overrides,

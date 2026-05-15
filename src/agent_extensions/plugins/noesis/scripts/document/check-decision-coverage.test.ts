@@ -35,7 +35,6 @@ function buildOutput(
     section_tree: [],
     topics: [],
     decision_attachments: [],
-    potential_topics: { topics: [] },
     design_doc_id: null,
     design_doc_title: null,
     design_doc_extracted: false,

@@ -42,9 +42,9 @@ Use `[from <doc title>]` fragments as context, but never reassign or modify them
 
 ## Coherence check
 
-Validate that each current-document fragment truly belongs to this topic. Reassign ONLY when the mismatch is clear AND another existing topic in `potential_topics.json` is a better match.
+Validate that each current-document fragment truly belongs to this topic. Reassign ONLY when the mismatch is clear AND another topic already present in `output.json:topics` is a better match.
 
-If a current-document fragment fits no existing topic, create a new topic, append it to `potential_topics.json`, and move the fragment ref in `analysis.json` from this topic's `items` to the new topic's `items`.
+If a current-document fragment fits no existing topic, create a new `AnalyzedTopic` entry directly in `output.json:topics` with `is_new: true` and a sensible `parent_id`, then move the fragment ref from this topic's `items` to the new topic's `items`.
 
 ### Oversaturated topics (>40 items)
 
@@ -102,27 +102,26 @@ The fragment introduces a decision arc not yet in the graph. Trace context (`Inf
 
 Do not set `id`. The server fills it during merge.
 
-Each `Decision` lists every cited fragment once in `referenced_items`; the slots reference those fragments by index. Do not repeat the same `DocumentFragmentRef` across slots; do not include items that no slot references.
+Each slot inlines the `SourceContentRef`s that support it under `supporting_content`. The same fragment may appear in more than one slot if it genuinely supports each; there is no shared top-level list.
 
 ```json
 {
   "title": "...",
   "status": "accepted" | "proposed",
-  "referenced_items": [ DocumentFragmentRef, ... ],
   "context": {
     "text": "1–2 sentence problem statement",
-    "supporting_item_indices": [0, 1]
+    "supporting_content": [ DocumentFragmentRef, ... ]
   },
   "decision": {
     "text": "What was decided",
     "rationale": "Why",
-    "supporting_item_indices": [2]
+    "supporting_content": [ DocumentFragmentRef ]
   },
   "alternative_options": [
     {
       "text": "Rejected option",
       "rationale": "Why considered, why rejected",
-      "supporting_item_indices": [3]
+      "supporting_content": [ DocumentFragmentRef ]
     }
   ]
 }

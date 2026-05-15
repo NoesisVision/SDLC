@@ -1,8 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type {
-  TopicFileNew,
-  TopicItemRefNew,
-} from "../../../../shared-contracts/source-file-schemas.js";
+import type { TopicFileNew } from "../../../../shared-contracts/source-file-schemas.js";
+import type { SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import { newUuid } from "../../../../shared-contracts/uuid.js";
 import type {
   TopicConversationDetail,
@@ -401,7 +399,7 @@ export class TopicsService {
   }
 
   private async resolveFragmentItems(
-    items: TopicItemRefNew[],
+    items: SourceContentRef[],
     since: string | null,
   ): Promise<TopicDocumentFragmentItem[]> {
     const ranges = new Map<string, Array<{ start: number; end: number }>>();
@@ -439,7 +437,7 @@ export class TopicsService {
   }
 
   private async resolveIdeaUnitItems(
-    items: TopicItemRefNew[],
+    items: SourceContentRef[],
     since: string | null,
   ): Promise<TopicIdeaUnitItem[]> {
     const positionsByConv = new Map<
@@ -624,7 +622,7 @@ function buildForest(
 }
 
 function computeStaleFromItems(
-  items: TopicItemRefNew[],
+  items: SourceContentRef[],
   snapshot: SourceShaSnapshot,
 ): boolean {
   for (const item of items) {
@@ -664,8 +662,8 @@ function hasUserLocks(file: TopicFileNew | undefined): boolean {
 
 function isFragmentRefForDocument(
   documentId: string,
-): (item: TopicItemRefNew) => item is Extract<TopicItemRefNew, { type: "document_fragment_ref" }> {
-  return (item): item is Extract<TopicItemRefNew, { type: "document_fragment_ref" }> => {
+): (item: SourceContentRef) => item is Extract<SourceContentRef, { type: "document_fragment_ref" }> {
+  return (item): item is Extract<SourceContentRef, { type: "document_fragment_ref" }> => {
     if (item.type !== "document_fragment_ref") return false;
     return item.document_id === documentId;
   };
@@ -673,8 +671,8 @@ function isFragmentRefForDocument(
 
 function isIdeaUnitRefForConversation(
   conversationId: string,
-): (item: TopicItemRefNew) => item is Extract<TopicItemRefNew, { type: "idea_unit_ref" }> {
-  return (item): item is Extract<TopicItemRefNew, { type: "idea_unit_ref" }> => {
+): (item: SourceContentRef) => item is Extract<SourceContentRef, { type: "idea_unit_ref" }> {
+  return (item): item is Extract<SourceContentRef, { type: "idea_unit_ref" }> => {
     if (item.type !== "idea_unit_ref") return false;
     return item.conversation_id === conversationId;
   };

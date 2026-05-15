@@ -40,7 +40,7 @@ When a constraint is both, model the domain truth as a Rule and add the operatio
 
 The "do not invent modules from arbitrary headings" rule prevents fabricating modules where the source has none — it does NOT block grouping when the model genuinely needs it.
 
-Once a Bounded Context contains more than ~15 Building Blocks, group them into 3–7 Modules along natural cohesion axes. Before introducing module names, look at the existing topic tree pulled in Step 2 (`potential_topics`) — topics directly under the document's main topic are usually the right module skeleton; **reuse those names rather than inventing fresh ones**. A Module with fewer than 3 Building Blocks is a smell — fold it back into the BC or merge with a sibling.
+Once a Bounded Context contains more than ~15 Building Blocks, group them into 3–7 Modules along natural cohesion axes. Before introducing module names, look at the existing topic tree pulled in Step 2 — topics directly under the document's main topic are usually the right module skeleton; **reuse those names rather than inventing fresh ones**. A Module with fewer than 3 Building Blocks is a smell — fold it back into the BC or merge with a sibling.
 
 `save_design_doc` emits a warning when a Bounded Context has >20 building blocks and zero modules. The save still succeeds; treat the warning as a signal to introduce modules in the next iteration.
 

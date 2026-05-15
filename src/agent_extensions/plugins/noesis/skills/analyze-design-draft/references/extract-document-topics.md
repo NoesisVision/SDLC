@@ -18,7 +18,7 @@ Used by `noesis:analyze-design-draft` Step 3.
   }
   ```
 - `<section_tree_path>` — Markdown rendering of the heading hierarchy. Useful for orientation, optional.
-- `{working_dir}/potential_topics.json` — existing topics from the graph plus any new topics you introduce.
+- The Step-2 candidate list (in working memory): existing topics from the graph that may be reused as targets for fragment assignment.
 
 Treat fragment indices and offsets as authoritative — copy them verbatim into `DocumentFragmentRef`.
 
@@ -65,13 +65,11 @@ Combine with `Argument` when the same fragment carries the reasoning ("…becaus
 
 Reuse before promote. For every non-Irrelevant fragment:
 
-1. Existing topic in `potential_topics.json` fits → reference it by `id`.
-2. Existing topic fits but the fragment opens a more specific concept → new subtopic (`is_new: true`, `parent_id: <existing>`, fresh UUID, path appended).
-3. Nothing existing fits → new root topic (`is_new: true`, `parent_id: null`, fresh UUID, path `[title]`).
+1. A Step-2 candidate fits → add a `topics[]` entry with that candidate's `id` and `parent_id`, and `is_new: false`.
+2. A candidate fits but the fragment opens a more specific concept → add a new `topics[]` entry with `is_new: true`, `parent_id: <existing candidate's id>`, and a fresh UUID.
+3. Nothing existing fits → add a new root `topics[]` entry with `is_new: true`, `parent_id: null`, and a fresh UUID.
 
 `section_path` is a HINT, not authoritative. A single section may map to one topic, split across multiple subtopics, or merge with sibling sections.
-
-Append every newly-created topic to `potential_topics.json` so `merge_document` can wire `parent_id` correctly.
 
 ### Primary subject vs side mention
 
@@ -102,11 +100,13 @@ Within a parent, aim for 3–7 children when the material naturally supports tha
 
 For each fragment, set its `categories` array (do not move/reorder fragments).
 
-Build `topics: [...]` — one `Topic` per touched topic id:
+Build `topics: [...]` — one `AnalyzedTopic` per touched topic id:
 
 ```json
 {
   "id": "<uuid>",
+  "parent_id": null,
+  "is_new": true,
   "title": "...",
   "short_summary": "",
   "long_summary": "",

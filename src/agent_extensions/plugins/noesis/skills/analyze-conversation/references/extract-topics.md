@@ -61,15 +61,13 @@ Most idea units have exactly one category. Some genuinely span two (e.g. an argu
 
 Reuse before promote. Order of preference:
 
-1. An existing topic from `output.json:potential_topics.topics` fits → reference it by `id`.
-2. An existing topic fits but the idea unit clearly opens a more specific concept → create a new subtopic with `is_new: true`, `parent_id: <existing id>`, fresh id (see "Topic ids" below), and a `path` built by appending the new title to the parent's path.
-3. Nothing existing fits → create a new root topic with `is_new: true`, `parent_id: null`, fresh id, `path: [title]`.
-
-For every newly-created topic, append an entry to `output.json:potential_topics.topics` with `is_new: true`. Set `parent_id` to the existing parent's id, or to `null` if the topic is a new root.
+1. A Step-2 candidate fits → add a `conversation.topics[]` entry with that candidate's `id` and `parent_id`, and `is_new: false`.
+2. A Step-2 candidate fits but the idea unit clearly opens a more specific concept → add a new entry with `is_new: true`, `parent_id: <existing candidate's id>`, and a fresh id (see "Topic ids" below).
+3. Nothing existing fits → add a new root entry with `is_new: true`, `parent_id: null`, fresh id.
 
 ### Topic ids
 
-Do not invent topic ids yourself. Once you know how many new topics you need, call MCP tool `noesis-graph:generate_topic_ids` with `{ "count": <N> }` and use the returned ids for both `conversation.topics[].id` and the matching `potential_topics.topics[].id` (with `is_new: true`). If you discover during Step 4 that an additional topic is required, call `generate_topic_ids` again with `{ "count": 1 }`.
+Do not invent topic ids yourself. Once you know how many new topics you need, call MCP tool `noesis-graph:generate_topic_ids` with `{ "count": <N> }` and use the returned ids for `conversation.topics[].id`. If you discover during Step 4 that an additional topic is required, call `generate_topic_ids` again with `{ "count": 1 }`.
 
 ### Topic hierarchy
 
@@ -95,7 +93,7 @@ The default for a parent is **container, not hybrid**. Hybrid is the rare case. 
 
 ## Output JSON shape
 
-`<working_dir>/output.json` (the file initialised by `prepare.ts`) wraps the conversation and the potential-topics list:
+`<working_dir>/output.json` (the file initialised by `prepare.ts`) wraps the conversation:
 
 ```json
 {
@@ -115,7 +113,9 @@ The default for a parent is **container, not hybrid**. Hybrid is the rare case. 
     ],
     "topics": [
       {
-        "id": "<topic id from generate_topic_ids>",
+        "id": "<topic id (from generate_topic_ids when is_new: true)>",
+        "parent_id": null,
+        "is_new": true,
         "title": "...",
         "short_summary": "",
         "long_summary": "",
@@ -127,23 +127,11 @@ The default for a parent is **container, not hybrid**. Hybrid is the rare case. 
         "decisions_extracted": false
       }
     ]
-  },
-  "potential_topics": {
-    "topics": [
-      {
-        "id": "<same id as conversation.topics[].id when is_new>",
-        "title": "...",
-        "short_summary": "",
-        "path": ["..."],
-        "is_new": true,
-        "parent_id": null
-      }
-    ]
   }
 }
 ```
 
-`conversation.topics[].id` and the matching `potential_topics.topics[].id` (with `is_new: true`) MUST be the same value. The canonical schema lives at `shared-contracts/skills/analyze-conversation/output.ts` (`AnalyzeConversationOutputSchema`).
+Every topic entry carries its own `parent_id` and `is_new` flag. The canonical schema lives at `shared-contracts/skills/analyze-conversation/output.ts` (`AnalyzeConversationOutputSchema`), with `AnalyzedTopic` defined in `shared-contracts/skills/analyzed-topic.ts`.
 
 Leave `short_summary`, `long_summary`, and `decisions` unset (empty / `[]`) at this step — they are produced in Step 4.
 

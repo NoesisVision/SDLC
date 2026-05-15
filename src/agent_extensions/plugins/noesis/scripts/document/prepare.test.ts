@@ -68,7 +68,6 @@ Another paragraph.
     expect(output.document.content).toBe(sourceContent);
     expect(output.fragments.length).toBe(result.num_fragments);
     expect(output.topics).toEqual([]);
-    expect(output.potential_topics).toEqual({ topics: [] });
     expect(output.design_doc_title).toBe("auth-system");
   });
 

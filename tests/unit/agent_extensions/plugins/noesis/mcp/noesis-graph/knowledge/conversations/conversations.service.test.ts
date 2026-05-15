@@ -91,8 +91,13 @@ describe("ConversationsService — accept skill output, validate, split, save", 
     await and("the decision file lands at the slug-prefixed canonical path with source sha set on each reference", () => {
       const decision = readDecision(ctx, "decision-1");
       expect(decision.title).toBe("Adopt JWT");
-      expect(decision.referenced_items.length).toBeGreaterThan(0);
-      for (const item of decision.referenced_items) {
+      const refs = [
+        ...decision.context.supporting_content,
+        ...decision.decision.supporting_content,
+        ...decision.alternative_options.flatMap((a) => a.supporting_content),
+      ];
+      expect(refs.length).toBeGreaterThan(0);
+      for (const item of refs) {
         expect(item.source_sha).toBeDefined();
       }
     });
@@ -277,7 +282,7 @@ describe("ConversationsService — accept skill output, validate, split, save", 
           text: "User-set decision text",
           text_locked: true,
           rationale: "Standard.",
-          supporting_item_indices: [],
+          supporting_content: [],
         },
       });
     });
@@ -311,7 +316,7 @@ describe("ConversationsService — accept skill output, validate, split, save", 
           text: "User-set decision text",
           text_locked: true,
           rationale: "Standard.",
-          supporting_item_indices: [],
+          supporting_content: [],
         },
       });
     });
@@ -348,7 +353,7 @@ describe("ConversationsService — accept skill output, validate, split, save", 
           text: "Use JWT.",
           rationale: "User-set rationale",
           rationale_locked: true,
-          supporting_item_indices: [],
+          supporting_content: [],
         },
       });
     });
@@ -548,6 +553,8 @@ function makeSkillOutput(b: SkillOutputBuilder = {}): unknown {
       topics: [
         {
           id: topicId,
+          parent_id: null,
+          is_new: true,
           title: b.topicTitle ?? "JWT decision",
           short_summary: b.topicShortSummary ?? "Authentication choice.",
           long_summary:
@@ -565,40 +572,34 @@ function makeSkillOutput(b: SkillOutputBuilder = {}): unknown {
               id: decisionId,
               title: b.decisionTitle ?? "Adopt JWT",
               status: b.decisionStatus ?? "accepted",
-              referenced_items: [
-                {
-                  type: "idea_unit_ref",
-                  conversation_id: conversationId,
-                  turn_index: 0,
-                  idea_unit_index: 0,
-                },
-              ],
               context: {
                 text: b.decisionContextText ?? "Need stateless auth.",
-                supporting_item_indices: [0],
+                supporting_content: [
+                  {
+                    type: "idea_unit_ref",
+                    conversation_id: conversationId,
+                    turn_index: 0,
+                    idea_unit_index: 0,
+                  },
+                ],
               },
               decision: {
                 text: b.decisionText ?? "Use JWT.",
                 rationale: b.decisionRationale ?? "Standard.",
-                supporting_item_indices: [0],
+                supporting_content: [
+                  {
+                    type: "idea_unit_ref",
+                    conversation_id: conversationId,
+                    turn_index: 0,
+                    idea_unit_index: 0,
+                  },
+                ],
               },
               alternative_options: [],
             },
           ],
           reviewed: true,
           decisions_extracted: true,
-        },
-      ],
-    },
-    potential_topics: {
-      topics: [
-        {
-          id: topicId,
-          title: b.topicTitle ?? "JWT decision",
-          short_summary: b.topicShortSummary ?? "Authentication choice.",
-          path: ["JWT decision"],
-          is_new: true,
-          parent_id: null,
         },
       ],
     },
@@ -634,15 +635,14 @@ function seedDecisionFile(
     topic_id: "topic-1",
     title: "Adopt JWT",
     status: "accepted",
-    referenced_items: [],
     context: {
       text: "Need stateless auth.",
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     decision: {
       text: "Use JWT.",
       rationale: "Standard.",
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     alternative_options: [],
     ...overrides,

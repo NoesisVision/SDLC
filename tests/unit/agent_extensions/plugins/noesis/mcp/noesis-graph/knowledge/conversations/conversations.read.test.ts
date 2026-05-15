@@ -122,14 +122,20 @@ describe("ConversationsService — page, detail, validate, prepareReviewBundle",
             id: "d-1",
             topic_id: "auth",
             title: "Pick OAuth",
-            referenced_items: [
-              {
-                type: "idea_unit_ref",
-                conversation_id: "conv-1",
-                turn_index: 0,
-                idea_unit_index: 0,
-              },
-            ],
+            decision: {
+              text: "go",
+              text_locked: false,
+              rationale: "because",
+              rationale_locked: false,
+              supporting_content: [
+                {
+                  type: "idea_unit_ref",
+                  conversation_id: "conv-1",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+              ],
+            },
           }),
         );
       },
@@ -318,14 +324,13 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
     title_locked: false,
     status: "proposed",
     status_locked: false,
-    referenced_items: [],
-    context: { text: "ctx", text_locked: false, supporting_item_indices: [] },
+    context: { text: "ctx", text_locked: false, supporting_content: [] },
     decision: {
       text: "go",
       text_locked: false,
       rationale: "because",
       rationale_locked: false,
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     alternative_options: [],
     is_stale: false,
@@ -401,6 +406,8 @@ function validOutput(opts: ValidOutputOpts = {}): unknown {
       topics: [
         {
           id: topicId,
+          parent_id: null,
+          is_new: isNew,
           title: "Auth",
           short_summary: "S",
           long_summary: "L",
@@ -415,18 +422,6 @@ function validOutput(opts: ValidOutputOpts = {}): unknown {
             },
           ],
           decisions: [],
-        },
-      ],
-    },
-    potential_topics: {
-      topics: [
-        {
-          id: topicId,
-          title: "Auth",
-          short_summary: "S",
-          path: [],
-          parent_id: null,
-          is_new: isNew,
         },
       ],
     },
@@ -453,6 +448,8 @@ function unassignedIdeaUnitOutput(): unknown {
       topics: [
         {
           id: "topic-1",
+          parent_id: null,
+          is_new: true,
           title: "Auth",
           short_summary: "S",
           long_summary: "L",
@@ -467,18 +464,6 @@ function unassignedIdeaUnitOutput(): unknown {
             },
           ],
           decisions: [],
-        },
-      ],
-    },
-    potential_topics: {
-      topics: [
-        {
-          id: "topic-1",
-          title: "Auth",
-          short_summary: "S",
-          path: [],
-          parent_id: null,
-          is_new: true,
         },
       ],
     },

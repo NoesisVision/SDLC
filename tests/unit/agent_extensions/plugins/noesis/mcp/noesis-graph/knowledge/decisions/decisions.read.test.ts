@@ -66,26 +66,32 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
           decisionFile({
             id: "d-1",
             topic_id: "topic-1",
-            referenced_items: [
-              {
-                type: "idea_unit_ref",
-                conversation_id: "c-old",
-                turn_index: 0,
-                idea_unit_index: 0,
-              },
-              {
-                type: "idea_unit_ref",
-                conversation_id: "c-new",
-                turn_index: 0,
-                idea_unit_index: 0,
-              },
-              {
-                type: "document_fragment_ref",
-                document_id: "d-1",
-                start_offset: 0,
-                end_offset: 5,
-              },
-            ],
+            decision: {
+              text: "go",
+              text_locked: false,
+              rationale: "because",
+              rationale_locked: false,
+              supporting_content: [
+                {
+                  type: "idea_unit_ref",
+                  conversation_id: "c-old",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+                {
+                  type: "idea_unit_ref",
+                  conversation_id: "c-new",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+                {
+                  type: "document_fragment_ref",
+                  document_id: "d-1",
+                  start_offset: 0,
+                  end_offset: 5,
+                },
+              ],
+            },
           }),
         );
       },
@@ -139,33 +145,41 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
             id: "d-1",
             topic_id: "topic-1",
             title: "Pick OAuth",
-            referenced_items: [
-              {
-                type: "idea_unit_ref",
-                conversation_id: "conv-1",
-                turn_index: 0,
-                idea_unit_index: 0,
-              },
-              {
-                type: "idea_unit_ref",
-                conversation_id: "conv-2",
-                turn_index: 0,
-                idea_unit_index: 0,
-              },
-              {
-                type: "document_fragment_ref",
-                document_id: "doc-1",
-                start_offset: 0,
-                end_offset: 5,
-              },
-            ],
-            context: { text: "ctx", text_locked: false, supporting_item_indices: [0] },
+            context: {
+              text: "ctx",
+              text_locked: false,
+              supporting_content: [
+                {
+                  type: "idea_unit_ref",
+                  conversation_id: "conv-1",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+              ],
+            },
             decision: {
               text: "go", text_locked: false, rationale: "x", rationale_locked: false,
-              supporting_item_indices: [1],
+              supporting_content: [
+                {
+                  type: "idea_unit_ref",
+                  conversation_id: "conv-2",
+                  turn_index: 0,
+                  idea_unit_index: 0,
+                },
+              ],
             },
             alternative_options: [
-              { text: "alt", text_locked: false, rationale: "alt-r", rationale_locked: false, supporting_item_indices: [2] },
+              {
+                text: "alt", text_locked: false, rationale: "alt-r", rationale_locked: false,
+                supporting_content: [
+                  {
+                    type: "document_fragment_ref",
+                    document_id: "doc-1",
+                    start_offset: 0,
+                    end_offset: 5,
+                  },
+                ],
+              },
             ],
           }),
         );
@@ -223,13 +237,19 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
           decisionFile({
             id: "d-1",
             topic_id: "topic-1",
-            referenced_items: [
-              { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
-              { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
-              { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
-            ],
-            context: { text: "ctx", text_locked: false, supporting_item_indices: [0] },
-            decision: { text: "go", text_locked: false, rationale: "x", rationale_locked: false, supporting_item_indices: [1, 2] },
+            context: {
+              text: "ctx", text_locked: false,
+              supporting_content: [
+                { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+              ],
+            },
+            decision: {
+              text: "go", text_locked: false, rationale: "x", rationale_locked: false,
+              supporting_content: [
+                { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 1 },
+                { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 2 },
+              ],
+            },
             alternative_options: [],
           }),
         );
@@ -271,13 +291,15 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
           decisionFile({
             id: "d-1",
             topic_id: "topic-1",
-            referenced_items: [
-              { type: "document_fragment_ref", document_id: "doc-1", start_offset: 0, end_offset: 5 },
-              { type: "document_fragment_ref", document_id: "doc-1", start_offset: 6, end_offset: 11 },
-            ],
             alternative_options: [
-              { text: "alt-0", text_locked: false, rationale: "r", rationale_locked: false, supporting_item_indices: [] },
-              { text: "alt-1", text_locked: false, rationale: "r", rationale_locked: false, supporting_item_indices: [0, 1] },
+              { text: "alt-0", text_locked: false, rationale: "r", rationale_locked: false, supporting_content: [] },
+              {
+                text: "alt-1", text_locked: false, rationale: "r", rationale_locked: false,
+                supporting_content: [
+                  { type: "document_fragment_ref", document_id: "doc-1", start_offset: 0, end_offset: 5 },
+                  { type: "document_fragment_ref", document_id: "doc-1", start_offset: 6, end_offset: 11 },
+                ],
+              },
             ],
           }),
         );
@@ -331,9 +353,12 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
             id: "match",
             title: "Match",
             topic_id: "topic-1",
-            referenced_items: [
-              { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
-            ],
+            decision: {
+              text: "go", text_locked: false, rationale: "because", rationale_locked: false,
+              supporting_content: [
+                { type: "idea_unit_ref", conversation_id: "conv-1", turn_index: 0, idea_unit_index: 0 },
+              ],
+            },
           }),
         );
         await indexDecision(
@@ -342,9 +367,12 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
             id: "skip",
             title: "Skip",
             topic_id: "topic-1",
-            referenced_items: [
-              { type: "idea_unit_ref", conversation_id: "conv-2", turn_index: 0, idea_unit_index: 0 },
-            ],
+            decision: {
+              text: "go", text_locked: false, rationale: "because", rationale_locked: false,
+              supporting_content: [
+                { type: "idea_unit_ref", conversation_id: "conv-2", turn_index: 0, idea_unit_index: 0 },
+              ],
+            },
           }),
         );
       },
@@ -367,7 +395,7 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
           id: "d-1",
           topic_id: "topic-1",
           alternative_options: [
-            { text: "alt", text_locked: false, rationale: "r", rationale_locked: false, supporting_item_indices: [] },
+            { text: "alt", text_locked: false, rationale: "r", rationale_locked: false, supporting_content: [] },
           ],
         }),
       );
@@ -443,14 +471,13 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
     title_locked: false,
     status: "proposed",
     status_locked: false,
-    referenced_items: [],
-    context: { text: "ctx", text_locked: false, supporting_item_indices: [] },
+    context: { text: "ctx", text_locked: false, supporting_content: [] },
     decision: {
       text: "go",
       text_locked: false,
       rationale: "because",
       rationale_locked: false,
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     alternative_options: [],
     is_stale: false,

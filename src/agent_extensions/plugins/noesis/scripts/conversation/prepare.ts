@@ -86,7 +86,6 @@ export function prepareConversation(
       turns: [],
       topics: [],
     },
-    potential_topics: { topics: [] },
   };
   AnalyzeConversationOutputSchema.parse(output);
   const outputPath = join(workingDir, "output.json");

@@ -1,16 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { existsSync, readFileSync } from "fs";
 import {
-  buildTurnMap,
-  formatEnrichedTopicMarkdown,
-  isIrrelevant,
-  resolveIdeaUnitDetail,
   type Conversation,
-  type EnrichedSubtopic,
-  type EnrichedTopic,
-  type IdeaUnitDetail,
+  type IdeaUnit,
   type IdeaUnitRef,
+  type Turn,
 } from "../../../../shared-contracts/conversation.js";
+import {
+  isIrrelevant,
+  type IdeaUnitCategory,
+} from "../../../../shared-contracts/idea-unit-category.js";
 import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
@@ -19,8 +18,8 @@ import {
   TopicFileNewSchema,
   type DecisionFileNew,
   type TopicFileNew,
-  type TopicItemRefNew,
 } from "../../../../shared-contracts/source-file-schemas.js";
+import { type SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import {
   computeContentSha,
   computeFileSha,
@@ -172,7 +171,7 @@ export class ConversationsService {
   async prepareReviewBundle(outputPath: string): Promise<ReviewBundle> {
     const output = this.loadOutput(outputPath);
     const conv = output.conversation;
-    const order = postOrderTopicIds(conv.topics, output.potential_topics.topics);
+    const order = postOrderTopicIds(conv.topics);
     const byId = new Map(conv.topics.map((t) => [t.id, t] as const));
     const currentTurnMap = buildTurnMap(conv.turns);
 
@@ -207,11 +206,7 @@ export class ConversationsService {
         details.push(prior);
       }
 
-      const subtopics = collectSubtopics(
-        topic.id,
-        conv.topics,
-        output.potential_topics.topics,
-      );
+      const subtopics = collectSubtopics(topic.id, conv.topics);
 
       const enriched: EnrichedTopic = {
         id: topic.id,
@@ -304,14 +299,6 @@ export class ConversationsService {
         }
       }
     }
-    const topicIds = new Set(conv.topics.map((t) => t.id));
-    for (const pt of output.potential_topics.topics) {
-      if (pt.parent_id !== null && pt.is_new && !topicIds.has(pt.id)) {
-        throw new Error(
-          `potential_topics references new topic ${pt.id} not present in conversation.topics`,
-        );
-      }
-    }
   }
 
   private detectLockedFieldConflicts(
@@ -356,10 +343,6 @@ export class ConversationsService {
     const jsonPath = this.persistJson(conversationFile);
 
     const conversationSha = computeFileSha(jsonPath);
-    const parentLookup = new Map<string, string | null>();
-    for (const pt of output.potential_topics.topics) {
-      parentLookup.set(pt.id, pt.parent_id);
-    }
 
     const sourceShaCache = new Map<string, string>();
     sourceShaCache.set(`conversation:${conv.conversation_id}`, conversationSha);
@@ -371,7 +354,7 @@ export class ConversationsService {
     for (const topic of conv.topics) {
       const { path, cleared } = this.writeTopicFile(
         topic,
-        parentLookup.get(topic.id) ?? null,
+        topic.parent_id,
         sourceShaCache,
         confirmed,
       );
@@ -403,7 +386,7 @@ export class ConversationsService {
     cache: Map<string, string>,
     confirmed: Set<string>,
   ): { path: string; cleared: ConfirmedEdit[] } {
-    const items = withItemShas(topic.items as TopicItemRefNew[], this.projectDir, cache);
+    const items = withItemShas(topic.items as SourceContentRef[], this.projectDir, cache);
     const existingPath = this.topicsRepository.findFileById(
       this.projectDir,
       topic.id,
@@ -448,11 +431,6 @@ export class ConversationsService {
       this.projectDir,
       decision.id,
     );
-    const referenced = withItemShas(
-      decision.referenced_items as TopicItemRefNew[],
-      this.projectDir,
-      cache,
-    );
     const existing =
       existingPath !== null && this.decisionsRepository.fileExists(existingPath)
         ? this.decisionsRepository.readFile(existingPath)
@@ -466,25 +444,36 @@ export class ConversationsService {
       title_locked: resolved.title_locked,
       status: resolved.status,
       status_locked: resolved.status_locked,
-      referenced_items: referenced,
       context: {
         text: resolved.context_text,
         text_locked: resolved.context_text_locked,
-        supporting_item_indices: decision.context.supporting_item_indices,
+        supporting_content: withItemShas(
+          decision.context.supporting_content,
+          this.projectDir,
+          cache,
+        ),
       },
       decision: {
         text: resolved.decision_text,
         text_locked: resolved.decision_text_locked,
         rationale: resolved.decision_rationale,
         rationale_locked: resolved.decision_rationale_locked,
-        supporting_item_indices: decision.decision.supporting_item_indices,
+        supporting_content: withItemShas(
+          decision.decision.supporting_content,
+          this.projectDir,
+          cache,
+        ),
       },
       alternative_options: decision.alternative_options.map((alt, i) => ({
         text: alt.text,
         text_locked: existing?.alternative_options[i]?.text_locked ?? false,
         rationale: alt.rationale,
         rationale_locked: existing?.alternative_options[i]?.rationale_locked ?? false,
-        supporting_item_indices: alt.supporting_item_indices,
+        supporting_content: withItemShas(
+          alt.supporting_content,
+          this.projectDir,
+          cache,
+        ),
       })),
       is_stale: existing?.is_stale ?? false,
     };
@@ -529,7 +518,7 @@ export class ConversationsService {
       );
       if (path === null) continue;
       const file = this.decisionsRepository.readFile(path);
-      if (!fileReferencesConversation(file.referenced_items, conversationId)) {
+      if (!fileReferencesConversation(collectDecisionRefs(file), conversationId)) {
         continue;
       }
       out.push({
@@ -610,10 +599,10 @@ export class ConversationsService {
 }
 
 function withItemShas(
-  items: ReadonlyArray<TopicItemRefNew>,
+  items: ReadonlyArray<SourceContentRef>,
   projectDir: string,
   cache: Map<string, string>,
-): TopicItemRefNew[] {
+): SourceContentRef[] {
   return items.map((item) => {
     const sha = resolveSourceSha(item, projectDir, cache);
     return { ...item, source_sha: sha ?? item.source_sha };
@@ -621,7 +610,7 @@ function withItemShas(
 }
 
 function resolveSourceSha(
-  item: TopicItemRefNew,
+  item: SourceContentRef,
   projectDir: string,
   cache: Map<string, string>,
 ): string | undefined {
@@ -640,9 +629,9 @@ function resolveSourceSha(
   return sha;
 }
 
-function mergeItems(prev: TopicItemRefNew[], next: TopicItemRefNew[]): TopicItemRefNew[] {
+function mergeItems(prev: SourceContentRef[], next: SourceContentRef[]): SourceContentRef[] {
   const seen = new Set<string>();
-  const out: TopicItemRefNew[] = [];
+  const out: SourceContentRef[] = [];
   for (const list of [prev, next]) {
     for (const item of list) {
       const key = itemKey(item);
@@ -654,7 +643,7 @@ function mergeItems(prev: TopicItemRefNew[], next: TopicItemRefNew[]): TopicItem
   return out;
 }
 
-function itemKey(item: TopicItemRefNew): string {
+function itemKey(item: SourceContentRef): string {
   if (item.type === "idea_unit_ref") {
     return `iu:${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
   }
@@ -671,7 +660,7 @@ function readTopicIfExists(absPath: string): TopicFileNew | null {
 }
 
 function fileReferencesConversation(
-  items: TopicItemRefNew[],
+  items: ReadonlyArray<SourceContentRef>,
   conversationId: string,
 ): boolean {
   for (const item of items) {
@@ -682,27 +671,25 @@ function fileReferencesConversation(
   return false;
 }
 
-function priorIdeaUnitKey(item: IdeaUnitRef): string {
-  return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
+function collectDecisionRefs(file: DecisionFileNew): SourceContentRef[] {
+  return [
+    ...file.context.supporting_content,
+    ...file.decision.supporting_content,
+    ...file.alternative_options.flatMap((alt) => alt.supporting_content),
+  ];
 }
 
-function buildParentLookup(
-  potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
-): Map<string, string | null> {
-  const map = new Map<string, string | null>();
-  for (const t of potentialTopics) map.set(t.id, t.parent_id);
-  return map;
+function priorIdeaUnitKey(item: IdeaUnitRef): string {
+  return `${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
 }
 
 function collectSubtopics(
   parentId: string,
   topics: AnalyzeConversationOutput["conversation"]["topics"],
-  potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
 ): EnrichedSubtopic[] {
-  const parents = buildParentLookup(potentialTopics);
   const subtopics: EnrichedSubtopic[] = [];
   for (const t of topics) {
-    if ((parents.get(t.id) ?? null) !== parentId) continue;
+    if (t.parent_id !== parentId) continue;
     subtopics.push({
       id: t.id,
       title: t.title,
@@ -725,16 +712,13 @@ function joinSections(sections: string[]): string[] {
 
 function postOrderTopicIds(
   topics: AnalyzeConversationOutput["conversation"]["topics"],
-  potentialTopics: AnalyzeConversationOutput["potential_topics"]["topics"],
 ): string[] {
   const idSet = new Set(topics.map((t) => t.id));
-  const parents = buildParentLookup(potentialTopics);
   const childrenByParent = new Map<string, string[]>();
   const roots: string[] = [];
   for (const t of topics) {
-    const declaredParent = parents.get(t.id) ?? null;
     const effectiveParent =
-      declaredParent !== null && idSet.has(declaredParent) ? declaredParent : null;
+      t.parent_id !== null && idSet.has(t.parent_id) ? t.parent_id : null;
     if (effectiveParent === null) {
       roots.push(t.id);
       continue;
@@ -754,4 +738,95 @@ function postOrderTopicIds(
   for (const root of roots) visit(root);
   for (const t of topics) visit(t.id);
   return out;
+}
+
+interface IdeaUnitDetail {
+  conversation_id: string;
+  turn_index: number;
+  idea_unit_index: number;
+  speaker: string;
+  time: string;
+  sentences: string[];
+  categories: IdeaUnitCategory[];
+}
+
+interface EnrichedSubtopic {
+  id: string;
+  title: string;
+  short_summary: string;
+  reviewed: boolean;
+}
+
+interface EnrichedTopic {
+  id: string;
+  title: string;
+  short_summary: string;
+  long_summary: string;
+  conversation_id: string;
+  idea_units: IdeaUnitDetail[];
+  subtopics: EnrichedSubtopic[];
+}
+
+function buildTurnMap(turns: Turn[]): Map<number, Turn> {
+  return new Map(turns.map((t) => [t.index, t]));
+}
+
+function resolveIdeaUnitDetail(
+  ref: { conversation_id: string; turn_index: number; idea_unit_index: number },
+  turnMap: Map<number, Turn>,
+): IdeaUnitDetail | null {
+  const turn = turnMap.get(ref.turn_index);
+  if (turn === undefined) return null;
+  const ideaUnit = findIdeaUnit(turn, ref.idea_unit_index);
+  if (ideaUnit === null) return null;
+  return {
+    conversation_id: ref.conversation_id,
+    turn_index: ref.turn_index,
+    idea_unit_index: ref.idea_unit_index,
+    speaker: turn.speaker,
+    time: turn.time,
+    sentences: ideaUnit.sentences,
+    categories: ideaUnit.categories,
+  };
+}
+
+function findIdeaUnit(turn: Turn, ideaUnitIndex: number): IdeaUnit | null {
+  return turn.idea_units.find((iu) => iu.index === ideaUnitIndex) ?? null;
+}
+
+function formatEnrichedTopicMarkdown(topic: EnrichedTopic): string {
+  const lines: string[] = [];
+  lines.push(`# ${topic.title}`);
+  lines.push(`- **ID:** ${topic.id}`);
+  lines.push(`- **Conversation:** ${topic.conversation_id}`);
+  lines.push(`- **Summary:** ${topic.short_summary}`);
+  if (topic.long_summary) {
+    lines.push(`- **Long summary:** ${topic.long_summary}`);
+  }
+  lines.push("");
+
+  if (topic.subtopics.length > 0) {
+    lines.push("## Subtopics");
+    lines.push("");
+    for (const sub of topic.subtopics) {
+      const summary = sub.reviewed && sub.short_summary !== ""
+        ? sub.short_summary
+        : "_(pending review)_";
+      lines.push(`- **${sub.title}** — ${summary}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("## Idea Units");
+  lines.push("");
+
+  for (const iu of topic.idea_units) {
+    const cats = iu.categories.join(", ");
+    const kgTag = iu.conversation_id !== topic.conversation_id ? " [prior conversation]" : "";
+    lines.push(`### [T${iu.turn_index}:IU${iu.idea_unit_index}] ${iu.time} — ${iu.speaker} [${cats}]${kgTag}`);
+    lines.push(iu.sentences.join(" "));
+    lines.push("");
+  }
+
+  return lines.join("\n");
 }

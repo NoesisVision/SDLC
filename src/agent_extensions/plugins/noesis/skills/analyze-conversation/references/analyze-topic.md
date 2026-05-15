@@ -51,7 +51,7 @@ The `## Subtopics` block is omitted when the topic has no children.
 
 For each section, validate that each current-conversation idea unit truly belongs to this topic. A reassignment is justified ONLY when the mismatch is clear AND another topic (already in `output.json` or freshly created) is a better match. When in doubt, keep the unit where it is.
 
-If a current-conversation unit fits no existing topic, create a new topic — call `noesis-graph:generate_topic_ids` with `{ "count": 1 }` for its id, set `is_new: true`, sensible `parent_id`, and `path` — and append it to `output.json:potential_topics.topics`. Then remove the unit from the original topic's `items` and add it to the new topic's `items` (in `conversation.topics[]`).
+If a current-conversation unit fits no existing topic, create a new topic — call `noesis-graph:generate_topic_ids` with `{ "count": 1 }` for its id, append it to `conversation.topics[]` with `is_new: true` and a sensible `parent_id`. Then remove the unit from the original topic's `items` and add it to the new topic's `items`.
 
 If a reassignment changes a topic whose section you have already finalised in the same pass, recompute that topic's summary against its updated item set. The validator (`validate_output`) runs against the final state; an out-of-sync summary is your responsibility, not the server's.
 
@@ -93,31 +93,33 @@ A `Decision` proposed early but later overturned is an **alternative**, not the 
 
 Do not set `id`. The server fills it during merge.
 
-Each `Decision` lists every cited idea unit once in `referenced_items`; the slots reference those items by index. Do not repeat the same `IdeaUnitRef` across slots; do not include items that no slot references.
+Each slot inlines the `SourceContentRef`s that support it under `supporting_content`. The same idea unit may appear in more than one slot if it genuinely supports each; there is no shared top-level list.
 
 ```json
 {
   "title": "Short descriptive title",
   "status": "accepted",
-  "referenced_items": [
-    { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 26, "idea_unit_index": 0 },
-    { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 27, "idea_unit_index": 1 },
-    { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 28, "idea_unit_index": 0 }
-  ],
   "context": {
     "text": "1–2 sentence problem statement",
-    "supporting_item_indices": [0]
+    "supporting_content": [
+      { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 26, "idea_unit_index": 0 }
+    ]
   },
   "decision": {
     "text": "What was decided",
     "rationale": "Why",
-    "supporting_item_indices": [1, 2]
+    "supporting_content": [
+      { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 27, "idea_unit_index": 1 },
+      { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 28, "idea_unit_index": 0 }
+    ]
   },
   "alternative_options": [
     {
       "text": "Rejected option",
       "rationale": "Why considered, why rejected",
-      "supporting_item_indices": [0]
+      "supporting_content": [
+        { "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": 26, "idea_unit_index": 0 }
+      ]
     }
   ]
 }

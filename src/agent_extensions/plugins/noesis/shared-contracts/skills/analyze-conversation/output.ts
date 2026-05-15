@@ -1,14 +1,13 @@
 import { z } from "zod";
 import { ConversationSchema } from "../../conversation.js";
-import { PotentialTopicsSchema, TopicSchema } from "../../topics.js";
+import { AnalyzedTopicSchema } from "../analyzed-topic.js";
 
 const AnalyzedConversationSchema = ConversationSchema.extend({
-  topics: z.array(TopicSchema),
+  topics: z.array(AnalyzedTopicSchema),
 });
 
 export const AnalyzeConversationOutputSchema = z.object({
   conversation: AnalyzedConversationSchema,
-  potential_topics: PotentialTopicsSchema,
 });
 export type AnalyzeConversationOutput = z.infer<
   typeof AnalyzeConversationOutputSchema

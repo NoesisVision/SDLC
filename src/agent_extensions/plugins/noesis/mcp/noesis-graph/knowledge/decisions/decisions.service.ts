@@ -3,8 +3,8 @@ import { assertNever } from "../../../../shared-contracts/assert-never.js";
 import type {
   DecisionFileNew,
   DecisionOptionNew,
-  TopicItemRefNew,
 } from "../../../../shared-contracts/source-file-schemas.js";
+import type { SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import type {
   DecisionAlternativeData,
   DecisionConversationDetailData,
@@ -90,30 +90,6 @@ export class DecisionsService {
     private readonly conversationsRepository: ConversationsRepository,
     private readonly documentsRepository: DocumentsRepository,
   ) {}
-
-  async appendReferencedItems(
-    decisionId: string,
-    items: TopicItemRefNew[],
-  ): Promise<{ appended: number }> {
-    if (items.length === 0) return { appended: 0 };
-    const path = this.requireFilePath(decisionId);
-    const file = this.repository.readFile(path);
-    const seen = new Set(file.referenced_items.map(itemKey));
-    const additions: TopicItemRefNew[] = [];
-    for (const item of items) {
-      const key = itemKey(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      additions.push(item);
-    }
-    if (additions.length === 0) return { appended: 0 };
-    const nextFile: DecisionFileNew = {
-      ...file,
-      referenced_items: [...file.referenced_items, ...additions],
-    };
-    this.repository.writeFile(path, nextFile);
-    return { appended: additions.length };
-  }
 
   async deleteForFile(
     absPath: string,
@@ -211,10 +187,11 @@ export class DecisionsService {
 
   async getDecisionDetail(decisionId: string): Promise<DecisionDetailData> {
     const file = await this.requireFile(decisionId);
+    const allRefs = collectAllRefs(file);
     const topicTitle = await this.lookupTopicTitle(file.topic_id);
-    const conversationsById = await this.conversationsByIds(file);
-    const documentsById = await this.documentsByIds(file);
-    const date = decisionDate(file, conversationsById, documentsById);
+    const conversationsById = await this.conversationsByIds(allRefs);
+    const documentsById = await this.documentsByIds(allRefs);
+    const date = decisionDate(allRefs, conversationsById, documentsById);
     const slotRefs = (slot: Slot) =>
       slotItemRefs(file, slot).reduce(
         (acc, item) => mergeSlotRefs(acc, item, conversationsById, documentsById),
@@ -291,9 +268,10 @@ export class DecisionsService {
     for (const head of stored) {
       const file = this.tryReadFile(head.id);
       if (file === null) continue;
-      const conversationsById = await this.conversationsByIds(file);
-      const documentsById = await this.documentsByIds(file);
-      const date = decisionDate(file, conversationsById, documentsById);
+      const allRefs = collectAllRefs(file);
+      const conversationsById = await this.conversationsByIds(allRefs);
+      const documentsById = await this.documentsByIds(allRefs);
+      const date = decisionDate(allRefs, conversationsById, documentsById);
       items.push({
         id: head.id,
         date,
@@ -457,7 +435,7 @@ export class DecisionsService {
       const path = this.repository.findFileById(this.projectDir, decision.id);
       if (path === null) continue;
       const file = this.repository.readFile(path);
-      const isStale = computeStale(file.referenced_items, snapshot);
+      const isStale = computeStale(collectAllRefs(file), snapshot);
       if (isStale !== file.is_stale) {
         const updated: DecisionFileNew = { ...file, is_stale: isStale };
         this.repository.writeFile(path, updated);
@@ -507,17 +485,17 @@ export class DecisionsService {
   }
 
   private async conversationsByIds(
-    file: DecisionFileNew,
+    refs: ReadonlyArray<SourceContentRef>,
   ): Promise<Map<string, { id: string; main_topic: string; time: string }>> {
-    const ids = uniqueRefIds(file.referenced_items, "idea_unit_ref");
+    const ids = uniqueRefIds(refs, "idea_unit_ref");
     const heads = await this.conversationsRepository.listByIds(ids);
     return new Map(heads.map((c) => [c.id, c]));
   }
 
   private async documentsByIds(
-    file: DecisionFileNew,
+    refs: ReadonlyArray<SourceContentRef>,
   ): Promise<Map<string, { id: string; title: string; date: string }>> {
-    const ids = uniqueRefIds(file.referenced_items, "document_fragment_ref");
+    const ids = uniqueRefIds(refs, "document_fragment_ref");
     const heads = await this.documentsRepository.listByIds(ids);
     return new Map(heads.map((d) => [d.id, d]));
   }
@@ -547,13 +525,21 @@ function byDateDesc(a: { date: string }, b: { date: string }): number {
   return a.date < b.date ? 1 : -1;
 }
 
+function collectAllRefs(file: DecisionFileNew): SourceContentRef[] {
+  return [
+    ...file.context.supporting_content,
+    ...file.decision.supporting_content,
+    ...file.alternative_options.flatMap((alt) => alt.supporting_content),
+  ];
+}
+
 function decisionDate(
-  file: DecisionFileNew,
+  refs: ReadonlyArray<SourceContentRef>,
   conversationsById: Map<string, { time: string }>,
   documentsById: Map<string, { date: string }>,
 ): string {
   let max = "";
-  for (const item of file.referenced_items) {
+  for (const item of refs) {
     if (item.type === "idea_unit_ref") {
       const head = conversationsById.get(item.conversation_id);
       if (head !== undefined && head.time > max) max = head.time;
@@ -570,7 +556,7 @@ function fileReferencesAny(
   conversationIds: Set<string>,
   documentIds: Set<string>,
 ): boolean {
-  for (const item of file.referenced_items) {
+  for (const item of collectAllRefs(file)) {
     if (item.type === "idea_unit_ref" && conversationIds.has(item.conversation_id)) {
       return true;
     }
@@ -595,7 +581,7 @@ function hasUserLocks(file: DecisionFileNew): boolean {
 
 function mergeSlotRefs(
   acc: { conversations: DecisionConversationRef[]; documents: DecisionDocumentRef[] },
-  item: TopicItemRefNew,
+  item: SourceContentRef,
   conversationsById: Map<string, { id: string; main_topic: string; time: string }>,
   documentsById: Map<string, { id: string; title: string; date: string }>,
 ): { conversations: DecisionConversationRef[]; documents: DecisionDocumentRef[] } {
@@ -666,16 +652,16 @@ function rangesForSlotDocument(
   return out;
 }
 
-function slotItemRefs(file: DecisionFileNew, slot: Slot): TopicItemRefNew[] {
+function slotItemRefs(file: DecisionFileNew, slot: Slot): SourceContentRef[] {
   switch (slot.kind) {
     case "context":
-      return pickItems(file.referenced_items, file.context.supporting_item_indices);
+      return file.context.supporting_content;
     case "decision":
-      return pickItems(file.referenced_items, file.decision.supporting_item_indices);
+      return file.decision.supporting_content;
     case "alternative": {
       const alt = file.alternative_options[slot.index];
       if (alt === undefined) return [];
-      return pickItems(file.referenced_items, alt.supporting_item_indices);
+      return alt.supporting_content;
     }
     default:
       return assertNever(slot);
@@ -695,18 +681,9 @@ function slotLabel(slot: Slot): string {
   }
 }
 
-function pickItems(
-  items: TopicItemRefNew[],
-  indices: number[],
-): TopicItemRefNew[] {
-  return indices
-    .map((i) => items[i])
-    .filter((item): item is TopicItemRefNew => item !== undefined);
-}
-
 function uniqueRefIds(
-  items: TopicItemRefNew[],
-  type: TopicItemRefNew["type"],
+  items: ReadonlyArray<SourceContentRef>,
+  type: SourceContentRef["type"],
 ): string[] {
   const set = new Set<string>();
   for (const item of items) {
@@ -792,7 +769,7 @@ function applyDecisionOptionEdit(
 }
 
 function computeStale(
-  items: TopicItemRefNew[],
+  items: ReadonlyArray<SourceContentRef>,
   snapshot: SourceShaSnapshot,
 ): boolean {
   for (const item of items) {
@@ -805,11 +782,3 @@ function computeStale(
   }
   return false;
 }
-
-function itemKey(item: TopicItemRefNew): string {
-  if (item.type === "idea_unit_ref") {
-    return `iu:${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
-  }
-  return `doc:${item.document_id}:${item.start_offset}:${item.end_offset}`;
-}
-

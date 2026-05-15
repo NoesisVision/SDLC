@@ -99,8 +99,13 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
         expect(item.source_sha).toBeDefined();
       }
       const decision = readDecision(ctx, "doc-decision-1");
-      expect(decision.referenced_items.length).toBeGreaterThan(0);
-      for (const item of decision.referenced_items) {
+      const refs = [
+        ...decision.context.supporting_content,
+        ...decision.decision.supporting_content,
+        ...decision.alternative_options.flatMap((a) => a.supporting_content),
+      ];
+      expect(refs.length).toBeGreaterThan(0);
+      for (const item of refs) {
         expect(item.source_sha).toBeDefined();
       }
     });
@@ -146,10 +151,13 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
     });
     await and("the prior decision now references a fragment from the new document", () => {
       const decision = readDecision(ctx, "doc-decision-1");
-      expect(decision.referenced_items.length).toBeGreaterThanOrEqual(2);
-      expect(
-        decision.referenced_items.some((i) => i.type === "document_fragment_ref"),
-      ).toBe(true);
+      const refs = [
+        ...decision.context.supporting_content,
+        ...decision.decision.supporting_content,
+        ...decision.alternative_options.flatMap((a) => a.supporting_content),
+      ];
+      expect(refs.length).toBeGreaterThanOrEqual(2);
+      expect(refs.some((i) => i.type === "document_fragment_ref")).toBe(true);
     });
   });
 
@@ -368,7 +376,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
           text_locked: true,
           rationale: "Customer demand.",
           rationale_locked: false,
-          supporting_item_indices: [],
+          supporting_content: [],
         },
       });
     });
@@ -404,7 +412,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
           text_locked: true,
           rationale: "Customer demand.",
           rationale_locked: false,
-          supporting_item_indices: [],
+          supporting_content: [],
         },
       });
     });
@@ -521,7 +529,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
           text_locked: false,
           rationale: "User-set rationale",
           rationale_locked: true,
-          supporting_item_indices: [],
+          supporting_content: [],
         },
       });
       await ctx.designDocs.persistFile(
@@ -697,6 +705,8 @@ function makeOutput(b: SkillOutputBuilder = {}): unknown {
     topics: [
       {
         id: topicId,
+        parent_id: null,
+        is_new: true,
         title: b.topicTitle ?? "Feature X",
         short_summary: b.topicShortSummary ?? "Decision on feature X.",
         long_summary:
@@ -714,22 +724,28 @@ function makeOutput(b: SkillOutputBuilder = {}): unknown {
             id: decisionId,
             title: b.decisionTitle ?? "Ship feature X",
             status: b.decisionStatus ?? "accepted",
-            referenced_items: [
-              {
-                type: "document_fragment_ref",
-                document_id: documentId,
-                start_offset: 25,
-                end_offset: 60,
-              },
-            ],
             context: {
               text: b.decisionContextText ?? "Need feature X.",
-              supporting_item_indices: [0],
+              supporting_content: [
+                {
+                  type: "document_fragment_ref",
+                  document_id: documentId,
+                  start_offset: 25,
+                  end_offset: 60,
+                },
+              ],
             },
             decision: {
               text: b.decisionText ?? "Ship feature X.",
               rationale: b.decisionRationale ?? "Customer demand.",
-              supporting_item_indices: [0],
+              supporting_content: [
+                {
+                  type: "document_fragment_ref",
+                  document_id: documentId,
+                  start_offset: 25,
+                  end_offset: 60,
+                },
+              ],
             },
             alternative_options: [],
           },
@@ -749,18 +765,6 @@ function makeOutput(b: SkillOutputBuilder = {}): unknown {
               fragment_indices: [0],
             },
           ],
-    potential_topics: {
-      topics: [
-        {
-          id: topicId,
-          title: b.topicTitle ?? "Feature X",
-          short_summary: b.topicShortSummary ?? "Decision on feature X.",
-          path: ["Feature X"],
-          is_new: true,
-          parent_id: null,
-        },
-      ],
-    },
     design_doc_id: b.designDocId ?? null,
     design_doc_title: null,
     design_doc_extracted: b.designDocExtracted ?? false,
@@ -852,15 +856,14 @@ function seedDecisionFile(
     topic_id: "doc-topic-1",
     title: "Ship feature X",
     status: "accepted",
-    referenced_items: [],
     context: {
       text: "Need feature X.",
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     decision: {
       text: "Ship feature X.",
       rationale: "Customer demand.",
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     alternative_options: [],
     ...overrides,

@@ -112,14 +112,20 @@ describe("DocumentsService — page, detail, review prep", () => {
             id: "d-1",
             topic_id: "auth",
             title: "Pick OAuth",
-            referenced_items: [
-              {
-                type: "document_fragment_ref",
-                document_id: "doc-1",
-                start_offset: 0,
-                end_offset: 5,
-              },
-            ],
+            decision: {
+              text: "go",
+              text_locked: false,
+              rationale: "because",
+              rationale_locked: false,
+              supporting_content: [
+                {
+                  type: "document_fragment_ref",
+                  document_id: "doc-1",
+                  start_offset: 0,
+                  end_offset: 5,
+                },
+              ],
+            },
           }),
         );
       },
@@ -316,14 +322,13 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
     title_locked: false,
     status: "proposed",
     status_locked: false,
-    referenced_items: [],
-    context: { text: "ctx", text_locked: false, supporting_item_indices: [] },
+    context: { text: "ctx", text_locked: false, supporting_content: [] },
     decision: {
       text: "go",
       text_locked: false,
       rationale: "because",
       rationale_locked: false,
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     alternative_options: [],
     is_stale: false,
@@ -394,6 +399,8 @@ function designDraftOutput(opts: DraftOpts): unknown {
     section_tree: [],
     topics: opts.topics.map((t) => ({
       id: t.id,
+      parent_id: null,
+      is_new: true,
       title: t.title,
       short_summary: "S",
       long_summary: "L",
@@ -410,16 +417,6 @@ function designDraftOutput(opts: DraftOpts): unknown {
       decisions: [],
     })),
     decision_attachments: [],
-    potential_topics: {
-      topics: opts.topics.map((t) => ({
-        id: t.id,
-        title: t.title,
-        short_summary: "S",
-        path: [],
-        parent_id: null,
-        is_new: true,
-      })),
-    },
     design_doc_extracted: false,
   };
 }

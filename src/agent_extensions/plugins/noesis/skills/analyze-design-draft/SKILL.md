@@ -32,7 +32,7 @@ Get from `$ARGUMENTS`, ask if missing:
 
 Run `NOESIS_PROJECT_DIR=$(pwd) bun run ${CLAUDE_PLUGIN_ROOT}/scripts/document/prepare.ts <document_path> "<title>" "<date>"` plus optional flags `--design_doc_id <id>` or `--design_doc_title <title>`.
 
-The script computes `document_id` as the sha-256 of the raw document bytes formatted as a UUID, parses the source Markdown into a section tree + fragment list (with offsets against the raw source), creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], potential_topics: { topics: [] }, design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md`. The source file is **not** modified and **no** file is written under `<projectDir>/noesis/`.
+The script computes `document_id` as the sha-256 of the raw document bytes formatted as a UUID, parses the source Markdown into a section tree + fragment list (with offsets against the raw source), creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md`. The source file is **not** modified and **no** file is written under `<projectDir>/noesis/`.
 
 It returns:
 ```json
@@ -67,11 +67,7 @@ Identify topics in the graph already covering the document's subject area, so St
    - **Too narrow** — children only cover a fraction → keep the parent.
    - **Worse fit** — children are tangents → keep the parent, abort drill-down.
    - **Just right** — child comprehensively covers the subject → keep it; consider its subtopics.
-4. Edit `<working_dir>/output.json`'s `potential_topics` field:
-   ```json
-   { "topics": [ { "id": "...", "title": "...", "short_summary": "...", "path": ["..."], "is_new": false, "parent_id": null } ] }
-   ```
-   Empty `topics` array if nothing matches.
+4. Keep the resulting candidate list (each `{ id, title, short_summary, parent_id }`) in working memory for Step 3. Nothing is written to `output.json` yet.
 
 ### Step 3: Assign categories and topics to fragments
 
@@ -83,11 +79,11 @@ Read `<output_path>` to see the fragment list (under `fragments`) with `index`, 
 
 For every fragment:
 - Assign one or more categories (`Information`, `Position`, `Argument`, `Decision`, `Irrelevant`).
-- For non-Irrelevant fragments, assign a topic — reuse from `output.json:potential_topics` or create a new one (`is_new: true`, sensible `parent_id`, fresh UUID, path). Append every newly-created topic to `potential_topics.topics`.
+- For non-Irrelevant fragments, assign a topic — reuse a Step-2 candidate (set `is_new: false` and copy its `parent_id`) or create a new one (`is_new: true`, sensible `parent_id`, fresh UUID).
 
 Edit `<output_path>` (Edit tool):
 - For each fragment in `fragments`, set its `categories` array.
-- Build `topics: [...]` — one `Topic` per touched topic, each with empty summaries, `items: [DocumentFragmentRef, ...]`, empty `decisions`, `reviewed: false`, `decisions_extracted: false`.
+- Build `topics: [...]` — one `AnalyzedTopic` per touched topic, each with `id`, `parent_id`, `is_new`, empty summaries, `items: [DocumentFragmentRef, ...]`, empty `decisions`, `reviewed: false`, `decisions_extracted: false`.
 
 `DocumentFragmentRef`: `{ "type": "document_fragment_ref", "document_id": "<id>", "start_offset": N, "end_offset": N }` — copy `start_offset` / `end_offset` directly from the fragment.
 

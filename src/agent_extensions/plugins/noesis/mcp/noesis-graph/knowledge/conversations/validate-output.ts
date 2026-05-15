@@ -3,7 +3,7 @@ import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
 } from "../../../../shared-contracts/skills/analyze-conversation/output.js";
-import { isIrrelevant } from "../../../../shared-contracts/conversation.js";
+import { isIrrelevant } from "../../../../shared-contracts/idea-unit-category.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
 
 export const FIRST_LEVEL_BREADTH_THRESHOLD = 10;
@@ -152,40 +152,25 @@ async function checkTopicIdConsistency(
   graph: GraphLookup,
 ): Promise<ValidationIssue[]> {
   const issues: ValidationIssue[] = [];
-  const conversationTopicIds = new Map<string, number>();
-  output.conversation.topics.forEach((t, i) => conversationTopicIds.set(t.id, i));
-
-  const potentialById = new Map<string, { index: number; isNew: boolean }>();
-  output.potential_topics.topics.forEach((t, i) =>
-    potentialById.set(t.id, { index: i, isNew: t.is_new }),
-  );
-
-  for (const [pId, info] of potentialById) {
-    if (info.isNew && !conversationTopicIds.has(pId)) {
+  for (let ti = 0; ti < output.conversation.topics.length; ti++) {
+    const topic = output.conversation.topics[ti];
+    const existsInGraph = await graph.topicExists(topic.id);
+    if (topic.is_new && existsInGraph) {
       issues.push({
-        path: ["potential_topics", "topics", info.index],
+        path: ["conversation", "topics", ti],
         message:
-          `potential_topics entry id="${pId}" is marked is_new: true but has no matching ` +
-          `entry in conversation.topics with the same id.`,
+          `Topic id="${topic.id}" is marked is_new: true but already exists in the graph.`,
+      });
+    }
+    if (!topic.is_new && !existsInGraph) {
+      issues.push({
+        path: ["conversation", "topics", ti],
+        message:
+          `Topic id="${topic.id}" has is_new: false but does not exist in the graph. ` +
+          `Set is_new: true when introducing a new topic.`,
       });
     }
   }
-
-  for (const [tId, ti] of conversationTopicIds) {
-    const existsInGraph = await graph.topicExists(tId);
-    const potential = potentialById.get(tId);
-    if (!existsInGraph) {
-      if (potential === undefined || !potential.isNew) {
-        issues.push({
-          path: ["conversation", "topics", ti],
-          message:
-            `Topic id="${tId}" is not in the graph and is not declared as new in ` +
-            `potential_topics.topics (with is_new: true).`,
-        });
-      }
-    }
-  }
-
   return issues;
 }
 
@@ -234,49 +219,63 @@ function checkReferenceIntegrity(
     }
     for (let di = 0; di < topic.decisions.length; di++) {
       const decision = topic.decisions[di];
-      for (let ri = 0; ri < decision.referenced_items.length; ri++) {
-        const ref = decision.referenced_items[ri];
-        switch (ref.type) {
-          case "idea_unit_ref": {
-            if (ref.conversation_id !== conversation.conversation_id) {
-              issues.push({
-                path: [
-                  "conversation",
-                  "topics",
-                  ti,
-                  "decisions",
-                  di,
-                  "referenced_items",
-                  ri,
-                ],
-                message:
-                  `Decision referenced_items must reference the current conversation only.`,
-              });
+      const slots: Array<{
+        path: (string | number)[];
+        items: ReadonlyArray<(typeof decision.context.supporting_content)[number]>;
+      }> = [
+        {
+          path: ["conversation", "topics", ti, "decisions", di, "context", "supporting_content"],
+          items: decision.context.supporting_content,
+        },
+        {
+          path: ["conversation", "topics", ti, "decisions", di, "decision", "supporting_content"],
+          items: decision.decision.supporting_content,
+        },
+      ];
+      for (let ai = 0; ai < decision.alternative_options.length; ai++) {
+        slots.push({
+          path: [
+            "conversation",
+            "topics",
+            ti,
+            "decisions",
+            di,
+            "alternative_options",
+            ai,
+            "supporting_content",
+          ],
+          items: decision.alternative_options[ai].supporting_content,
+        });
+      }
+      for (const slot of slots) {
+        for (let ri = 0; ri < slot.items.length; ri++) {
+          const ref = slot.items[ri];
+          switch (ref.type) {
+            case "idea_unit_ref": {
+              if (ref.conversation_id !== conversation.conversation_id) {
+                issues.push({
+                  path: [...slot.path, ri],
+                  message:
+                    `Decision supporting_content must reference the current conversation only.`,
+                });
+                break;
+              }
+              if (!ideaUnitKeys.has(`${ref.turn_index}:${ref.idea_unit_index}`)) {
+                issues.push({
+                  path: [...slot.path, ri],
+                  message:
+                    `Decision supporting_content[${ri}] points at an idea unit ` +
+                    `(turn=${ref.turn_index}, idea_unit=${ref.idea_unit_index}) ` +
+                    `that does not exist in conversation.turns.`,
+                });
+              }
               break;
             }
-            if (!ideaUnitKeys.has(`${ref.turn_index}:${ref.idea_unit_index}`)) {
-              issues.push({
-                path: [
-                  "conversation",
-                  "topics",
-                  ti,
-                  "decisions",
-                  di,
-                  "referenced_items",
-                  ri,
-                ],
-                message:
-                  `Decision referenced_items[${ri}] points at an idea unit ` +
-                  `(turn=${ref.turn_index}, idea_unit=${ref.idea_unit_index}) ` +
-                  `that does not exist in conversation.turns.`,
-              });
-            }
-            break;
+            case "document_fragment_ref":
+              break;
+            default:
+              assertNever(ref);
           }
-          case "document_fragment_ref":
-            break;
-          default:
-            assertNever(ref);
         }
       }
     }
@@ -291,44 +290,44 @@ async function checkTopicForestIntegrity(
 ): Promise<ValidationIssue[]> {
   const issues: ValidationIssue[] = [];
   const idsInOutput = new Set(output.conversation.topics.map((t) => t.id));
-  const parentMap = new Map<string, { index: number; parentId: string | null }>();
-  output.potential_topics.topics.forEach((t, i) => {
-    parentMap.set(t.id, { index: i, parentId: t.parent_id });
-  });
+  const topicByIndex = output.conversation.topics;
 
-  for (const [id, info] of parentMap) {
-    if (info.parentId === null) continue;
-    if (idsInOutput.has(info.parentId)) continue;
-    const parentExists = await graph.topicExists(info.parentId);
+  for (let ti = 0; ti < topicByIndex.length; ti++) {
+    const topic = topicByIndex[ti];
+    if (topic.parent_id === null) continue;
+    if (idsInOutput.has(topic.parent_id)) continue;
+    const parentExists = await graph.topicExists(topic.parent_id);
     if (!parentExists) {
       issues.push({
-        path: ["potential_topics", "topics", info.index, "parent_id"],
+        path: ["conversation", "topics", ti, "parent_id"],
         message:
-          `parent_id="${info.parentId}" of topic "${id}" is neither another topic in ` +
+          `parent_id="${topic.parent_id}" of topic "${topic.id}" is neither another topic in ` +
           `this output.json nor an existing topic in the graph.`,
       });
     }
   }
 
-  for (const [id, info] of parentMap) {
-    if (info.parentId === null) continue;
-    if (!idsInOutput.has(info.parentId)) continue;
+  const parentById = new Map<string, string | null>(
+    topicByIndex.map((t) => [t.id, t.parent_id]),
+  );
+  for (let ti = 0; ti < topicByIndex.length; ti++) {
+    const topic = topicByIndex[ti];
+    if (topic.parent_id === null) continue;
+    if (!idsInOutput.has(topic.parent_id)) continue;
     const seen = new Set<string>();
-    let cursor: string | null = id;
+    let cursor: string | null = topic.id;
     while (cursor !== null) {
       if (seen.has(cursor)) {
         issues.push({
-          path: ["potential_topics", "topics", info.index, "parent_id"],
-          message: `Cycle detected in topic forest at topic "${id}".`,
+          path: ["conversation", "topics", ti, "parent_id"],
+          message: `Cycle detected in topic forest at topic "${topic.id}".`,
         });
         break;
       }
       seen.add(cursor);
-      const next = parentMap.get(cursor);
+      const nextParent: string | null = parentById.get(cursor) ?? null;
       cursor =
-        next !== undefined && next.parentId !== null && idsInOutput.has(next.parentId)
-          ? next.parentId
-          : null;
+        nextParent !== null && idsInOutput.has(nextParent) ? nextParent : null;
     }
   }
 
@@ -341,17 +340,17 @@ async function checkFirstLevelBreadth(
 ): Promise<ValidationIssue[]> {
   const warnings: ValidationIssue[] = [];
   const idsInOutput = new Set(output.conversation.topics.map((t) => t.id));
-  const parentLookup = new Map<string, string | null>();
-  output.potential_topics.topics.forEach((t) => parentLookup.set(t.id, t.parent_id));
 
   let firstLevelCount = 0;
   for (const topic of output.conversation.topics) {
-    const parentId = parentLookup.get(topic.id) ?? null;
-    if (parentId === null) {
+    if (topic.parent_id === null) {
       firstLevelCount++;
       continue;
     }
-    if (!idsInOutput.has(parentId) && !(await graph.topicExists(parentId))) {
+    if (
+      !idsInOutput.has(topic.parent_id) &&
+      !(await graph.topicExists(topic.parent_id))
+    ) {
       firstLevelCount++;
     }
   }

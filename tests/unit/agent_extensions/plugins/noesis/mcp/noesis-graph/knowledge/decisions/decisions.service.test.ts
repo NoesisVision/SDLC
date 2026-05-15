@@ -148,7 +148,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
           context: {
             text: "Locked context",
             text_locked: true,
-            supporting_item_indices: [],
+            supporting_content: [],
           },
         }),
       );
@@ -189,7 +189,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
             text_locked: false,
             rationale: "Original rationale",
             rationale_locked: true,
-            supporting_item_indices: [],
+            supporting_content: [],
           },
         }),
       );
@@ -252,14 +252,14 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
               text_locked: false,
               rationale: "Stateful.",
               rationale_locked: false,
-              supporting_item_indices: [],
+              supporting_content: [],
             },
             {
               text: "OAuth tokens",
               text_locked: false,
               rationale: "Delegated.",
               rationale_locked: false,
-              supporting_item_indices: [],
+              supporting_content: [],
             },
           ],
         }),
@@ -310,58 +310,6 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
     });
   });
 
-  test("Appending referenced items adds new entries and de-duplicates by item key", async () => {
-    let path = "";
-    let result: { appended: number } | null = null;
-
-    await given("a decision already referencing one document fragment", async () => {
-      path = writeDecisionOnDisk(
-        ctx.projectDir,
-        decisionFile({
-          referenced_items: [
-            {
-              type: "document_fragment_ref",
-              document_id: "doc-1",
-              start_offset: 0,
-              end_offset: 5,
-            },
-          ],
-        }),
-      );
-      await ctx.decisions.indexFile(path);
-    });
-    await when("the same fragment plus a new one are appended", async () => {
-      result = await ctx.decisions.appendReferencedItems("decision-1", [
-        {
-          type: "document_fragment_ref",
-          document_id: "doc-1",
-          start_offset: 0,
-          end_offset: 5,
-        },
-        {
-          type: "document_fragment_ref",
-          document_id: "doc-1",
-          start_offset: 6,
-          end_offset: 12,
-        },
-      ]);
-    });
-    await then("only the brand-new reference is counted as appended", () => {
-      expect(result?.appended).toBe(1);
-    });
-    await and("the file ends up with both unique references", () => {
-      const file = DecisionFileNewSchema.parse(
-        JSON.parse(readFileSync(path, "utf-8")),
-      );
-      expect(file.referenced_items).toHaveLength(2);
-      expect(file.referenced_items[1]).toMatchObject({
-        document_id: "doc-1",
-        start_offset: 6,
-        end_offset: 12,
-      });
-    });
-  });
-
   test("Refreshing staleness marks a decision stale when a referenced source has drifted", async () => {
     let path = "";
     let staleCount = 0;
@@ -370,15 +318,19 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
       path = writeDecisionOnDisk(
         ctx.projectDir,
         decisionFile({
-          referenced_items: [
-            {
-              type: "document_fragment_ref",
-              document_id: "doc-1",
-              start_offset: 0,
-              end_offset: 5,
-              source_sha: "old-sha",
-            },
-          ],
+          decision: {
+            text: "Use JWT tokens.",
+            rationale: "Avoid server-side session storage.",
+            supporting_content: [
+              {
+                type: "document_fragment_ref",
+                document_id: "doc-1",
+                start_offset: 0,
+                end_offset: 5,
+                source_sha: "old-sha",
+              },
+            ],
+          },
         }),
       );
       await ctx.decisions.indexFile(path);
@@ -410,15 +362,19 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
         ctx.projectDir,
         decisionFile({
           is_stale: true,
-          referenced_items: [
-            {
-              type: "document_fragment_ref",
-              document_id: "doc-1",
-              start_offset: 0,
-              end_offset: 5,
-              source_sha: "matching-sha",
-            },
-          ],
+          decision: {
+            text: "Use JWT tokens.",
+            rationale: "Avoid server-side session storage.",
+            supporting_content: [
+              {
+                type: "document_fragment_ref",
+                document_id: "doc-1",
+                start_offset: 0,
+                end_offset: 5,
+                source_sha: "matching-sha",
+              },
+            ],
+          },
         }),
       );
       await ctx.decisions.indexFile(path);
@@ -482,21 +438,20 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
     topic_id: "topic-1",
     title: "Use JWTs for sessions",
     status: "accepted",
-    referenced_items: [],
     context: {
       text: "We need stateless sessions.",
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     decision: {
       text: "Use JWT tokens.",
       rationale: "Avoid server-side session storage.",
-      supporting_item_indices: [],
+      supporting_content: [],
     },
     alternative_options: [
       {
         text: "Server sessions",
         rationale: "Familiar but stateful.",
-        supporting_item_indices: [],
+        supporting_content: [],
       },
     ],
     is_stale: false,

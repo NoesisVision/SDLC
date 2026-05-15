@@ -84,7 +84,6 @@ I think we should start with the database schema. It needs careful planning.
     expect(output.conversation.conversation_id).toBe(result.conversation_id);
     expect(output.conversation.turns).toEqual([]);
     expect(output.conversation.topics).toEqual([]);
-    expect(output.potential_topics).toEqual({ topics: [] });
 
     const noesisDir = join(tmpDir, "noesis");
     if (existsSync(noesisDir)) {

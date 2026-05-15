@@ -8,17 +8,19 @@ import {
   formatEnrichedDocumentTopicMarkdown,
   resolveFragmentDetail,
   type AnalyzeDesignDraftOutput,
+  type AttachToDecision,
   type EnrichedDocumentTopic,
   type FragmentDetail,
 } from "../../../../shared-contracts/skills/analyze-design-draft/output.js";
 import { type DesignDocFileNew } from "../../../../shared-contracts/design-doc-new.js";
+import { type SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import {
   DecisionFileNewSchema,
   TopicFileNewSchema,
   type DecisionFileNew,
+  type DecisionOptionNew,
   type DocumentFileNew,
   type TopicFileNew,
-  type TopicItemRefNew,
 } from "../../../../shared-contracts/source-file-schemas.js";
 import {
   computeContentSha,
@@ -229,7 +231,6 @@ export class DocumentsService {
       for (const item of topic.items) {
         if (item.type === "document_fragment_ref") {
           if (item.document_id !== output.document.id) continue;
-          // can't directly check by index from the ref shape, accept range alignment
           const matches = output.fragments.some(
             (f) =>
               f.start_offset === item.start_offset &&
@@ -309,11 +310,6 @@ export class DocumentsService {
     const sourceShaCache = new Map<string, string>();
     sourceShaCache.set(`document:${output.document.id}`, documentSha);
 
-    const parentLookup = new Map<string, string | null>();
-    for (const pt of output.potential_topics.topics) {
-      parentLookup.set(pt.id, pt.parent_id);
-    }
-
     const topicPaths: string[] = [];
     const decisionPaths: string[] = [];
     const clearedLocks: ConfirmedEdit[] = [];
@@ -321,7 +317,7 @@ export class DocumentsService {
     for (const topic of output.topics) {
       const tr = this.writeTopicFile(
         topic,
-        parentLookup.get(topic.id) ?? null,
+        topic.parent_id,
         sourceShaCache,
         confirmed,
       );
@@ -367,7 +363,7 @@ export class DocumentsService {
     cache: Map<string, string>,
     confirmed: Set<string>,
   ): { path: string; cleared: ConfirmedEdit[] } {
-    const items = withItemShas(topic.items as TopicItemRefNew[], this.projectDir, cache);
+    const items = withItemShas(topic.items, this.projectDir, cache);
     const existingPath = this.topicsRepository.findFileById(
       this.projectDir,
       topic.id,
@@ -412,11 +408,6 @@ export class DocumentsService {
       this.projectDir,
       decision.id,
     );
-    const referenced = withItemShas(
-      decision.referenced_items as TopicItemRefNew[],
-      this.projectDir,
-      cache,
-    );
     const existing =
       existingPath === null ? null : readDecisionIfExists(existingPath);
     const cleared: ConfirmedEdit[] = [];
@@ -433,18 +424,25 @@ export class DocumentsService {
       title_locked: resolved.title_locked,
       status: resolved.status,
       status_locked: resolved.status_locked,
-      referenced_items: referenced,
       context: {
         text: resolved.context_text,
         text_locked: resolved.context_text_locked,
-        supporting_item_indices: decision.context.supporting_item_indices,
+        supporting_content: withItemShas(
+          decision.context.supporting_content,
+          this.projectDir,
+          cache,
+        ),
       },
       decision: {
         text: resolved.decision_text,
         text_locked: resolved.decision_text_locked,
         rationale: resolved.decision_rationale,
         rationale_locked: resolved.decision_rationale_locked,
-        supporting_item_indices: decision.decision.supporting_item_indices,
+        supporting_content: withItemShas(
+          decision.decision.supporting_content,
+          this.projectDir,
+          cache,
+        ),
       },
       alternative_options: decision.alternative_options.map((alt, i) => ({
         text: alt.text,
@@ -452,7 +450,11 @@ export class DocumentsService {
         rationale: alt.rationale,
         rationale_locked:
           existing?.alternative_options[i]?.rationale_locked ?? false,
-        supporting_item_indices: alt.supporting_item_indices,
+        supporting_content: withItemShas(
+          alt.supporting_content,
+          this.projectDir,
+          cache,
+        ),
       })),
       is_stale: existing?.is_stale ?? false,
     };
@@ -473,12 +475,16 @@ export class DocumentsService {
     cache: Map<string, string>,
   ): number {
     if (output.decision_attachments.length === 0) return 0;
-    const fragmentByIndex = new Map<number, AnalyzeDesignDraftOutput["fragments"][number]>();
+    const fragmentByIndex = new Map<
+      number,
+      AnalyzeDesignDraftOutput["fragments"][number]
+    >();
     for (const f of output.fragments) fragmentByIndex.set(f.index, f);
     const documentSha = cache.get(`document:${output.document.id}`);
-    const grouped = new Map<string, TopicItemRefNew[]>();
+
+    let appended = 0;
     for (const att of output.decision_attachments) {
-      const refs: TopicItemRefNew[] = att.fragment_indices.map((fi) => {
+      const refs: SourceContentRef[] = att.fragment_indices.map((fi) => {
         const f = fragmentByIndex.get(fi);
         if (f === undefined) {
           throw new Error(
@@ -493,34 +499,21 @@ export class DocumentsService {
           source_sha: documentSha,
         };
       });
-      const list = grouped.get(att.decision_id) ?? [];
-      list.push(...refs);
-      grouped.set(att.decision_id, list);
-    }
-    let appended = 0;
-    for (const [decisionId, refs] of grouped) {
-      const path = this.decisionsRepository.findFileById(this.projectDir, decisionId);
+      const path = this.decisionsRepository.findFileById(
+        this.projectDir,
+        att.decision_id,
+      );
       if (path === null) {
         throw new Error(
-          `decision_attachments target ${decisionId} has no source file on disk`,
+          `decision_attachments target ${att.decision_id} has no source file on disk`,
         );
       }
       const file = this.decisionsRepository.readFile(path);
-      const seen = new Set(file.referenced_items.map(itemKey));
-      const additions: TopicItemRefNew[] = [];
-      for (const ref of refs) {
-        const k = itemKey(ref);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        additions.push(ref);
+      const result = attachToSlot(file, att, refs);
+      if (result.appended > 0) {
+        this.decisionsRepository.writeFile(path, result.file);
+        appended += result.appended;
       }
-      if (additions.length === 0) continue;
-      const updated: DecisionFileNew = {
-        ...file,
-        referenced_items: [...file.referenced_items, ...additions],
-      };
-      this.decisionsRepository.writeFile(path, updated);
-      appended += additions.length;
     }
     return appended;
   }
@@ -632,7 +625,7 @@ export class DocumentsService {
       );
       if (path === null) continue;
       const file = this.decisionsRepository.readFile(path);
-      if (!fileReferencesDocument(file.referenced_items, documentId)) continue;
+      if (!fileReferencesDocument(collectDecisionRefs(file), documentId)) continue;
       out.push({
         decision_id: decision.id,
         title: decision.title,
@@ -723,10 +716,10 @@ export class DocumentsService {
 }
 
 function withItemShas(
-  items: ReadonlyArray<TopicItemRefNew>,
+  items: ReadonlyArray<SourceContentRef>,
   projectDir: string,
   cache: Map<string, string>,
-): TopicItemRefNew[] {
+): SourceContentRef[] {
   return items.map((item) => {
     const key =
       item.type === "idea_unit_ref"
@@ -747,9 +740,12 @@ function withItemShas(
   });
 }
 
-function mergeItems(prev: TopicItemRefNew[], next: TopicItemRefNew[]): TopicItemRefNew[] {
+function mergeItems(
+  prev: SourceContentRef[],
+  next: SourceContentRef[],
+): SourceContentRef[] {
   const seen = new Set<string>();
-  const out: TopicItemRefNew[] = [];
+  const out: SourceContentRef[] = [];
   for (const list of [prev, next]) {
     for (const item of list) {
       const key = itemKey(item);
@@ -761,7 +757,7 @@ function mergeItems(prev: TopicItemRefNew[], next: TopicItemRefNew[]): TopicItem
   return out;
 }
 
-function itemKey(item: TopicItemRefNew): string {
+function itemKey(item: SourceContentRef): string {
   if (item.type === "idea_unit_ref") {
     return `iu:${item.conversation_id}:${item.turn_index}:${item.idea_unit_index}`;
   }
@@ -787,7 +783,7 @@ function readDecisionIfExists(absPath: string): DecisionFileNew | null {
 }
 
 function fileReferencesDocument(
-  items: TopicItemRefNew[],
+  items: ReadonlyArray<SourceContentRef>,
   documentId: string,
 ): boolean {
   for (const item of items) {
@@ -799,6 +795,84 @@ function fileReferencesDocument(
     }
   }
   return false;
+}
+
+function collectDecisionRefs(file: DecisionFileNew): SourceContentRef[] {
+  return [
+    ...file.context.supporting_content,
+    ...file.decision.supporting_content,
+    ...file.alternative_options.flatMap((alt) => alt.supporting_content),
+  ];
+}
+
+function attachToSlot(
+  file: DecisionFileNew,
+  att: AttachToDecision,
+  refs: SourceContentRef[],
+): { file: DecisionFileNew; appended: number } {
+  const appendUnique = (
+    current: SourceContentRef[],
+  ): { next: SourceContentRef[]; appended: number } => {
+    const seen = new Set(current.map(itemKey));
+    const additions: SourceContentRef[] = [];
+    for (const ref of refs) {
+      const k = itemKey(ref);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      additions.push(ref);
+    }
+    return { next: [...current, ...additions], appended: additions.length };
+  };
+  switch (att.slot) {
+    case "context": {
+      const { next, appended } = appendUnique(file.context.supporting_content);
+      if (appended === 0) return { file, appended: 0 };
+      return {
+        file: {
+          ...file,
+          context: { ...file.context, supporting_content: next },
+        },
+        appended,
+      };
+    }
+    case "decision": {
+      const { next, appended } = appendUnique(file.decision.supporting_content);
+      if (appended === 0) return { file, appended: 0 };
+      return {
+        file: {
+          ...file,
+          decision: { ...file.decision, supporting_content: next },
+        },
+        appended,
+      };
+    }
+    case "alternative": {
+      const idx = att.alternative_index;
+      if (idx === null) {
+        throw new Error(
+          `decision_attachments slot=alternative for ${att.decision_id} missing alternative_index`,
+        );
+      }
+      if (idx < 0 || idx >= file.alternative_options.length) {
+        throw new Error(
+          `decision_attachments alternative_index ${idx} out of range for ${att.decision_id}`,
+        );
+      }
+      const alt = file.alternative_options[idx];
+      const { next, appended } = appendUnique(alt.supporting_content);
+      if (appended === 0) return { file, appended: 0 };
+      const updatedAlt: DecisionOptionNew = { ...alt, supporting_content: next };
+      const alternatives = file.alternative_options.map((a, i) =>
+        i === idx ? updatedAlt : a,
+      );
+      return {
+        file: { ...file, alternative_options: alternatives },
+        appended,
+      };
+    }
+    default:
+      return assertNever(att.slot);
+  }
 }
 
 function fragmentKey(documentId: string, start: number, end: number): string {

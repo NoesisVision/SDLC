@@ -16,14 +16,18 @@ Get from `$ARGUMENTS`, ask the user if missing:
 - **conversation_time** — `YYYY-MM-DD HH:MM:SS`.
 - **main_topic** — short description of the conversation's subject.
 
+## Output format
+
+Output MUST be saved to `<working_dir>/output.json`.
+Output format MUST match `{ conversation: { conversation_id, time, main_topic, turns: [], topics: [] } }`. Each entry in `topics` is an `AnalyzedTopic` carrying its own `parent_id` and `is_new` flag (see Step 3). The canonical schema lives at `shared-contracts/skills/analyze-conversation/output.ts`.
+
 ## Workflow
 
 ### Step 1: Prepare
 
 Run `NOESIS_PROJECT_DIR=$(pwd) bun run ${CLAUDE_PLUGIN_ROOT}/scripts/conversation/prepare.ts <transcript_path> "<conversation_time>" "<main_topic>"`.
 
-The script computes `conversation_id` as the sha-256 of the raw transcript bytes formatted as a UUID, sentence-segments the transcript, creates a private working directory under the plugin's per-project data dir, writes the cleaned-md rendering of the transcript to `<working_dir>/cleaned.md`, and initializes `<working_dir>/output.json` (matching `AnalyzeConversationOutput`: `{ conversation: { conversation_id, time, main_topic, turns: [], topics: [] }, potential_topics: { topics: [] } }`). The user's source transcript is **not** modified. No file is written under `<projectDir>/noesis/`.
-
+The script computes `conversation_id` as the sha-256 of the raw transcript bytes formatted as a UUID, sentence-segments the transcript, creates a private working directory under the plugin's per-project data dir, writes the cleaned-md rendering of the transcript to `<working_dir>/cleaned.md`, and initializes `<working_dir>/output.json`.
 It returns:
 ```json
 {
@@ -46,19 +50,14 @@ Goal: identify the existing topics in the graph that already cover the conversat
 
 1. Call MCP tool `noesis-graph:list_topics` (no `parent_topic_id`). Read the file path it returns. The listing is slim — `title`, `short_summary`, `path`, `has_subtopics` only. Use `read_topic` if a row's short summary is not enough to judge relevance.
 2. For each root topic, judge relevance to `<main_topic>` from its title and short summary.
-3. **Drill every relevant candidate that can be drilled.** For *every* relevant topic with `has_subtopics: yes`, call `noesis-graph:list_topics` with `parent_topic_id: <id>` before promoting that candidate to `potential_topics`. Apply the Goldilocks rule:
+3. **Drill every relevant candidate that can be drilled.** For *every* relevant topic with `has_subtopics: yes`, call `noesis-graph:list_topics` with `parent_topic_id: <id>` before keeping it as a candidate. Apply the Goldilocks rule:
    - **Too broad** — children match more accurately → drop the parent, recurse into matching children.
    - **Too narrow** — children only cover a fraction → keep the parent, ignore the children.
    - **Worse fit** — children are fragmented tangents → keep the parent, abort drill-down.
    - **Just right** — a child comprehensively covers the subject → keep it; still recurse into its subtopics if any.
 
-   A candidate may only be added to `potential_topics` once you have either listed its subtopics or confirmed `has_subtopics: no`. Stopping early because "the parent looks fine" is the failure mode this rule prevents — Step 3 will then mis-assign idea units into the parent that actually belonged in a child.
-4. Collect candidates as a flat `PotentialTopics` list. Each candidate: `{ id, title, short_summary, path, is_new: false, parent_id }`. May be empty.
-5. Edit `<working_dir>/output.json` (Edit tool) to set `potential_topics` to:
-```json
-{ "topics": [ { "id": "...", "title": "...", "short_summary": "...", "path": ["..."], "is_new": false, "parent_id": null } ] }
-```
-This list is consumed by `merge_conversation` for parent linking and is the input set for Step 3.
+   A candidate is only confirmed once you have either listed its subtopics or confirmed `has_subtopics: no`. Stopping early because "the parent looks fine" is the failure mode this rule prevents — Step 3 will then mis-assign idea units into the parent that actually belonged in a child.
+4. Keep the resulting candidate list in working memory for Step 3 (no output.json write yet). For each candidate retain `{ id, title, short_summary, parent_id }`. May be empty.
 
 ### Step 3: Extract idea units and assign topics
 
@@ -68,8 +67,10 @@ Read `<cleaned_path>` (Read tool — windowing is up to you). Edit `<working_dir
 
 - `conversation_id`, `time`, `main_topic` — already set from Step 1.
 - `turns` — one `Turn` per cleaned-md `### [N] <time> — <speaker>` block. Group consecutive sentences within a turn into idea units, assign categories. `IdeaUnit` shape: `{ index, sentences, categories }`.
-- `topics` — list of `Topic` objects covering all non-Irrelevant idea units. Reuse existing topics from `output.json:potential_topics` when they fit; only create new topics when nothing existing fits. Each `Topic`: `{ id, title, short_summary: "", long_summary: "", items: [IdeaUnitRef, ...], decisions: [], reviewed: false, decisions_extracted: false }`. For new topics, call MCP tool `noesis-graph:generate_topic_ids` with `{ "count": <number of new topics> }` once you know how many you need; use the returned ids. Leave summaries empty — they are produced in Step 4.
-- For every newly-created topic, append an entry to `output.json:potential_topics.topics` with `is_new: true`. Set `parent_id` to the existing parent's id, or to `null` if the topic is a new root. The `id` MUST match the corresponding `conversation.topics[].id`.
+- `topics` — list of `AnalyzedTopic` objects covering all non-Irrelevant idea units. Reuse the Step 2 candidates when they fit (`is_new: false`); only create new topics when nothing existing fits. Each `AnalyzedTopic`: `{ id, parent_id, is_new, title, short_summary: "", long_summary: "", items: [IdeaUnitRef, ...], decisions: [], reviewed: false, decisions_extracted: false }`.
+  - For an existing topic (`is_new: false`), copy `id` and `parent_id` from the Step 2 candidate.
+  - For a new topic (`is_new: true`), call MCP tool `noesis-graph:generate_topic_ids` with `{ "count": <number of new topics> }` once you know how many you need; use the returned ids. Set `parent_id` to the existing parent's id, or `null` for a new root.
+  - Leave summaries empty — they are produced in Step 4.
 
 `IdeaUnitRef`: `{ "type": "idea_unit_ref", "conversation_id": "<id>", "turn_index": N, "idea_unit_index": N }`.
 
@@ -87,7 +88,7 @@ Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-conversation/referenc
    - `decisions` (array of `Decision` — see schema in REFERENCE). Empty array if none.
    - `reviewed: true` and `decisions_extracted: true`.
 
-If processing reveals that an idea unit belongs to a different topic, update `output.json:conversation.topics[]` accordingly during the same write, and recompute the affected summaries. Reassignment is rare; the entire tree is in front of you, no fresh fetch is needed.
+   If processing reveals that an idea unit belongs to a different topic, update `output.json:conversation.topics[]` accordingly during the same write, and recompute the affected summaries. Reassignment is rare; the entire tree is in front of you, no fresh fetch is needed.
 
 5. Call MCP tool `noesis-graph:validate_output` with `working_dir: <working_dir>` again. Fix and re-validate until `Ok` before proceeding to Step 5.
 

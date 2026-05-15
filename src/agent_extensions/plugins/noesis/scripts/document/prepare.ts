@@ -69,7 +69,6 @@ export function prepareDocument(
     section_tree,
     topics: [],
     decision_attachments: [],
-    potential_topics: { topics: [] },
     design_doc_id: options.designDocId,
     design_doc_title: options.designDocTitle,
     design_doc_extracted: false,
