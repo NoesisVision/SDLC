@@ -12,12 +12,6 @@ export const DocumentSchema = z.object({
     .describe(
       "SHA-256 of the paired source .md when this sidecar was last authored. Drift indicates fragments may be out of sync with the text.",
     ),
-  edited_by_user: z
-    .boolean()
-    .optional()
-    .describe(
-      "True when the user has manually changed this file since the last skill write.",
-    ),
 });
 export type Document = z.infer<typeof DocumentSchema>;
 

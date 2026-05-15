@@ -43,13 +43,7 @@ export const ConversationSchema = z.object({
     .string()
     .optional()
     .describe(
-      "SHA-256 of the paired cleaned transcript .md when this sidecar was last authored. Drift indicates structured data may be out of sync with the text.",
-    ),
-  edited_by_user: z
-    .boolean()
-    .optional()
-    .describe(
-      "True when the user has manually changed this file since the last skill write. Skills/splitter set false on every write; the indexer flips this to true when it observes drift it didn't drive.",
+      "SHA-256 of the source transcript .md file when this object was last authored. Drift indicates structured data may be out of sync with the text.",
     ),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
