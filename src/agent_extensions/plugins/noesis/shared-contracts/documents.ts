@@ -6,12 +6,6 @@ export const DocumentSchema = z.object({
   title: z.string(),
   date: z.string(),
   content: z.string(),
-  md_sha: z
-    .string()
-    .optional()
-    .describe(
-      "SHA-256 of the paired source .md when this sidecar was last authored. Drift indicates fragments may be out of sync with the text.",
-    ),
 });
 export type Document = z.infer<typeof DocumentSchema>;
 

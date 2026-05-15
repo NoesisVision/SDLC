@@ -39,12 +39,6 @@ export const ConversationSchema = z.object({
   main_topic: z.string(),
   turns: z.array(TurnSchema),
   topics: z.array(z.lazy(() => TopicSchema)),
-  md_sha: z
-    .string()
-    .optional()
-    .describe(
-      "SHA-256 of the source transcript .md file when this object was last authored. Drift indicates structured data may be out of sync with the text.",
-    ),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 
