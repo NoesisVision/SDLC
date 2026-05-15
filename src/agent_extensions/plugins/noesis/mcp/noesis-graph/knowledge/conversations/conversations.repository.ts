@@ -1,17 +1,17 @@
 import { Injectable } from "@nestjs/common";
 import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
-import type { Turn } from "../../../../shared-contracts/conversation.js";
 import {
-  ConversationFileNewSchema,
-  type ConversationFileNew,
-} from "../../../../shared-contracts/source-file-schemas.js";
+  ConversationSchema,
+  type Conversation,
+  type Turn,
+} from "../../../../shared-contracts/conversation.js";
 import {
   computeFileSha,
   conversationJsonPath,
   findConversationJsonById,
-  readSidecar,
-  writeSidecar,
+  readSourceFile,
+  writeSourceFile,
 } from "../../../../shared-contracts/source-files.js";
 import { DatabaseService, type QueryParams } from "../../database/database.service.js";
 
@@ -189,11 +189,11 @@ export class ConversationsRepository {
     return StoredConversationRowSchema.parse(rows[0]);
   }
 
-  readJsonFile(absPath: string): ConversationFileNew {
-    return readSidecar(absPath, ConversationFileNewSchema);
+  readJsonFile(absPath: string): Conversation {
+    return readSourceFile(absPath, ConversationSchema);
   }
 
-  async upsert(file: ConversationFileNew, sha: string): Promise<void> {
+  async upsert(file: Conversation, sha: string): Promise<void> {
     await this.db.query(
       "MERGE (c:Conversation {id: $id}) SET " +
         "c.sha = $sha, c.time = $time, c.main_topic = $main_topic",
@@ -207,8 +207,8 @@ export class ConversationsRepository {
     await this.replaceTurns(file.conversation_id, file.turns);
   }
 
-  writeJsonFile(absPath: string, file: ConversationFileNew): void {
-    writeSidecar(absPath, file, ConversationFileNewSchema);
+  writeJsonFile(absPath: string, file: Conversation): void {
+    writeSourceFile(absPath, file, ConversationSchema);
   }
 
   private async replaceTurns(

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IdeaUnitRefSchema, TurnSchema } from "./conversation.js";
+import { IdeaUnitRefSchema } from "./conversation.js";
 import {
   DocumentFragmentRefSchema,
   DocumentFragmentSchema,
@@ -12,14 +12,6 @@ export const TopicItemRefNewSchema = z.union([
   DocumentFragmentRefSchema,
 ]);
 export type TopicItemRefNew = z.infer<typeof TopicItemRefNewSchema>;
-
-export const ConversationFileNewSchema = z.object({
-  conversation_id: z.string(),
-  time: z.string(),
-  main_topic: z.string(),
-  turns: z.array(TurnSchema),
-});
-export type ConversationFileNew = z.infer<typeof ConversationFileNewSchema>;
 
 export const DocumentFileNewSchema = z.object({
   document_id: z.string(),

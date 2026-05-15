@@ -5,13 +5,14 @@ description: Analyze a conversation transcript and integrate it into the knowled
 
 # Analyze Conversation
 
-The main agent does the reasoning. Use the Read tool freely to load as much (or as little) of the cleaned transcript as you need to keep output quality high — full document, partial windows, overlapping re-reads — that judgement is yours. The knowledge graph lives in the `noesis-graph` MCP server. Persist via `merge_conversation`; never write graph data directly.
+The main agent does the reasoning. Use the Read tool freely to load as much (or as little) of the cleaned transcript as you need to keep output quality high — full document, partial windows, overlapping re-reads — that judgement is yours.
+The knowledge graph lives in the `noesis-graph` MCP server. Persist via `merge_conversation`; never write graph data directly.
 
 ## Setup
 
 Get from `$ARGUMENTS`, ask the user if missing:
 
-- **transcript_path** — absolute path to the raw transcript Markdown. If the value is not absolute or the file does not exist at the given path, resolve it via Glob (`**/<basename>`) within the current working directory; if multiple matches exist, ask the user which one. Do not extend `prepare.ts` with a search step — the script remains a strict file consumer.
+- **transcript_path** — absolute path to the raw transcript Markdown. If the value is not absolute or the file does not exist at the given path, resolve it via Glob (`**/<basename>`) within the current working directory; if multiple matches exist, ask the user which one.
 - **conversation_time** — `YYYY-MM-DD HH:MM:SS`.
 - **main_topic** — short description of the conversation's subject.
 
@@ -92,7 +93,7 @@ If processing reveals that an idea unit belongs to a different topic, update `ou
 
 ### Step 5: Merge into the knowledge graph
 
-Call MCP tool `noesis-graph:merge_conversation` with `working_dir: <working_dir>`. The cleaned transcript is read from `<working_dir>/<conversation_id>.md` by default — pass `cleaned_md_filename` only if the file lives under a different name in the working dir. The server reads `output.json` and the cleaned transcript, runs business-level validation (refs resolve, all topics reviewed), and splits the analysis into source files under `<projectDir>/noesis/`: the Conversation sidecar JSON + cleaned md, per-topic JSON files, and per-decision JSON files.
+Call MCP tool `noesis-graph:merge_conversation` with `working_dir: <working_dir>`. The cleaned transcript is read from `<working_dir>/<conversation_id>.md` by default — pass `cleaned_md_filename` only if the file lives under a different name in the working dir. The server reads `output.json` and the cleaned transcript, runs business-level validation (refs resolve, all topics reviewed), and splits the analysis into source files under `<projectDir>/noesis/`: the Conversation JSON file + cleaned md, per-topic JSON files, and per-decision JSON files.
 
 If any topic or decision field is user-edited (`*_locked: true` on disk) and your `output.json` would change its value, the call rejects with a `LockedFieldsBlockedError` whose `blocked` array lists every conflict as `{ kind: "topic" | "decision", topic_id | decision_id, field }`. When that happens:
 

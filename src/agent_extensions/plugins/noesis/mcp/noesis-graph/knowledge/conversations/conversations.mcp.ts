@@ -54,7 +54,7 @@ function registerMergeConversation(
       description:
         "Merge a completed conversation analysis into the knowledge graph. Reads " +
         "`<working_dir>/output.json` (matching AnalyzeConversationOutput) and splits it into source " +
-        "files under `<projectDir>/noesis/`: the Conversation sidecar JSON, per-topic JSON files, " +
+        "files under `<projectDir>/noesis/`: the Conversation JSON file, per-topic JSON files, " +
         "and per-decision JSON files. No markdown is written to noesis. Runs business-level " +
         "validation (refs resolve, all topics reviewed, etc.) and rejects before any file write on " +
         "validation errors. Rejects with a duplicate error if a Conversation with the same id is " +

@@ -14,11 +14,13 @@ import type {
   StringChangeSet,
 } from "../../../shared-contracts/design-doc-new.js";
 import {
-  ConversationFileNewSchema,
+  ConversationSchema,
+  type Conversation,
+} from "../../../shared-contracts/conversation.js";
+import {
   DecisionFileNewSchema,
   DocumentFileNewSchema,
   TopicFileNewSchema,
-  type ConversationFileNew,
   type DecisionFileNew,
   type DocumentFileNew,
   type TopicFileNew,
@@ -73,9 +75,9 @@ export async function seedDevDatabase(
 
 // ---------- conversations ----------
 
-function seedConversations(): ConversationFileNew[] {
+function seedConversations(): Conversation[] {
   return [
-    ConversationFileNewSchema.parse({
+    ConversationSchema.parse({
       conversation_id: "conv-kickoff",
       time: "2026-02-04T10:00:00Z",
       main_topic: "Auth strategy kickoff",
@@ -124,7 +126,7 @@ function seedConversations(): ConversationFileNew[] {
         },
       ],
     }),
-    ConversationFileNewSchema.parse({
+    ConversationSchema.parse({
       conversation_id: "conv-followup",
       time: "2026-03-12T14:30:00Z",
       main_topic: "Auth follow-up",
@@ -1114,7 +1116,7 @@ function changeSet(items: string[]): StringChangeSet {
 
 // ---------- file writes ----------
 
-function writeConversation(projectDir: string, file: ConversationFileNew): void {
+function writeConversation(projectDir: string, file: Conversation): void {
   const jsonPath = conversationJsonPath(projectDir, file.conversation_id, file.main_topic);
   writeJson(jsonPath, file);
 }

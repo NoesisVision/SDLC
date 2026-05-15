@@ -8,9 +8,9 @@ import {
 import {
   computeFileSha,
   findTopicJsonById,
-  readSidecar,
+  readSourceFile,
   topicJsonPath,
-  writeSidecar,
+  writeSourceFile,
 } from "../../../../shared-contracts/source-files.js";
 import { DatabaseService, type QueryParams } from "../../database/database.service.js";
 
@@ -170,7 +170,7 @@ export class TopicsRepository {
   }
 
   readFile(absPath: string): TopicFileNew {
-    return readSidecar(absPath, TopicFileNewSchema);
+    return readSourceFile(absPath, TopicFileNewSchema);
   }
 
   async readStaleFlag(topicId: string): Promise<boolean | null> {
@@ -220,7 +220,7 @@ export class TopicsRepository {
   }
 
   writeFile(absPath: string, file: TopicFileNew): void {
-    writeSidecar(absPath, file, TopicFileNewSchema);
+    writeSourceFile(absPath, file, TopicFileNewSchema);
   }
 
   async writeStaleFlag(topicId: string, isStale: boolean): Promise<void> {

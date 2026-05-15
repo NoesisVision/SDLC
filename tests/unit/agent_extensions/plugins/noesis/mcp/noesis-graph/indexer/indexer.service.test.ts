@@ -17,11 +17,13 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  ConversationFileNewSchema,
+  ConversationSchema,
+  type Conversation,
+} from "@noesis/shared-contracts/conversation.js";
+import {
   DecisionFileNewSchema,
   DocumentFileNewSchema,
   TopicFileNewSchema,
-  type ConversationFileNew,
   type DecisionFileNew,
   type DocumentFileNew,
   type TopicFileNew,
@@ -416,8 +418,8 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
   });
 });
 
-function makeConversationFile(id: string): ConversationFileNew {
-  return ConversationFileNewSchema.parse({
+function makeConversationFile(id: string): Conversation {
+  return ConversationSchema.parse({
     conversation_id: id,
     time: "2026-04-17T10:00:00Z",
     main_topic: "Discussion",

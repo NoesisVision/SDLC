@@ -156,7 +156,7 @@ Write the validated DesignDoc payload (matching `DesignDocFileNewSchema` — eve
 
 ### Step 7: Merge into the knowledge graph
 
-Call MCP tool `noesis-graph:merge_document` with `working_dir: <working_dir>` (and `design_doc_filename` if a design doc was extracted in Step 6 and you want it persisted in the same call — usually the design doc is already saved via `save_design_doc` in Step 6, so leave it out). The server reads `output.json`, validates business rules, and splits the analysis into source files under `<projectDir>/noesis/`: the Document sidecar JSON, per-topic JSON files, per-decision JSON files, and any decision attachments.
+Call MCP tool `noesis-graph:merge_document` with `working_dir: <working_dir>` (and `design_doc_filename` if a design doc was extracted in Step 6 and you want it persisted in the same call — usually the design doc is already saved via `save_design_doc` in Step 6, so leave it out). The server reads `output.json`, validates business rules, and splits the analysis into source files under `<projectDir>/noesis/`: the Document JSON file, per-topic JSON files, per-decision JSON files, and any decision attachments.
 
 Report the returned `document_id`, the count of `topic_paths` and `decision_paths` written, the `decision_attachments` count, and any `cleared_locks` to the user.
 

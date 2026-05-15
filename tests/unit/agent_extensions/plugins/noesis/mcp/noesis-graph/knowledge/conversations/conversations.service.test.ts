@@ -15,8 +15,8 @@ import {
   createKnowledgeNewTestModule,
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
+import { ConversationSchema } from "@noesis/shared-contracts/conversation.js";
 import {
-  ConversationFileNewSchema,
   DecisionFileNewSchema,
   TopicFileNewSchema,
 } from "@noesis/shared-contracts/source-file-schemas.js";
@@ -73,7 +73,7 @@ describe("ConversationsService — accept skill output, validate, split, save", 
         "conv-1",
         "Authentication strategy",
       );
-      const conversation = ConversationFileNewSchema.parse(
+      const conversation = ConversationSchema.parse(
         JSON.parse(readFileSync(conversationPath, "utf-8")),
       );
       expect(conversation.conversation_id).toBe("conv-1");
@@ -670,7 +670,7 @@ function readDecision(ctx: KnowledgeNewTestContext, id: string) {
 }
 
 function sampleConversationFile() {
-  return ConversationFileNewSchema.parse({
+  return ConversationSchema.parse({
     conversation_id: "conv-1",
     time: "2026-04-17T10:00:00Z",
     main_topic: "Authentication strategy",

@@ -15,9 +15,9 @@ import {
   isUnderNoesisRoot,
   noesisRoot,
   noesisSubdirPath,
-  readSidecar,
+  readSourceFile,
   topicJsonPath,
-  writeSidecar,
+  writeSourceFile,
 } from "./source-files.js";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "noesis-source-files-"));
@@ -71,7 +71,7 @@ describe("path helpers", () => {
 });
 
 describe("discoverSourceFiles", () => {
-  test("returns only .json sidecars and ignores stray .md files in noesis subdirs", () => {
+  test("returns only .json source files and ignores stray .md files in noesis subdirs", () => {
     const proj = join(tmpRoot, "discover");
     const conversationsDir = noesisSubdirPath(proj, "conversation");
     mkdirSync(conversationsDir, { recursive: true });
@@ -100,33 +100,33 @@ describe("sha helpers", () => {
   });
 });
 
-describe("sidecar IO", () => {
+describe("source file IO", () => {
   const Schema = z.object({
     id: z.string(),
     title: z.string(),
     items: z.array(z.string()).default(() => []),
   });
 
-  test("writeSidecar creates the parent directory and persists JSON", () => {
-    const path = join(tmpRoot, "sidecar/dir/file.json");
-    writeSidecar(path, { id: "a", title: "t", items: ["x"] }, Schema);
+  test("writeSourceFile creates the parent directory and persists JSON", () => {
+    const path = join(tmpRoot, "src/dir/file.json");
+    writeSourceFile(path, { id: "a", title: "t", items: ["x"] }, Schema);
     expect(existsSync(path)).toBe(true);
     const raw = readFileSync(path, "utf-8");
     expect(raw.endsWith("\n")).toBe(true);
     expect(JSON.parse(raw)).toEqual({ id: "a", title: "t", items: ["x"] });
   });
 
-  test("readSidecar parses and validates the file", () => {
-    const path = join(tmpRoot, "sidecar/read.json");
-    writeSidecar(path, { id: "a", title: "t" }, Schema);
-    const out = readSidecar(path, Schema);
+  test("readSourceFile parses and validates the file", () => {
+    const path = join(tmpRoot, "src/read.json");
+    writeSourceFile(path, { id: "a", title: "t" }, Schema);
+    const out = readSourceFile(path, Schema);
     expect(out).toEqual({ id: "a", title: "t", items: [] });
   });
 
-  test("writeSidecar refuses invalid input", () => {
-    const path = join(tmpRoot, "sidecar/invalid.json");
+  test("writeSourceFile refuses invalid input", () => {
+    const path = join(tmpRoot, "src/invalid.json");
     expect(() =>
-      writeSidecar(path, { id: 1, title: "t" } as unknown as { id: string; title: string }, Schema),
+      writeSourceFile(path, { id: 1, title: "t" } as unknown as { id: string; title: string }, Schema),
     ).toThrow();
   });
 });

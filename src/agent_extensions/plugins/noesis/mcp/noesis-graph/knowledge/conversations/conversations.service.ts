@@ -5,6 +5,7 @@ import {
   formatEnrichedTopicMarkdown,
   isIrrelevant,
   resolveIdeaUnitDetail,
+  type Conversation,
   type EnrichedSubtopic,
   type EnrichedTopic,
   type IdeaUnitDetail,
@@ -16,7 +17,6 @@ import {
 } from "../../../../shared-contracts/skills/analyze-conversation/output.js";
 import {
   TopicFileNewSchema,
-  type ConversationFileNew,
   type DecisionFileNew,
   type TopicFileNew,
   type TopicItemRefNew,
@@ -347,7 +347,7 @@ export class ConversationsService {
   ): UploadConversationAnalysisResult {
     const conv = output.conversation;
 
-    const conversationFile: ConversationFileNew = {
+    const conversationFile: Conversation = {
       conversation_id: conv.conversation_id,
       time: conv.time,
       main_topic: conv.main_topic,
@@ -500,7 +500,7 @@ export class ConversationsService {
     return { path: newPath, cleared };
   }
 
-  private persistJson(file: ConversationFileNew): string {
+  private persistJson(file: Conversation): string {
     const newPath = this.repository.canonicalJsonPath(
       this.projectDir,
       file.conversation_id,

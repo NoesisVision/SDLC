@@ -18,15 +18,15 @@ import {
   computeFileSha,
   designDocCanonicalPath,
   findDesignDocFileById,
-  readSidecar,
-  writeSidecar,
+  readSourceFile,
+  writeSourceFile,
 } from "../../../../shared-contracts/source-files.js";
 import { DatabaseService } from "../../database/database.service.js";
 
 // Schema notes:
 // - Every nested design-doc entity (BoundedContext / DomainModule / BuildingBlock /
 //   Behaviour / Property / Rule / Scenario / QualityAttribute) is a first-class node
-//   so the graph is a full index of the on-disk sidecar (see plugin CLAUDE.md
+//   so the graph is a full index of the on-disk JSON file (see plugin CLAUDE.md
 //   "Graph model").
 // - ChangeSet slots become *separate* edges per slot: HAS_ADDED_* and HAS_MODIFIED_*.
 //   "removed" entries carry only a name (no body), so they stay as scalar STRING[]
@@ -301,7 +301,7 @@ export class DesignDocsRepository {
   }
 
   readFile(absPath: string): DesignDocFileNew {
-    return readSidecar(absPath, DesignDocFileNewSchema);
+    return readSourceFile(absPath, DesignDocFileNewSchema);
   }
 
   async readImplementedFlag(designDocId: string): Promise<boolean | null> {
@@ -375,7 +375,7 @@ export class DesignDocsRepository {
   }
 
   writeFile(absPath: string, file: DesignDocFileNew): void {
-    writeSidecar(absPath, file, DesignDocFileNewSchema);
+    writeSourceFile(absPath, file, DesignDocFileNewSchema);
   }
 
   async upsertActor(actor: {

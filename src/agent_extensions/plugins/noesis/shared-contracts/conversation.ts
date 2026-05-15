@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { TopicSchema } from "./topics.js";
 
 export { IdeaUnitCategory } from "./idea-unit-category.js";
 import { IdeaUnitCategory } from "./idea-unit-category.js";
@@ -20,7 +19,7 @@ export const IdeaUnitRefSchema = z.object({
     .string()
     .optional()
     .describe(
-      "SHA-256 of the conversation sidecar JSON at ref-creation time. Used to detect stale references when the sidecar changes.",
+      "SHA-256 of the conversation JSON file at ref-creation time. Used to detect stale references when the conversation file changes.",
     ),
 });
 export type IdeaUnitRef = z.infer<typeof IdeaUnitRefSchema>;
@@ -38,7 +37,6 @@ export const ConversationSchema = z.object({
   time: z.string(),
   main_topic: z.string(),
   turns: z.array(TurnSchema),
-  topics: z.array(z.lazy(() => TopicSchema)),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 

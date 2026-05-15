@@ -11,8 +11,8 @@ import {
   computeFileSha,
   decisionJsonPath,
   findDecisionJsonById,
-  readSidecar,
-  writeSidecar,
+  readSourceFile,
+  writeSourceFile,
 } from "../../../../shared-contracts/source-files.js";
 import type { TopicItemRefNew } from "../../../../shared-contracts/source-file-schemas.js";
 import { DatabaseService, type QueryParams } from "../../database/database.service.js";
@@ -169,7 +169,7 @@ export class DecisionsRepository {
   }
 
   readFile(absPath: string): DecisionFileNew {
-    return readSidecar(absPath, DecisionFileNewSchema);
+    return readSourceFile(absPath, DecisionFileNewSchema);
   }
 
   async readStaleFlag(decisionId: string): Promise<boolean | null> {
@@ -214,7 +214,7 @@ export class DecisionsRepository {
   }
 
   writeFile(absPath: string, file: DecisionFileNew): void {
-    writeSidecar(absPath, file, DecisionFileNewSchema);
+    writeSourceFile(absPath, file, DecisionFileNewSchema);
   }
 
   async writeStaleFlag(decisionId: string, isStale: boolean): Promise<void> {

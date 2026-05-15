@@ -16,10 +16,12 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  ConversationFileNewSchema,
+  ConversationSchema,
+  type Conversation,
+} from "@noesis/shared-contracts/conversation.js";
+import {
   DecisionFileNewSchema,
   TopicFileNewSchema,
-  type ConversationFileNew,
   type DecisionFileNew,
   type TopicFileNew,
 } from "@noesis/shared-contracts/source-file-schemas.js";
@@ -288,9 +290,9 @@ function topicFile(overrides: Partial<TopicFileNew> = {}): TopicFileNew {
 }
 
 function conversationFile(
-  overrides: Partial<ConversationFileNew> = {},
-): ConversationFileNew {
-  return ConversationFileNewSchema.parse({
+  overrides: Partial<Conversation> = {},
+): Conversation {
+  return ConversationSchema.parse({
     conversation_id: "conv-1",
     time: "2026-01-01T10:00:00Z",
     main_topic: "Project kickoff",
@@ -343,7 +345,7 @@ async function indexTopic(
 
 async function indexConversation(
   ctx: KnowledgeNewTestContext,
-  file: ConversationFileNew,
+  file: Conversation,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "conversations"), { recursive: true });
   const path = conversationJsonPath(

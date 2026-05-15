@@ -172,13 +172,13 @@ export function computeFileSha(absPath: string): string {
   return computeContentSha(readFileSync(absPath));
 }
 
-export function readSidecar<T>(absPath: string, schema: z.ZodType<T>): T {
+export function readSourceFile<T>(absPath: string, schema: z.ZodType<T>): T {
   const raw = readFileSync(absPath, "utf-8");
   const parsed = JSON.parse(raw);
   return schema.parse(parsed);
 }
 
-export function writeSidecar<S extends z.ZodType>(
+export function writeSourceFile<S extends z.ZodType>(
   absPath: string,
   data: z.input<S>,
   schema: S

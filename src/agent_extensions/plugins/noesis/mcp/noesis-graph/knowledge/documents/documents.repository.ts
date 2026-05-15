@@ -9,8 +9,8 @@ import {
   computeFileSha,
   documentJsonPath,
   findDocumentJsonById,
-  readSidecar,
-  writeSidecar,
+  readSourceFile,
+  writeSourceFile,
 } from "../../../../shared-contracts/source-files.js";
 import { DatabaseService } from "../../database/database.service.js";
 
@@ -140,7 +140,7 @@ export class DocumentsRepository {
   }
 
   readFile(absPath: string): DocumentFileNew {
-    return readSidecar(absPath, DocumentFileNewSchema);
+    return readSourceFile(absPath, DocumentFileNewSchema);
   }
 
   async upsert(file: DocumentFileNew, sha: string): Promise<void> {
@@ -159,7 +159,7 @@ export class DocumentsRepository {
   }
 
   writeFile(absPath: string, file: DocumentFileNew): void {
-    writeSidecar(absPath, file, DocumentFileNewSchema);
+    writeSourceFile(absPath, file, DocumentFileNewSchema);
   }
 
   private async replaceFragments(

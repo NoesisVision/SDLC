@@ -18,7 +18,7 @@ export const DocumentFragmentRefSchema = z.object({
     .string()
     .optional()
     .describe(
-      "SHA-256 of the document sidecar JSON at ref-creation time. Used to detect stale references when fragments shift.",
+      "SHA-256 of the document JSON file at ref-creation time. Used to detect stale references when fragments shift.",
     ),
 });
 export type DocumentFragmentRef = z.infer<typeof DocumentFragmentRefSchema>;
