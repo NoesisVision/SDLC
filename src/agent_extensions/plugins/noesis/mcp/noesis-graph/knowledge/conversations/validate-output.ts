@@ -3,7 +3,7 @@ import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
 } from "../../../../shared-contracts/skills/analyze-conversation/output.js";
-import { isIrrelevant } from "../../../../shared-contracts/idea-unit-category.js";
+import { isIrrelevant } from "./idea-unit-relevance.js";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
 
 export const FIRST_LEVEL_BREADTH_THRESHOLD = 10;

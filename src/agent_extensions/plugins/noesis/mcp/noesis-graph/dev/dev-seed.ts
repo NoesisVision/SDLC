@@ -1,30 +1,34 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { Logger } from "@nestjs/common";
 import type {
-  DesignDocFileNew,
-  DesignedActorNew,
-  DesignedBehaviourNew,
-  DesignedBoundedContextNew,
-  DesignedBuildingBlockNew,
-  DesignedDomainModuleNew,
-  DesignedPropertyNew,
-  DesignedQualityAttributeNew,
-  DesignedRuleNew,
-  DesignedScenarioNew,
+  DesignDocFile,
+  DesignedActor,
+  DesignedBehaviour,
+  DesignedBoundedContext,
+  DesignedBuildingBlock,
+  DesignedDomainModule,
+  DesignedProperty,
+  DesignedQualityAttribute,
+  DesignedRule,
+  DesignedScenario,
   StringChangeSet,
-} from "../../../shared-contracts/design-doc-new.js";
+} from "../../../shared-contracts/design-doc.js";
 import {
   ConversationSchema,
   type Conversation,
 } from "../../../shared-contracts/conversation.js";
 import {
-  DecisionFileNewSchema,
-  DocumentFileNewSchema,
-  TopicFileNewSchema,
-  type DecisionFileNew,
-  type DocumentFileNew,
-  type TopicFileNew,
-} from "../../../shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+} from "../../../shared-contracts/decision.js";
+import {
+  DocumentFileSchema,
+  type DocumentFile,
+} from "../../../shared-contracts/document.js";
+import {
+  TopicFileSchema,
+  type TopicFile,
+} from "../../../shared-contracts/topic.js";
 import {
   conversationJsonPath,
   decisionJsonPath,
@@ -155,13 +159,13 @@ function seedConversations(): Conversation[] {
 
 // ---------- documents ----------
 
-function seedDocuments(): DocumentFileNew[] {
+function seedDocuments(): DocumentFile[] {
   const visionContent = [
     "Auth Vision\n",
     "Passwordless is the default; SSO is a follow-up.",
   ].join("\n");
   return [
-    DocumentFileNewSchema.parse({
+    DocumentFileSchema.parse({
       document_id: "doc-vision",
       title: "Auth vision",
       date: "2026-01-20",
@@ -196,7 +200,7 @@ function seedDocuments(): DocumentFileNew[] {
         },
       ],
     }),
-    DocumentFileNewSchema.parse({
+    DocumentFileSchema.parse({
       document_id: "doc-checkout-rfc",
       title: "Checkout RFC",
       date: "2026-02-15",
@@ -227,11 +231,11 @@ function seedDocuments(): DocumentFileNew[] {
 
 // ---------- topics ----------
 
-function seedTopics(): TopicFileNew[] {
+function seedTopics(): TopicFile[] {
   // parent_id = null: covered by "topic-auth" and "topic-checkout" (root topics).
   // parent_id != null: covered by "topic-auth-mobile" (child of "topic-auth").
   return [
-    TopicFileNewSchema.parse({
+    TopicFileSchema.parse({
       id: "topic-auth",
       parent_id: null,
       title: "Authentication",
@@ -273,7 +277,7 @@ function seedTopics(): TopicFileNew[] {
       reviewed: true,
       decisions_extracted: true,
     }),
-    TopicFileNewSchema.parse({
+    TopicFileSchema.parse({
       id: "topic-auth-mobile",
       parent_id: "topic-auth",
       title: "Mobile auth",
@@ -290,7 +294,7 @@ function seedTopics(): TopicFileNew[] {
       reviewed: true,
       decisions_extracted: false,
     }),
-    TopicFileNewSchema.parse({
+    TopicFileSchema.parse({
       id: "topic-checkout",
       parent_id: null,
       title: "Checkout",
@@ -317,9 +321,9 @@ function visionContentLength(): number {
 
 // ---------- decisions ----------
 
-function seedDecisions(): DecisionFileNew[] {
+function seedDecisions(): DecisionFile[] {
   return [
-    DecisionFileNewSchema.parse({
+    DecisionFileSchema.parse({
       id: "decision-oauth2",
       topic_id: "topic-auth",
       title: "Adopt OAuth2 with PKCE",
@@ -373,7 +377,7 @@ function seedDecisions(): DecisionFileNew[] {
       ],
     }),
     // Second decision exercises empty alternative_options + minimal supporting content.
-    DecisionFileNewSchema.parse({
+    DecisionFileSchema.parse({
       id: "decision-no-vendor-lock",
       topic_id: "topic-auth",
       title: "No vendor-lock for the IdP",
@@ -408,7 +412,7 @@ function seedDecisions(): DecisionFileNew[] {
 
 // ---------- design docs ----------
 
-function seedDesignDocs(): DesignDocFileNew[] {
+function seedDesignDocs(): DesignDocFile[] {
   return [greenfieldDesignDoc(), tierExpansionDesignDoc(), draftDesignDoc()];
 }
 
@@ -425,7 +429,7 @@ function seedDesignDocs(): DesignDocFileNew[] {
  *   - "Reporting"  — minimal: description null, modules/buildingBlocks/
  *                    qualityAttributes all omitted.
  */
-function greenfieldDesignDoc(): DesignDocFileNew {
+function greenfieldDesignDoc(): DesignDocFile {
   return {
     id: "ddoc-sales-platform",
     name: "Sales platform",
@@ -451,7 +455,7 @@ function greenfieldDesignDoc(): DesignDocFileNew {
  * on behaviours (input, output, usedBuildingBlocks). This is the fixture that
  * exercises modify and remove rendering paths in the UI.
  */
-function tierExpansionDesignDoc(): DesignDocFileNew {
+function tierExpansionDesignDoc(): DesignDocFile {
   return {
     id: "ddoc-sales-tier-expansion",
     name: "Sales platform: tier expansion",
@@ -471,8 +475,8 @@ function tierExpansionDesignDoc(): DesignDocFileNew {
   };
 }
 
-/** Covers DesignDocFileNew.boundedContexts being undefined. */
-function draftDesignDoc(): DesignDocFileNew {
+/** Covers DesignDocFile.boundedContexts being undefined. */
+function draftDesignDoc(): DesignDocFile {
   return {
     id: "ddoc-onboarding-draft",
     name: "Onboarding draft",
@@ -488,7 +492,7 @@ function draftDesignDoc(): DesignDocFileNew {
 // ----- tier-expansion building blocks (added/modified/removed at every level) -----
 
 /** New bounded context introduced by the v2 doc. */
-function catalogBoundedContext(): DesignedBoundedContextNew {
+function catalogBoundedContext(): DesignedBoundedContext {
   return {
     name: "Catalog",
     name_locked: false,
@@ -513,7 +517,7 @@ function catalogBoundedContext(): DesignedBoundedContextNew {
  * Modified shape of the existing "Sales" bounded context. Demonstrates each
  * inner change-set populating all three slots: added/modified/removed.
  */
-function salesBoundedContextDiff(): DesignedBoundedContextNew {
+function salesBoundedContextDiff(): DesignedBoundedContext {
   return {
     name: "Sales",
     name_locked: false,
@@ -535,7 +539,7 @@ function salesBoundedContextDiff(): DesignedBoundedContextNew {
 }
 
 /** Modified shape of the existing "Pricing" module. */
-function pricingModuleDiff(): DesignedDomainModuleNew {
+function pricingModuleDiff(): DesignedDomainModule {
   return {
     name: "Pricing",
     name_locked: false,
@@ -564,7 +568,7 @@ function pricingModuleDiff(): DesignedDomainModuleNew {
  * behaviours, rules, scenarios, qualityAttributes) populates all three slots,
  * and `implements` shows the array-update shape.
  */
-function priceCalculatorBuildingBlockDiff(): DesignedBuildingBlockNew {
+function priceCalculatorBuildingBlockDiff(): DesignedBuildingBlock {
   return {
     name: "PriceCalculator",
     name_locked: false,
@@ -721,7 +725,7 @@ function priceCalculatorBuildingBlockDiff(): DesignedBuildingBlockNew {
  * usedBuildingBlocks) populates all three slots, and rules / scenarios /
  * qualityAttributes do too.
  */
-function calculateBehaviourDiff(): DesignedBehaviourNew {
+function calculateBehaviourDiff(): DesignedBehaviour {
   return {
     name: "calculate",
     name_locked: false,
@@ -834,7 +838,7 @@ function calculateBehaviourDiff(): DesignedBehaviourNew {
   };
 }
 
-function actorRich(): DesignedActorNew {
+function actorRich(): DesignedActor {
   return {
     name: "Customer",
     name_locked: false,
@@ -843,8 +847,8 @@ function actorRich(): DesignedActorNew {
   };
 }
 
-/** Covers DesignedActorNew.description = null. */
-function actorMinimal(): DesignedActorNew {
+/** Covers DesignedActor.description = null. */
+function actorMinimal(): DesignedActor {
   return {
     name: "Operator",
     name_locked: false,
@@ -853,7 +857,7 @@ function actorMinimal(): DesignedActorNew {
   };
 }
 
-function salesBoundedContext(): DesignedBoundedContextNew {
+function salesBoundedContext(): DesignedBoundedContext {
   return {
     name: "Sales",
     name_locked: false,
@@ -881,7 +885,7 @@ function salesBoundedContext(): DesignedBoundedContextNew {
  * Covers: BoundedContext.description = null and
  * modules/buildingBlocks/qualityAttributes all omitted.
  */
-function reportingBoundedContext(): DesignedBoundedContextNew {
+function reportingBoundedContext(): DesignedBoundedContext {
   return {
     name: "Reporting",
     name_locked: false,
@@ -890,7 +894,7 @@ function reportingBoundedContext(): DesignedBoundedContextNew {
   };
 }
 
-function pricingModuleRich(): DesignedDomainModuleNew {
+function pricingModuleRich(): DesignedDomainModule {
   return {
     name: "Pricing",
     name_locked: false,
@@ -913,7 +917,7 @@ function pricingModuleRich(): DesignedDomainModuleNew {
  * Covers: DomainModule.description = null and
  * buildingBlocks/qualityAttributes both omitted.
  */
-function fulfilmentModuleMinimal(): DesignedDomainModuleNew {
+function fulfilmentModuleMinimal(): DesignedDomainModule {
   return {
     name: "Fulfilment",
     name_locked: false,
@@ -926,7 +930,7 @@ function fulfilmentModuleMinimal(): DesignedDomainModuleNew {
  * BC-level building block. Covers BuildingBlock.{type, description} = null and
  * implements/properties/behaviours/rules/scenarios/qualityAttributes all omitted.
  */
-function bcLevelBuildingBlock(): DesignedBuildingBlockNew {
+function bcLevelBuildingBlock(): DesignedBuildingBlock {
   return {
     name: "OrderId",
     name_locked: false,
@@ -937,7 +941,7 @@ function bcLevelBuildingBlock(): DesignedBuildingBlockNew {
   };
 }
 
-function priceCalculatorBuildingBlock(): DesignedBuildingBlockNew {
+function priceCalculatorBuildingBlock(): DesignedBuildingBlock {
   return {
     name: "PriceCalculator",
     name_locked: false,
@@ -979,7 +983,7 @@ function priceCalculatorBuildingBlock(): DesignedBuildingBlockNew {
  * (implements, properties, behaviours, rules, scenarios, qualityAttributes)
  * intentionally omitted.
  */
-function valueObjectBuildingBlock(): DesignedBuildingBlockNew {
+function valueObjectBuildingBlock(): DesignedBuildingBlock {
   return {
     name: "Money",
     name_locked: false,
@@ -990,7 +994,7 @@ function valueObjectBuildingBlock(): DesignedBuildingBlockNew {
   };
 }
 
-function propertyRich(): DesignedPropertyNew {
+function propertyRich(): DesignedProperty {
   return {
     name: "rules",
     name_locked: false,
@@ -1007,7 +1011,7 @@ function propertyRich(): DesignedPropertyNew {
  * Covers Property.{type, description} = null and nullable/collection both
  * omitted (so consumers must treat them as undefined, not false).
  */
-function propertyMinimal(): DesignedPropertyNew {
+function propertyMinimal(): DesignedProperty {
   return {
     name: "lastBackfilledAt",
     name_locked: false,
@@ -1018,7 +1022,7 @@ function propertyMinimal(): DesignedPropertyNew {
   };
 }
 
-function behaviourRich(): DesignedBehaviourNew {
+function behaviourRich(): DesignedBehaviour {
   return {
     name: "calculate",
     name_locked: false,
@@ -1050,7 +1054,7 @@ function behaviourRich(): DesignedBehaviourNew {
  * optional collection (input, output, usedBuildingBlocks, rules, scenarios,
  * qualityAttributes) omitted.
  */
-function behaviourMinimal(): DesignedBehaviourNew {
+function behaviourMinimal(): DesignedBehaviour {
   return {
     name: "warmCache",
     name_locked: false,
@@ -1064,7 +1068,7 @@ function behaviourMinimal(): DesignedBehaviourNew {
   };
 }
 
-function ruleRich(): DesignedRuleNew {
+function ruleRich(): DesignedRule {
   return {
     name: "priorities-are-unique",
     name_locked: false,
@@ -1075,7 +1079,7 @@ function ruleRich(): DesignedRuleNew {
 }
 
 /** Covers Rule.{ruleType, description} = null. */
-function ruleMinimal(): DesignedRuleNew {
+function ruleMinimal(): DesignedRule {
   return {
     name: "tbd-rule",
     name_locked: false,
@@ -1085,7 +1089,7 @@ function ruleMinimal(): DesignedRuleNew {
   };
 }
 
-function scenarioRich(): DesignedScenarioNew {
+function scenarioRich(): DesignedScenario {
   return {
     name: "applies the highest-priority discount first",
     name_locked: false,
@@ -1101,7 +1105,7 @@ function scenarioRich(): DesignedScenarioNew {
   };
 }
 
-function qualityAttributeRich(): DesignedQualityAttributeNew {
+function qualityAttributeRich(): DesignedQualityAttribute {
   return {
     name: "p99-under-100ms",
     name_locked: false,
@@ -1113,7 +1117,7 @@ function qualityAttributeRich(): DesignedQualityAttributeNew {
 }
 
 /** Covers QualityAttribute.{type, description} = null. */
-function qualityAttributeMinimal(): DesignedQualityAttributeNew {
+function qualityAttributeMinimal(): DesignedQualityAttribute {
   return {
     name: "tbd-quality",
     name_locked: false,
@@ -1134,19 +1138,19 @@ function writeConversation(projectDir: string, file: Conversation): void {
   writeJson(jsonPath, file);
 }
 
-function writeDocument(projectDir: string, file: DocumentFileNew): void {
+function writeDocument(projectDir: string, file: DocumentFile): void {
   writeJson(documentJsonPath(projectDir, file.document_id, file.title), file);
 }
 
-function writeTopic(projectDir: string, file: TopicFileNew): void {
+function writeTopic(projectDir: string, file: TopicFile): void {
   writeJson(topicJsonPath(projectDir, file.id, file.title), file);
 }
 
-function writeDecision(projectDir: string, file: DecisionFileNew): void {
+function writeDecision(projectDir: string, file: DecisionFile): void {
   writeJson(decisionJsonPath(projectDir, file.id, file.title), file);
 }
 
-function writeDesignDoc(projectDir: string, file: DesignDocFileNew): void {
+function writeDesignDoc(projectDir: string, file: DesignDocFile): void {
   writeJson(designDocCanonicalPath(projectDir, file.id, file.name), file);
 }
 

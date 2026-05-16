@@ -2,9 +2,9 @@ import { Injectable } from "@nestjs/common";
 import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
 import {
-  DocumentFileNewSchema,
-  type DocumentFileNew,
-} from "../../../../shared-contracts/source-file-schemas.js";
+  DocumentFileSchema,
+  type DocumentFile,
+} from "../../../../shared-contracts/document.js";
 import {
   computeFileSha,
   documentJsonPath,
@@ -139,11 +139,11 @@ export class DocumentsRepository {
     return StoredDocumentRowSchema.parse(rows[0]);
   }
 
-  readFile(absPath: string): DocumentFileNew {
-    return readSourceFile(absPath, DocumentFileNewSchema);
+  readFile(absPath: string): DocumentFile {
+    return readSourceFile(absPath, DocumentFileSchema);
   }
 
-  async upsert(file: DocumentFileNew, sha: string): Promise<void> {
+  async upsert(file: DocumentFile, sha: string): Promise<void> {
     await this.db.query(
       "MERGE (d:Document {id: $id}) SET " +
         "d.sha = $sha, d.title = $title, d.date = $date, d.content = $content",
@@ -158,13 +158,13 @@ export class DocumentsRepository {
     await this.replaceFragments(file.document_id, file.fragments);
   }
 
-  writeFile(absPath: string, file: DocumentFileNew): void {
-    writeSourceFile(absPath, file, DocumentFileNewSchema);
+  writeFile(absPath: string, file: DocumentFile): void {
+    writeSourceFile(absPath, file, DocumentFileSchema);
   }
 
   private async replaceFragments(
     documentId: string,
-    fragments: DocumentFileNew["fragments"],
+    fragments: DocumentFile["fragments"],
   ): Promise<void> {
     await this.deleteFragments(documentId);
     for (const frag of fragments) {

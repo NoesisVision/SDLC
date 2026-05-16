@@ -63,10 +63,10 @@ Another paragraph.
     }
 
     const output = JSON.parse(readFileSync(result.output_path, "utf-8"));
-    expect(output.document.id).toBe(result.document_id);
+    expect(output.document.document_id).toBe(result.document_id);
     expect(output.document.title).toBe("Spec");
     expect(output.document.content).toBe(sourceContent);
-    expect(output.fragments.length).toBe(result.num_fragments);
+    expect(output.document.fragments.length).toBe(result.num_fragments);
     expect(output.topics).toEqual([]);
     expect(output.design_doc_title).toBe("auth-system");
   });

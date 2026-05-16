@@ -16,9 +16,9 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  DesignDocFileNewSchema,
-  type DesignDocFileNew,
-} from "@noesis/shared-contracts/design-doc-new.js";
+  DesignDocFileSchema,
+  type DesignDocFile,
+} from "@noesis/shared-contracts/design-doc.js";
 import { designDocCanonicalPath } from "@noesis/shared-contracts/source-files.js";
 
 describe("DesignDocsService — graph projection of the on-disk sidecar", () => {
@@ -360,8 +360,8 @@ describe("DesignDocsService — graph projection of the on-disk sidecar", () => 
   });
 });
 
-function buildDesignDoc(overrides: Partial<DesignDocFileNew>): DesignDocFileNew {
-  return DesignDocFileNewSchema.parse({
+function buildDesignDoc(overrides: Partial<DesignDocFile>): DesignDocFile {
+  return DesignDocFileSchema.parse({
     id: "dd-default",
     name: "Doc",
     name_locked: false,
@@ -383,8 +383,8 @@ function bc(name: string, description: string) {
   };
 }
 
-function deeplyNestedDoc(id: string): DesignDocFileNew {
-  return DesignDocFileNewSchema.parse({
+function deeplyNestedDoc(id: string): DesignDocFile {
+  return DesignDocFileSchema.parse({
     id,
     name: "Nested",
     name_locked: false,
@@ -586,7 +586,7 @@ function deeplyNestedDoc(id: string): DesignDocFileNew {
 
 async function indexDesignDoc(
   ctx: KnowledgeNewTestContext,
-  file: DesignDocFileNew,
+  file: DesignDocFile,
 ): Promise<void> {
   const path = designDocCanonicalPath(ctx.projectDir, file.id, file.name);
   mkdirSync(join(ctx.projectDir, "noesis", "design-docs"), { recursive: true });

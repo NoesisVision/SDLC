@@ -29,12 +29,12 @@ export function checkDecisionCoverage(
 ): CheckResult {
   const stats = collectSectionStats(output);
   const warnings = stats.filter(isUnderCovered);
-  const decisionTotal = output.fragments.filter(hasDecision).length;
+  const decisionTotal = output.document.fragments.filter(hasDecision).length;
   return {
     status: warnings.length === 0 ? "Ok" : "Warning",
     warnings,
-    document_id: output.document.id,
-    fragments_total: output.fragments.length,
+    document_id: output.document.document_id,
+    fragments_total: output.document.fragments.length,
     fragments_with_decision: decisionTotal,
   };
 }
@@ -65,7 +65,7 @@ export function formatCheckResult(result: CheckResult): string {
 
 function collectSectionStats(output: AnalyzeDesignDraftOutput): SectionStat[] {
   const buckets = new Map<string, { total: number; decisions: number }>();
-  for (const f of output.fragments) {
+  for (const f of output.document.fragments) {
     const candidate = pickRelevantSection(f.section_path);
     if (candidate === null) continue;
     const slot = buckets.get(candidate) ?? { total: 0, decisions: 0 };

@@ -16,10 +16,8 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import { ConversationSchema } from "@noesis/shared-contracts/conversation.js";
-import {
-  DecisionFileNewSchema,
-  TopicFileNewSchema,
-} from "@noesis/shared-contracts/source-file-schemas.js";
+import { DecisionFileSchema } from "@noesis/shared-contracts/decision.js";
+import { TopicFileSchema } from "@noesis/shared-contracts/topic.js";
 import { LockedFieldsBlockedError } from "@noesis/mcp/noesis-graph/knowledge/conversations/conversations.service.js";
 import {
   conversationJsonPath,
@@ -610,7 +608,7 @@ function seedTopicFile(
   ctx: KnowledgeNewTestContext,
   overrides: Record<string, unknown>,
 ): void {
-  const file = TopicFileNewSchema.parse({
+  const file = TopicFileSchema.parse({
     id: "topic-1",
     title: "JWT decision",
     short_summary: "Authentication choice.",
@@ -630,7 +628,7 @@ function seedDecisionFile(
   ctx: KnowledgeNewTestContext,
   overrides: Record<string, unknown>,
 ): void {
-  const file = DecisionFileNewSchema.parse({
+  const file = DecisionFileSchema.parse({
     id: "decision-1",
     topic_id: "topic-1",
     title: "Adopt JWT",
@@ -656,7 +654,7 @@ function seedDecisionFile(
 function readTopic(ctx: KnowledgeNewTestContext, id: string) {
   const path = findTopicJsonById(ctx.projectDir, id);
   if (path === null) throw new Error(`Topic not found on disk: ${id}`);
-  return TopicFileNewSchema.parse(
+  return TopicFileSchema.parse(
     JSON.parse(readFileSync(path, "utf-8")),
   );
 }
@@ -664,7 +662,7 @@ function readTopic(ctx: KnowledgeNewTestContext, id: string) {
 function readDecision(ctx: KnowledgeNewTestContext, id: string) {
   const path = findDecisionJsonById(ctx.projectDir, id);
   if (path === null) throw new Error(`Decision not found on disk: ${id}`);
-  return DecisionFileNewSchema.parse(
+  return DecisionFileSchema.parse(
     JSON.parse(readFileSync(path, "utf-8")),
   );
 }

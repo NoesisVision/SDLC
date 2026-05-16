@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { and, given, then, when } from "@tests/bdd.js";
 import {
-  DesignDocFileNewSchema,
-  type DesignDocFileNew,
-  type DesignedBehaviourNew,
-  type DesignedBoundedContextNew,
-  type DesignedBuildingBlockNew,
-  type DesignedScenarioNew,
-} from "@noesis/shared-contracts/design-doc-new.js";
+  DesignDocFileSchema,
+  type DesignDocFile,
+  type DesignedBehaviour,
+  type DesignedBoundedContext,
+  type DesignedBuildingBlock,
+  type DesignedScenario,
+} from "@noesis/shared-contracts/design-doc.js";
 import { mergeDesignDocFiles } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.merge.js";
 
 describe("mergeDesignDocFiles — delta upload semantics for design docs", () => {
   test("adding a new scenario to an existing behaviour preserves the original scenarios", () => {
-    let merged: DesignDocFileNew;
+    let merged: DesignDocFile;
 
     const existing = designDoc({
       boundedContexts: {
@@ -101,7 +101,7 @@ describe("mergeDesignDocFiles — delta upload semantics for design docs", () =>
   });
 
   test("modifying a scalar field on an existing item replaces only that field", () => {
-    let merged: DesignDocFileNew;
+    let merged: DesignDocFile;
 
     const existing = designDoc({
       boundedContexts: {
@@ -128,7 +128,7 @@ describe("mergeDesignDocFiles — delta upload semantics for design docs", () =>
   });
 
   test("an item appearing in incoming.modified moves out of existing.added", () => {
-    let merged: DesignDocFileNew;
+    let merged: DesignDocFile;
 
     const existing = designDoc({
       boundedContexts: {
@@ -156,7 +156,7 @@ describe("mergeDesignDocFiles — delta upload semantics for design docs", () =>
   });
 
   test("an item named in incoming.removed is dropped from existing.added", () => {
-    let merged: DesignDocFileNew;
+    let merged: DesignDocFile;
 
     const existing = designDoc({
       boundedContexts: {
@@ -189,7 +189,7 @@ describe("mergeDesignDocFiles — delta upload semantics for design docs", () =>
   });
 
   test("incoming behaviour input/output deltas extend the existing string change sets", () => {
-    let merged: DesignDocFileNew;
+    let merged: DesignDocFile;
 
     const existing = designDoc({
       boundedContexts: {
@@ -276,8 +276,8 @@ describe("mergeDesignDocFiles — delta upload semantics for design docs", () =>
   });
 });
 
-function designDoc(overrides: Partial<DesignDocFileNew> = {}): DesignDocFileNew {
-  return DesignDocFileNewSchema.parse({
+function designDoc(overrides: Partial<DesignDocFile> = {}): DesignDocFile {
+  return DesignDocFileSchema.parse({
     id: "01928000-0000-7000-8000-000000000001",
     name: "billing",
     description: "Billing context.",
@@ -289,10 +289,9 @@ function designDoc(overrides: Partial<DesignDocFileNew> = {}): DesignDocFileNew 
 }
 
 function boundedContext(
-  overrides: Partial<DesignedBoundedContextNew> & { name: string },
-): DesignedBoundedContextNew {
+  overrides: Partial<DesignedBoundedContext> & { name: string },
+): DesignedBoundedContext {
   return {
-    name: overrides.name,
     name_locked: false,
     description: null,
     description_locked: false,
@@ -301,10 +300,9 @@ function boundedContext(
 }
 
 function buildingBlock(
-  overrides: Partial<DesignedBuildingBlockNew> & { name: string },
-): DesignedBuildingBlockNew {
+  overrides: Partial<DesignedBuildingBlock> & { name: string },
+): DesignedBuildingBlock {
   return {
-    name: overrides.name,
     name_locked: false,
     type: null,
     type_locked: false,
@@ -315,10 +313,9 @@ function buildingBlock(
 }
 
 function behaviour(
-  overrides: Partial<DesignedBehaviourNew> & { name: string },
-): DesignedBehaviourNew {
+  overrides: Partial<DesignedBehaviour> & { name: string },
+): DesignedBehaviour {
   return {
-    name: overrides.name,
     name_locked: false,
     description: null,
     description_locked: false,
@@ -332,10 +329,9 @@ function behaviour(
 }
 
 function scenario(
-  overrides: Partial<DesignedScenarioNew> & { name: string },
-): DesignedScenarioNew {
+  overrides: Partial<DesignedScenario> & { name: string },
+): DesignedScenario {
   return {
-    name: overrides.name,
     name_locked: false,
     description: "",
     description_locked: false,

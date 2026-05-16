@@ -16,13 +16,17 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  DecisionFileNewSchema,
-  DocumentFileNewSchema,
-  TopicFileNewSchema,
-  type DecisionFileNew,
-  type DocumentFileNew,
-  type TopicFileNew,
-} from "@noesis/shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+} from "@noesis/shared-contracts/decision.js";
+import {
+  DocumentFileSchema,
+  type DocumentFile,
+} from "@noesis/shared-contracts/document.js";
+import {
+  TopicFileSchema,
+  type TopicFile,
+} from "@noesis/shared-contracts/topic.js";
 import {
   decisionJsonPath,
   documentJsonPath,
@@ -285,8 +289,8 @@ describe("DocumentsService — page, detail, review prep", () => {
   });
 });
 
-function topicFile(overrides: Partial<TopicFileNew> = {}): TopicFileNew {
-  return TopicFileNewSchema.parse({
+function topicFile(overrides: Partial<TopicFile> = {}): TopicFile {
+  return TopicFileSchema.parse({
     id: "topic-1",
     parent_id: null,
     title: "Topic",
@@ -300,8 +304,8 @@ function topicFile(overrides: Partial<TopicFileNew> = {}): TopicFileNew {
   });
 }
 
-function documentFile(overrides: Partial<DocumentFileNew> = {}): DocumentFileNew {
-  return DocumentFileNewSchema.parse({
+function documentFile(overrides: Partial<DocumentFile> = {}): DocumentFile {
+  return DocumentFileSchema.parse({
     document_id: "doc-1",
     title: "Vision",
     date: "2026-01-02",
@@ -314,8 +318,8 @@ function documentFile(overrides: Partial<DocumentFileNew> = {}): DocumentFileNew
   });
 }
 
-function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew {
-  return DecisionFileNewSchema.parse({
+function decisionFile(overrides: Partial<DecisionFile> = {}): DecisionFile {
+  return DecisionFileSchema.parse({
     id: "d-1",
     topic_id: "topic-1",
     title: "A decision",
@@ -338,7 +342,7 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
 
 async function indexTopic(
   ctx: KnowledgeNewTestContext,
-  file: TopicFileNew,
+  file: TopicFile,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "topics"), { recursive: true });
   const path = topicJsonPath(ctx.projectDir, file.id, file.title);
@@ -348,7 +352,7 @@ async function indexTopic(
 
 async function indexDocument(
   ctx: KnowledgeNewTestContext,
-  file: DocumentFileNew,
+  file: DocumentFile,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "documents"), { recursive: true });
   const path = documentJsonPath(ctx.projectDir, file.document_id, file.title);
@@ -358,7 +362,7 @@ async function indexDocument(
 
 async function indexDecision(
   ctx: KnowledgeNewTestContext,
-  file: DecisionFileNew,
+  file: DecisionFile,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "decisions"), { recursive: true });
   const path = decisionJsonPath(ctx.projectDir, file.id, file.title);
@@ -380,23 +384,23 @@ interface DraftOpts {
 function designDraftOutput(opts: DraftOpts): unknown {
   return {
     document: {
-      id: opts.documentId,
+      document_id: opts.documentId,
       title: "Draft",
       date: "2026-01-02",
       content: "fragment-zero fragment-one",
+      fragments: [
+        {
+          index: 0,
+          start_offset: 0,
+          end_offset: 13,
+          section_path: [],
+          kind: "paragraph",
+          text: "fragment-zero",
+          categories: ["Information"],
+        },
+      ],
+      section_tree: [],
     },
-    fragments: [
-      {
-        index: 0,
-        start_offset: 0,
-        end_offset: 13,
-        section_path: [],
-        kind: "paragraph",
-        text: "fragment-zero",
-        categories: ["Information"],
-      },
-    ],
-    section_tree: [],
     topics: opts.topics.map((t) => ({
       id: t.id,
       parent_id: null,

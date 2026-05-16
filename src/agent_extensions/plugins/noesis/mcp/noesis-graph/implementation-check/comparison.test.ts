@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { compareImplementation } from "./comparison.js";
-import type { DesignDoc } from "../../../shared-contracts/design-doc.js";
+import type { DesignDocFile } from "../../../shared-contracts/design-doc.js";
 import type {
   BuildingBlockBranch,
   DomainModelTree,
@@ -51,13 +51,13 @@ interface TreeSpec {
   }>;
 }
 
-function emptyDoc(overrides: Partial<DesignDoc> = {}): DesignDoc {
+function emptyDoc(overrides: Partial<DesignDocFile> = {}): DesignDocFile {
   return {
     id: "doc-1",
     name: "test",
     description: "test",
     ...overrides,
-  } as DesignDoc;
+  } as DesignDocFile;
 }
 
 describe("compareImplementation", () => {

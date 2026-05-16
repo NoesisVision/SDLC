@@ -22,9 +22,9 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  TopicFileNewSchema,
-  type TopicFileNew,
-} from "@noesis/shared-contracts/source-file-schemas.js";
+  TopicFileSchema,
+  type TopicFile,
+} from "@noesis/shared-contracts/topic.js";
 import {
   findTopicJsonById,
   topicJsonPath,
@@ -130,7 +130,7 @@ describe("TopicsService — indexing, editing with locks, staleness, deletion", 
     await and("the new title is written to disk, its lock is set, and untouched fields keep their previous lock state", () => {
       const current = findTopicJsonById(ctx.projectDir, "topic-1");
       expect(current).not.toBeNull();
-      const file = TopicFileNewSchema.parse(
+      const file = TopicFileSchema.parse(
         JSON.parse(readFileSync(current!, "utf-8")),
       );
       expect(file.title).toBe("Authentication");
@@ -202,7 +202,7 @@ describe("TopicsService — indexing, editing with locks, staleness, deletion", 
       expect(thrown?.message).toContain("locked");
     });
     await and("the on-disk title is unchanged", () => {
-      const file = TopicFileNewSchema.parse(
+      const file = TopicFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.title).toBe("Auth");
@@ -234,7 +234,7 @@ describe("TopicsService — indexing, editing with locks, staleness, deletion", 
       expect(result?.updated).toEqual(["long_summary"]);
     });
     await and("the file's long summary carries the replacement value", () => {
-      const file = TopicFileNewSchema.parse(
+      const file = TopicFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.long_summary).toBe("Replacement text");
@@ -275,7 +275,7 @@ describe("TopicsService — indexing, editing with locks, staleness, deletion", 
     await and("both the DB row and the source file record the topic as stale", async () => {
       const stored = await ctx.topicsRepository.read("topic-1");
       expect(stored?.is_stale).toBe(true);
-      const file = TopicFileNewSchema.parse(
+      const file = TopicFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.is_stale).toBe(true);
@@ -313,7 +313,7 @@ describe("TopicsService — indexing, editing with locks, staleness, deletion", 
     await then("the topic is no longer stale in DB or on disk", async () => {
       const stored = await ctx.topicsRepository.read("topic-1");
       expect(stored?.is_stale).toBe(false);
-      const file = TopicFileNewSchema.parse(
+      const file = TopicFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.is_stale).toBe(false);
@@ -363,8 +363,8 @@ describe("TopicsService — indexing, editing with locks, staleness, deletion", 
   });
 });
 
-function topicFile(overrides: Partial<TopicFileNew> = {}): TopicFileNew {
-  return TopicFileNewSchema.parse({
+function topicFile(overrides: Partial<TopicFile> = {}): TopicFile {
+  return TopicFileSchema.parse({
     id: "topic-1",
     parent_id: null,
     title: "Auth",
@@ -378,7 +378,7 @@ function topicFile(overrides: Partial<TopicFileNew> = {}): TopicFileNew {
   });
 }
 
-function writeTopicFile(projectDir: string, file: TopicFileNew): string {
+function writeTopicFile(projectDir: string, file: TopicFile): string {
   mkdirSync(join(projectDir, "noesis", "topics"), { recursive: true });
   const path = topicJsonPath(projectDir, file.id, file.title);
   writeFileSync(path, JSON.stringify(file, null, 2));

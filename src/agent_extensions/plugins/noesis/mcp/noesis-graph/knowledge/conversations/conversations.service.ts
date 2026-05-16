@@ -6,19 +6,17 @@ import {
   type IdeaUnitRef,
   type Turn,
 } from "../../../../shared-contracts/conversation.js";
-import {
-  isIrrelevant,
-  type IdeaUnitCategory,
-} from "../../../../shared-contracts/idea-unit-category.js";
+import type { IdeaUnitCategory } from "../../../../shared-contracts/idea-unit-category.js";
+import { isIrrelevant } from "./idea-unit-relevance.js";
 import {
   AnalyzeConversationOutputSchema,
   type AnalyzeConversationOutput,
 } from "../../../../shared-contracts/skills/analyze-conversation/output.js";
+import { type DecisionFile } from "../../../../shared-contracts/decision.js";
 import {
-  TopicFileNewSchema,
-  type DecisionFileNew,
-  type TopicFileNew,
-} from "../../../../shared-contracts/source-file-schemas.js";
+  TopicFileSchema,
+  type TopicFile,
+} from "../../../../shared-contracts/topic.js";
 import { type SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import {
   computeContentSha,
@@ -395,7 +393,7 @@ export class ConversationsService {
       existingPath === null ? null : readTopicIfExists(existingPath);
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveTopicLockedFields(existing, topic, confirmed, cleared);
-    const next: TopicFileNew = {
+    const next: TopicFile = {
       id: topic.id,
       parent_id: parentId,
       title: resolved.title,
@@ -437,7 +435,7 @@ export class ConversationsService {
         : null;
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveDecisionLockedFields(existing, decision, confirmed, cleared);
-    const next: DecisionFileNew = {
+    const next: DecisionFile = {
       id: decision.id,
       topic_id: topicId,
       title: resolved.title,
@@ -650,10 +648,10 @@ function itemKey(item: SourceContentRef): string {
   return `doc:${item.document_id}:${item.start_offset}:${item.end_offset}`;
 }
 
-function readTopicIfExists(absPath: string): TopicFileNew | null {
+function readTopicIfExists(absPath: string): TopicFile | null {
   if (!existsSync(absPath)) return null;
   try {
-    return TopicFileNewSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
+    return TopicFileSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
   } catch {
     return null;
   }
@@ -671,7 +669,7 @@ function fileReferencesConversation(
   return false;
 }
 
-function collectDecisionRefs(file: DecisionFileNew): SourceContentRef[] {
+function collectDecisionRefs(file: DecisionFile): SourceContentRef[] {
   return [
     ...file.context.supporting_content,
     ...file.decision.supporting_content,

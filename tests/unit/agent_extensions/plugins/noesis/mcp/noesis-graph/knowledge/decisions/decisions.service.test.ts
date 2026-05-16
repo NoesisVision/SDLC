@@ -24,9 +24,9 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  DecisionFileNewSchema,
-  type DecisionFileNew,
-} from "@noesis/shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+} from "@noesis/shared-contracts/decision.js";
 import {
   decisionJsonPath,
   findDecisionJsonById,
@@ -129,7 +129,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
     await and("the new title is written to disk and its lock is now set", () => {
       const current = findDecisionJsonById(ctx.projectDir, "decision-1");
       expect(current).not.toBeNull();
-      const file = DecisionFileNewSchema.parse(
+      const file = DecisionFileSchema.parse(
         JSON.parse(readFileSync(current!, "utf-8")),
       );
       expect(file.title).toBe("Adopt JWT for stateless sessions");
@@ -169,7 +169,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
       expect(thrown?.message).toContain("locked");
     });
     await and("the on-disk context text is unchanged", () => {
-      const file = DecisionFileNewSchema.parse(
+      const file = DecisionFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.context.text).toBe("Locked context");
@@ -206,7 +206,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
       expect(result?.updated).toEqual(["decision.rationale"]);
     });
     await and("the file's rationale carries the replacement value", () => {
-      const file = DecisionFileNewSchema.parse(
+      const file = DecisionFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.decision.rationale).toBe("Updated rationale");
@@ -277,7 +277,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
       expect(result?.updated).toEqual(["alternative_options[1].text"]);
     });
     await and("the first alternative is left untouched on disk and the edited alternative's text lock is now set", () => {
-      const file = DecisionFileNewSchema.parse(
+      const file = DecisionFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.alternative_options[0].text).toBe("Server sessions");
@@ -320,7 +320,9 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
         decisionFile({
           decision: {
             text: "Use JWT tokens.",
+            text_locked: false,
             rationale: "Avoid server-side session storage.",
+            rationale_locked: false,
             supporting_content: [
               {
                 type: "document_fragment_ref",
@@ -347,7 +349,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
     await and("both the DB row and the source file record the decision as stale", async () => {
       const stored = await ctx.decisionsRepository.read("decision-1");
       expect(stored?.is_stale).toBe(true);
-      const file = DecisionFileNewSchema.parse(
+      const file = DecisionFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.is_stale).toBe(true);
@@ -364,7 +366,9 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
           is_stale: true,
           decision: {
             text: "Use JWT tokens.",
+            text_locked: false,
             rationale: "Avoid server-side session storage.",
+            rationale_locked: false,
             supporting_content: [
               {
                 type: "document_fragment_ref",
@@ -388,7 +392,7 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
     await then("the decision is no longer stale in DB or on disk", async () => {
       const stored = await ctx.decisionsRepository.read("decision-1");
       expect(stored?.is_stale).toBe(false);
-      const file = DecisionFileNewSchema.parse(
+      const file = DecisionFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.is_stale).toBe(false);
@@ -432,8 +436,8 @@ describe("DecisionsService — indexing, editing with locks, referenced items, s
   });
 });
 
-function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew {
-  return DecisionFileNewSchema.parse({
+function decisionFile(overrides: Partial<DecisionFile> = {}): DecisionFile {
+  return DecisionFileSchema.parse({
     id: "decision-1",
     topic_id: "topic-1",
     title: "Use JWTs for sessions",
@@ -459,7 +463,7 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
   });
 }
 
-function writeDecisionOnDisk(projectDir: string, file: DecisionFileNew): string {
+function writeDecisionOnDisk(projectDir: string, file: DecisionFile): string {
   mkdirSync(join(projectDir, "noesis", "decisions"), { recursive: true });
   const previous = findDecisionJsonById(projectDir, file.id);
   if (previous !== null && existsSync(previous)) unlinkSync(previous);

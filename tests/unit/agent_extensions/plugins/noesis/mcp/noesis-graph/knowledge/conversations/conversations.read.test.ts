@@ -20,11 +20,13 @@ import {
   type Conversation,
 } from "@noesis/shared-contracts/conversation.js";
 import {
-  DecisionFileNewSchema,
-  TopicFileNewSchema,
-  type DecisionFileNew,
-  type TopicFileNew,
-} from "@noesis/shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+} from "@noesis/shared-contracts/decision.js";
+import {
+  TopicFileSchema,
+  type TopicFile,
+} from "@noesis/shared-contracts/topic.js";
 import {
   conversationJsonPath,
   decisionJsonPath,
@@ -280,8 +282,8 @@ describe("ConversationsService — page, detail, validate, prepareReviewBundle",
   });
 });
 
-function topicFile(overrides: Partial<TopicFileNew> = {}): TopicFileNew {
-  return TopicFileNewSchema.parse({
+function topicFile(overrides: Partial<TopicFile> = {}): TopicFile {
+  return TopicFileSchema.parse({
     id: "topic-1",
     parent_id: null,
     title: "Topic",
@@ -316,8 +318,8 @@ function conversationFile(
   });
 }
 
-function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew {
-  return DecisionFileNewSchema.parse({
+function decisionFile(overrides: Partial<DecisionFile> = {}): DecisionFile {
+  return DecisionFileSchema.parse({
     id: "d-1",
     topic_id: "topic-1",
     title: "A decision",
@@ -340,7 +342,7 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
 
 async function indexTopic(
   ctx: KnowledgeNewTestContext,
-  file: TopicFileNew,
+  file: TopicFile,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "topics"), { recursive: true });
   const path = topicJsonPath(ctx.projectDir, file.id, file.title);
@@ -364,7 +366,7 @@ async function indexConversation(
 
 async function indexDecision(
   ctx: KnowledgeNewTestContext,
-  file: DecisionFileNew,
+  file: DecisionFile,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "decisions"), { recursive: true });
   const path = decisionJsonPath(ctx.projectDir, file.id, file.title);

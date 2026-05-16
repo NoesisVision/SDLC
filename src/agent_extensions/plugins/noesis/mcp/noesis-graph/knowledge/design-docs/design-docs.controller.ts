@@ -17,7 +17,7 @@ import {
   type ElementPathSegment,
   type ElementUpdateFields,
 } from "./design-docs.service.js";
-import type { DesignedActorNew } from "../../../../shared-contracts/design-doc-new.js";
+import type { DesignedActor } from "../../../../shared-contracts/design-doc.js";
 
 interface DesignDocElementUpdateBody {
   path: ElementPathSegment[];
@@ -72,7 +72,7 @@ export class DesignDocsController {
   }
 
   @Get("actors")
-  async listActors(): Promise<{ actors: DesignedActorNew[] }> {
+  async listActors(): Promise<{ actors: DesignedActor[] }> {
     const actors = await this.service.listActors();
     return {
       actors: actors.map((a) => ({

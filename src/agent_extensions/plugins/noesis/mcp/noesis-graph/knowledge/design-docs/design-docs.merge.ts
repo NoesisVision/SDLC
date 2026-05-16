@@ -1,12 +1,12 @@
 import type {
-  DesignDocFileNew,
-  DesignedActorNew,
-  DesignedBehaviourNew,
-  DesignedBoundedContextNew,
-  DesignedBuildingBlockNew,
-  DesignedDomainModuleNew,
+  DesignDocFile,
+  DesignedActor,
+  DesignedBehaviour,
+  DesignedBoundedContext,
+  DesignedBuildingBlock,
+  DesignedDomainModule,
   StringChangeSet,
-} from "../../../../shared-contracts/design-doc-new.js";
+} from "../../../../shared-contracts/design-doc.js";
 
 // A design doc on disk represents the cumulative diff from the implemented codebase.
 // `save_design_doc` uploads a *delta* against the canonical file: items the agent
@@ -23,9 +23,9 @@ interface NamedChangeSet<T extends { name: string }> {
 type Slot = "added" | "modified" | "removed";
 
 export function mergeDesignDocFiles(
-  existing: DesignDocFileNew | null,
-  incoming: DesignDocFileNew,
-): DesignDocFileNew {
+  existing: DesignDocFile | null,
+  incoming: DesignDocFile,
+): DesignDocFile {
   if (existing === null) return incoming;
   return {
     ...incoming,
@@ -39,19 +39,19 @@ export function mergeDesignDocFiles(
 }
 
 function mergeActors(
-  existing: DesignedActorNew[],
-  incoming: DesignedActorNew[],
-): DesignedActorNew[] {
-  const byName = new Map<string, DesignedActorNew>();
+  existing: DesignedActor[],
+  incoming: DesignedActor[],
+): DesignedActor[] {
+  const byName = new Map<string, DesignedActor>();
   for (const a of existing) byName.set(a.name, a);
   for (const a of incoming) byName.set(a.name, a);
   return Array.from(byName.values());
 }
 
 function mergeBoundedContext(
-  existing: DesignedBoundedContextNew,
-  incoming: DesignedBoundedContextNew,
-): DesignedBoundedContextNew {
+  existing: DesignedBoundedContext,
+  incoming: DesignedBoundedContext,
+): DesignedBoundedContext {
   return {
     ...incoming,
     modules: mergeNamedChangeSet(
@@ -73,9 +73,9 @@ function mergeBoundedContext(
 }
 
 function mergeModule(
-  existing: DesignedDomainModuleNew,
-  incoming: DesignedDomainModuleNew,
-): DesignedDomainModuleNew {
+  existing: DesignedDomainModule,
+  incoming: DesignedDomainModule,
+): DesignedDomainModule {
   return {
     ...incoming,
     buildingBlocks: mergeNamedChangeSet(
@@ -92,9 +92,9 @@ function mergeModule(
 }
 
 function mergeBuildingBlock(
-  existing: DesignedBuildingBlockNew,
-  incoming: DesignedBuildingBlockNew,
-): DesignedBuildingBlockNew {
+  existing: DesignedBuildingBlock,
+  incoming: DesignedBuildingBlock,
+): DesignedBuildingBlock {
   return {
     ...incoming,
     properties: mergeNamedChangeSet(
@@ -126,9 +126,9 @@ function mergeBuildingBlock(
 }
 
 function mergeBehaviour(
-  existing: DesignedBehaviourNew,
-  incoming: DesignedBehaviourNew,
-): DesignedBehaviourNew {
+  existing: DesignedBehaviour,
+  incoming: DesignedBehaviour,
+): DesignedBehaviour {
   return {
     ...incoming,
     input: mergeStringChangeSet(existing.input, incoming.input),

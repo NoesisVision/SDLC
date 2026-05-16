@@ -2,11 +2,11 @@ import { Injectable } from "@nestjs/common";
 import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
 import {
-  DecisionFileNewSchema,
-  type DecisionFileNew,
-  type DecisionContextNew,
-  type DecisionOptionNew,
-} from "../../../../shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+  type DecisionContext,
+  type DecisionOption,
+} from "../../../../shared-contracts/decision.js";
 import type { SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import {
   computeFileSha,
@@ -168,8 +168,8 @@ export class DecisionsRepository {
     return rows[0] ?? null;
   }
 
-  readFile(absPath: string): DecisionFileNew {
-    return readSourceFile(absPath, DecisionFileNewSchema);
+  readFile(absPath: string): DecisionFile {
+    return readSourceFile(absPath, DecisionFileSchema);
   }
 
   async readStaleFlag(decisionId: string): Promise<boolean | null> {
@@ -181,7 +181,7 @@ export class DecisionsRepository {
     return StaleRowSchema.parse(rows[0]).is_stale;
   }
 
-  async upsert(file: DecisionFileNew, sha: string): Promise<void> {
+  async upsert(file: DecisionFile, sha: string): Promise<void> {
     await this.db.query(
       "MERGE (d:Decision {id: $id}) SET " +
         "d.sha = $sha, " +
@@ -213,8 +213,8 @@ export class DecisionsRepository {
     await this.createAlternativeOptions(file);
   }
 
-  writeFile(absPath: string, file: DecisionFileNew): void {
-    writeSourceFile(absPath, file, DecisionFileNewSchema);
+  writeFile(absPath: string, file: DecisionFile): void {
+    writeSourceFile(absPath, file, DecisionFileSchema);
   }
 
   async writeStaleFlag(decisionId: string, isStale: boolean): Promise<void> {
@@ -224,7 +224,7 @@ export class DecisionsRepository {
     );
   }
 
-  private async createContext(file: DecisionFileNew): Promise<void> {
+  private async createContext(file: DecisionFile): Promise<void> {
     const contextId = `${file.id}|context`;
     await this.db.query(
       "CREATE (c:DecisionContext {id: $id, text: $text, text_locked: $text_locked})",
@@ -242,7 +242,7 @@ export class DecisionsRepository {
     await this.linkSlotItems(contextId, "DecisionContext", file.context);
   }
 
-  private async createChosenOption(file: DecisionFileNew): Promise<void> {
+  private async createChosenOption(file: DecisionFile): Promise<void> {
     const optionId = `${file.id}|chosen`;
     await this.db.query(
       "CREATE (o:DecisionOption {id: $id, option_index: NULL, " +
@@ -264,7 +264,7 @@ export class DecisionsRepository {
     await this.linkSlotItems(optionId, "DecisionOption", file.decision);
   }
 
-  private async createAlternativeOptions(file: DecisionFileNew): Promise<void> {
+  private async createAlternativeOptions(file: DecisionFile): Promise<void> {
     for (let i = 0; i < file.alternative_options.length; i++) {
       const option = file.alternative_options[i];
       const optionId = `${file.id}|alt:${i}`;
@@ -308,7 +308,7 @@ export class DecisionsRepository {
   private async linkSlotItems(
     slotId: string,
     slotLabel: "DecisionContext" | "DecisionOption",
-    slot: DecisionContextNew | DecisionOptionNew,
+    slot: DecisionContext | DecisionOption,
   ): Promise<void> {
     const ideaUnitRel =
       slotLabel === "DecisionContext"

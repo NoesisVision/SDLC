@@ -23,16 +23,18 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  DecisionFileNewSchema,
-  DocumentFileNewSchema,
-  TopicFileNewSchema,
-  type DecisionFileNew,
-  type DocumentFileNew,
-} from "@noesis/shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+} from "@noesis/shared-contracts/decision.js";
 import {
-  DesignDocFileNewSchema,
-  type DesignDocFileNew,
-} from "@noesis/shared-contracts/design-doc-new.js";
+  DocumentFileSchema,
+  type DocumentFile,
+} from "@noesis/shared-contracts/document.js";
+import { TopicFileSchema } from "@noesis/shared-contracts/topic.js";
+import {
+  DesignDocFileSchema,
+  type DesignDocFile,
+} from "@noesis/shared-contracts/design-doc.js";
 import { LockedFieldsBlockedError } from "@noesis/mcp/noesis-graph/knowledge/documents/documents.service.js";
 import {
   decisionJsonPath,
@@ -81,7 +83,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
       });
     });
     await then("the document file lands at the slug-prefixed canonical path with all fragments", () => {
-      const file = DocumentFileNewSchema.parse(
+      const file = DocumentFileSchema.parse(
         JSON.parse(
           readFileSync(
             documentJsonPath(ctx.projectDir, "doc-1", "Design Draft"),
@@ -190,7 +192,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
       const dir = join(ctx.projectDir, "noesis", "design-docs");
       const entries = readdirSync(dir).filter((e) => e.endsWith(".json"));
       expect(entries).toHaveLength(1);
-      const parsed = DesignDocFileNewSchema.parse(
+      const parsed = DesignDocFileSchema.parse(
         JSON.parse(readFileSync(join(dir, entries[0]), "utf-8")),
       );
       expect(parsed.id).toBe("01928000-0000-7000-8000-aaaaaaaaaaaa");
@@ -441,7 +443,7 @@ describe("DocumentsService — accept skill output, validate, split, save", () =
     const designDocId = "01928000-0000-7000-8000-aaaaaaaaaaaa";
 
     await given("a design doc on disk with a locked name", async () => {
-      const seeded: DesignDocFileNew = makeDesignDocFile(designDocId, "billing", {
+      const seeded: DesignDocFile = makeDesignDocFile(designDocId, "billing", {
         name_locked: true,
       });
       await ctx.designDocs.persistFile(seeded);
@@ -687,21 +689,21 @@ function makeOutput(b: SkillOutputBuilder = {}): unknown {
   ];
   return {
     document: {
-      id: documentId,
+      document_id: documentId,
       title: "Design Draft",
       date: "2026-04-17",
       content: "Some intro paragraph here.We decided to ship feature X soon.",
+      fragments,
+      section_tree: [
+        {
+          level: 1,
+          title: "Doc",
+          path: [],
+          fragment_indices: [0, 1],
+          children: [],
+        },
+      ],
     },
-    fragments,
-    section_tree: [
-      {
-        level: 1,
-        title: "Doc",
-        path: [],
-        fragment_indices: [0, 1],
-        children: [],
-      },
-    ],
     topics: [
       {
         id: topicId,
@@ -774,9 +776,9 @@ function makeOutput(b: SkillOutputBuilder = {}): unknown {
 function makeDesignDocFile(
   id: string,
   name: string,
-  overrides: Partial<DesignDocFileNew> = {},
-): DesignDocFileNew {
-  return DesignDocFileNewSchema.parse({
+  overrides: Partial<DesignDocFile> = {},
+): DesignDocFile {
+  return DesignDocFileSchema.parse({
     id,
     name,
     description: "Created via analyze-design-draft.",
@@ -787,8 +789,8 @@ function makeDesignDocFile(
   });
 }
 
-function sampleDocumentFile(): DocumentFileNew {
-  return DocumentFileNewSchema.parse({
+function sampleDocumentFile(): DocumentFile {
+  return DocumentFileSchema.parse({
     document_id: "doc-1",
     title: "Design Draft",
     date: "2026-04-17",
@@ -829,7 +831,7 @@ function seedTopicFile(
   ctx: KnowledgeNewTestContext,
   overrides: Record<string, unknown>,
 ): void {
-  const file = TopicFileNewSchema.parse({
+  const file = TopicFileSchema.parse({
     id: "doc-topic-1",
     parent_id: null,
     title: "Feature X",
@@ -848,10 +850,10 @@ function seedTopicFile(
 
 function seedDecisionFile(
   ctx: KnowledgeNewTestContext,
-  overrides: Partial<DecisionFileNew> & { id?: string },
+  overrides: Partial<DecisionFile> & { id?: string },
 ): void {
   const id = overrides.id ?? "doc-decision-1";
-  const file = DecisionFileNewSchema.parse({
+  const file = DecisionFileSchema.parse({
     id,
     topic_id: "doc-topic-1",
     title: "Ship feature X",
@@ -877,19 +879,19 @@ function seedDecisionFile(
 function readTopic(ctx: KnowledgeNewTestContext, id: string) {
   const path = findTopicJsonById(ctx.projectDir, id);
   if (path === null) throw new Error(`Topic not found on disk: ${id}`);
-  return TopicFileNewSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
+  return TopicFileSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
 }
 
 function readDecision(ctx: KnowledgeNewTestContext, id: string) {
   const path = findDecisionJsonById(ctx.projectDir, id);
   if (path === null) throw new Error(`Decision not found on disk: ${id}`);
-  return DecisionFileNewSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
+  return DecisionFileSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
 }
 
 function readDesignDocById(
   ctx: KnowledgeNewTestContext,
   designDocId: string,
-): DesignDocFileNew {
+): DesignDocFile {
   const dir = join(ctx.projectDir, "noesis", "design-docs");
   const entries = readdirSync(dir).filter(
     (e) => e.endsWith(".json") && e.includes(designDocId.slice(-8)),
@@ -897,7 +899,7 @@ function readDesignDocById(
   if (entries.length === 0) {
     throw new Error(`No design-doc file found for ${designDocId} in ${dir}`);
   }
-  return DesignDocFileNewSchema.parse(
+  return DesignDocFileSchema.parse(
     JSON.parse(readFileSync(join(dir, entries[0]), "utf-8")),
   );
 }
@@ -909,7 +911,7 @@ function writeWorkingDirOutput(workingDir: string, output: unknown): void {
 
 function writeWorkingDirDesignDoc(
   workingDir: string,
-  designDoc: DesignDocFileNew,
+  designDoc: DesignDocFile,
 ): void {
   mkdirSync(workingDir, { recursive: true });
   writeFileSync(

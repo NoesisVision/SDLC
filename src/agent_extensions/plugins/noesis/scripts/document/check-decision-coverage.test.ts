@@ -5,11 +5,13 @@ import {
 } from "./check-decision-coverage.js";
 import type { AnalyzeDesignDraftOutput } from "../../shared-contracts/skills/analyze-design-draft/output.js";
 
+type Fragment = AnalyzeDesignDraftOutput["document"]["fragments"][number];
+
 function fragment(
   index: number,
   section: string[],
   categories: string[],
-): AnalyzeDesignDraftOutput["fragments"][number] {
+): Fragment {
   return {
     index,
     start_offset: index * 10,
@@ -17,22 +19,20 @@ function fragment(
     section_path: section,
     kind: "paragraph",
     text: `Fragment ${index}`,
-    categories: categories as AnalyzeDesignDraftOutput["fragments"][number]["categories"],
+    categories: categories as Fragment["categories"],
   };
 }
 
-function buildOutput(
-  fragments: AnalyzeDesignDraftOutput["fragments"],
-): AnalyzeDesignDraftOutput {
+function buildOutput(fragments: Fragment[]): AnalyzeDesignDraftOutput {
   return {
     document: {
-      id: "doc-1",
+      document_id: "doc-1",
       title: "T",
       date: "2026-04-28",
       content: "",
+      fragments,
+      section_tree: [],
     },
-    fragments,
-    section_tree: [],
     topics: [],
     decision_attachments: [],
     design_doc_id: null,

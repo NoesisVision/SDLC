@@ -2,18 +2,18 @@ import { Injectable } from "@nestjs/common";
 import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
 import {
-  DesignDocFileNewSchema,
-  type DesignDocFileNew,
-  type DesignedBehaviourNew,
-  type DesignedBoundedContextNew,
-  type DesignedBuildingBlockNew,
-  type DesignedDomainModuleNew,
-  type DesignedPropertyNew,
-  type DesignedQualityAttributeNew,
-  type DesignedRuleNew,
-  type DesignedScenarioNew,
+  DesignDocFileSchema,
+  type DesignDocFile,
+  type DesignedBehaviour,
+  type DesignedBoundedContext,
+  type DesignedBuildingBlock,
+  type DesignedDomainModule,
+  type DesignedProperty,
+  type DesignedQualityAttribute,
+  type DesignedRule,
+  type DesignedScenario,
   type StringChangeSet,
-} from "../../../../shared-contracts/design-doc-new.js";
+} from "../../../../shared-contracts/design-doc.js";
 import {
   computeFileSha,
   designDocCanonicalPath,
@@ -300,8 +300,8 @@ export class DesignDocsRepository {
     return StoredDesignDocRowSchema.parse(rows[0]);
   }
 
-  readFile(absPath: string): DesignDocFileNew {
-    return readSourceFile(absPath, DesignDocFileNewSchema);
+  readFile(absPath: string): DesignDocFile {
+    return readSourceFile(absPath, DesignDocFileSchema);
   }
 
   async readImplementedFlag(designDocId: string): Promise<boolean | null> {
@@ -314,7 +314,7 @@ export class DesignDocsRepository {
   }
 
   async upsert(
-    file: DesignDocFileNew,
+    file: DesignDocFile,
     sha: string,
     sourcePath: string,
   ): Promise<void> {
@@ -374,8 +374,8 @@ export class DesignDocsRepository {
     await this.pruneOrphanActors();
   }
 
-  writeFile(absPath: string, file: DesignDocFileNew): void {
-    writeSourceFile(absPath, file, DesignDocFileNewSchema);
+  writeFile(absPath: string, file: DesignDocFile): void {
+    writeSourceFile(absPath, file, DesignDocFileSchema);
   }
 
   async upsertActor(actor: {
@@ -421,7 +421,7 @@ export class DesignDocsRepository {
 
   private async upsertBoundedContext(
     designDocId: string,
-    bc: DesignedBoundedContextNew,
+    bc: DesignedBoundedContext,
     slot: ChangeSlot,
     declaredActorNames: Set<string>,
   ): Promise<void> {
@@ -507,7 +507,7 @@ export class DesignDocsRepository {
     designDocId: string,
     bcNodeId: string,
     bcName: string,
-    m: DesignedDomainModuleNew,
+    m: DesignedDomainModule,
     slot: ChangeSlot,
     declaredActorNames: Set<string>,
   ): Promise<void> {
@@ -593,7 +593,7 @@ export class DesignDocsRepository {
   private async upsertBuildingBlock(
     designDocId: string,
     parent: ParentRef,
-    bb: DesignedBuildingBlockNew,
+    bb: DesignedBuildingBlock,
     slot: ChangeSlot,
     declaredActorNames: Set<string>,
   ): Promise<void> {
@@ -699,7 +699,7 @@ export class DesignDocsRepository {
     designDocId: string,
     bbNodeId: string,
     bbPath: string,
-    bh: DesignedBehaviourNew,
+    bh: DesignedBehaviour,
     slot: ChangeSlot,
     declaredActorNames: Set<string>,
   ): Promise<void> {
@@ -809,7 +809,7 @@ export class DesignDocsRepository {
     designDocId: string,
     bbNodeId: string,
     bbPath: string,
-    prop: DesignedPropertyNew,
+    prop: DesignedProperty,
     slot: ChangeSlot,
   ): Promise<void> {
     const id = propertyId(designDocId, bbPath, prop.name);
@@ -846,7 +846,7 @@ export class DesignDocsRepository {
   private async upsertRule(
     designDocId: string,
     parent: ParentRef,
-    r: DesignedRuleNew,
+    r: DesignedRule,
     slot: ChangeSlot,
   ): Promise<void> {
     const id = ruleId(designDocId, parent.path, r.name);
@@ -876,7 +876,7 @@ export class DesignDocsRepository {
   private async upsertScenario(
     designDocId: string,
     parent: ParentRef,
-    s: DesignedScenarioNew,
+    s: DesignedScenario,
     slot: ChangeSlot,
   ): Promise<void> {
     const id = scenarioId(designDocId, parent.path, s.name);
@@ -913,7 +913,7 @@ export class DesignDocsRepository {
   private async upsertQualityAttribute(
     designDocId: string,
     parent: ParentRef,
-    qa: DesignedQualityAttributeNew,
+    qa: DesignedQualityAttribute,
     slot: ChangeSlot,
   ): Promise<void> {
     const id = qualityAttributeId(designDocId, parent.path, qa.name);

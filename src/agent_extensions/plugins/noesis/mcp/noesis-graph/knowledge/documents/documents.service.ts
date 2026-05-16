@@ -1,27 +1,28 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { existsSync, readFileSync } from "fs";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
-import { isIrrelevantFragment } from "../../../../shared-contracts/documents.js";
 import {
   AnalyzeDesignDraftOutputSchema,
-  buildFragmentMap,
-  formatEnrichedDocumentTopicMarkdown,
-  resolveFragmentDetail,
   type AnalyzeDesignDraftOutput,
   type AttachToDecision,
+} from "../../../../shared-contracts/skills/analyze-design-draft/output.js";
+import {
+  buildFragmentMap,
+  formatEnrichedDocumentTopicMarkdown,
+  isIrrelevantFragment,
+  resolveFragmentDetail,
   type EnrichedDocumentTopic,
   type FragmentDetail,
-} from "../../../../shared-contracts/skills/analyze-design-draft/output.js";
-import { type DesignDocFileNew } from "../../../../shared-contracts/design-doc-new.js";
+} from "./enriched-topic.js";
+import { type DesignDocFile } from "../../../../shared-contracts/design-doc.js";
 import { type SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import {
-  DecisionFileNewSchema,
-  TopicFileNewSchema,
-  type DecisionFileNew,
-  type DecisionOptionNew,
-  type DocumentFileNew,
-  type TopicFileNew,
-} from "../../../../shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+  type DecisionOption,
+} from "../../../../shared-contracts/decision.js";
+import { type DocumentFile } from "../../../../shared-contracts/document.js";
+import { TopicFileSchema, type TopicFile } from "../../../../shared-contracts/topic.js";
 import {
   computeContentSha,
   computeFileSha,
@@ -221,7 +222,7 @@ export class DocumentsService {
     output: AnalyzeDesignDraftOutput,
     expectsDesignDoc: boolean,
   ): void {
-    const fragmentSet = new Set(output.fragments.map((f) => f.index));
+    const fragmentSet = new Set(output.document.fragments.map((f) => f.index));
     for (const topic of output.topics) {
       if (!topic.reviewed) {
         throw new Error(
@@ -230,15 +231,15 @@ export class DocumentsService {
       }
       for (const item of topic.items) {
         if (item.type === "document_fragment_ref") {
-          if (item.document_id !== output.document.id) continue;
-          const matches = output.fragments.some(
+          if (item.document_id !== output.document.document_id) continue;
+          const matches = output.document.fragments.some(
             (f) =>
               f.start_offset === item.start_offset &&
               f.end_offset === item.end_offset,
           );
           if (!matches) {
             throw new Error(
-              `Topic ${topic.id} references unknown fragment range ${item.start_offset}-${item.end_offset} in document ${output.document.id}.`,
+              `Topic ${topic.id} references unknown fragment range ${item.start_offset}-${item.end_offset} in document ${output.document.document_id}.`,
             );
           }
         }
@@ -262,7 +263,7 @@ export class DocumentsService {
 
   private detectLockedFieldConflicts(
     output: AnalyzeDesignDraftOutput,
-    designDocFile: DesignDocFileNew | null,
+    designDocFile: DesignDocFile | null,
   ): ConfirmedEdit[] {
     const conflicts: ConfirmedEdit[] = [];
     for (const topic of output.topics) {
@@ -296,19 +297,11 @@ export class DocumentsService {
     designDocJsonPath: string | null,
     confirmed: Set<string>,
   ): UploadDocumentAnalysisResult {
-    const docFile: DocumentFileNew = {
-      document_id: output.document.id,
-      title: output.document.title,
-      date: output.document.date,
-      content: output.document.content,
-      fragments: output.fragments,
-      section_tree: output.section_tree,
-    };
-    const docPath = this.persistDocumentFile(docFile);
+    const docPath = this.persistDocumentFile(output.document);
     const documentSha = computeFileSha(docPath);
 
     const sourceShaCache = new Map<string, string>();
-    sourceShaCache.set(`document:${output.document.id}`, documentSha);
+    sourceShaCache.set(`document:${output.document.document_id}`, documentSha);
 
     const topicPaths: string[] = [];
     const decisionPaths: string[] = [];
@@ -348,7 +341,7 @@ export class DocumentsService {
     }
 
     return {
-      document_id: output.document.id,
+      document_id: output.document.document_id,
       topic_paths: topicPaths,
       decision_paths: decisionPaths,
       decision_attachments: attached,
@@ -372,7 +365,7 @@ export class DocumentsService {
       existingPath === null ? null : readTopicIfExists(existingPath);
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveTopicLockedFields(existing, topic, confirmed, cleared);
-    const next: TopicFileNew = {
+    const next: TopicFile = {
       id: topic.id,
       parent_id: parentId,
       title: resolved.title,
@@ -417,7 +410,7 @@ export class DocumentsService {
       confirmed,
       cleared,
     );
-    const next: DecisionFileNew = {
+    const next: DecisionFile = {
       id: decision.id,
       topic_id: topicId,
       title: resolved.title,
@@ -477,10 +470,10 @@ export class DocumentsService {
     if (output.decision_attachments.length === 0) return 0;
     const fragmentByIndex = new Map<
       number,
-      AnalyzeDesignDraftOutput["fragments"][number]
+      AnalyzeDesignDraftOutput["document"]["fragments"][number]
     >();
-    for (const f of output.fragments) fragmentByIndex.set(f.index, f);
-    const documentSha = cache.get(`document:${output.document.id}`);
+    for (const f of output.document.fragments) fragmentByIndex.set(f.index, f);
+    const documentSha = cache.get(`document:${output.document.document_id}`);
 
     let appended = 0;
     for (const att of output.decision_attachments) {
@@ -493,7 +486,7 @@ export class DocumentsService {
         }
         return {
           type: "document_fragment_ref",
-          document_id: output.document.id,
+          document_id: output.document.document_id,
           start_offset: f.start_offset,
           end_offset: f.end_offset,
           source_sha: documentSha,
@@ -518,7 +511,7 @@ export class DocumentsService {
     return appended;
   }
 
-  private persistDocumentFile(file: DocumentFileNew): string {
+  private persistDocumentFile(file: DocumentFile): string {
     const newPath = this.repository.canonicalPath(
       this.projectDir,
       file.document_id,
@@ -539,10 +532,10 @@ export class DocumentsService {
     output: AnalyzeDesignDraftOutput,
     topic: AnalyzeDesignDraftOutput["topics"][number],
   ): Promise<TopicForDocumentReview> {
-    const fragmentMap = buildFragmentMap(output.fragments);
+    const fragmentMap = buildFragmentMap(output.document.fragments);
     const priorFragments = await this.findPriorDocumentFragments(
       topic.id,
-      output.document.id,
+      output.document.document_id,
     );
 
     const details: FragmentDetail[] = [];
@@ -550,15 +543,15 @@ export class DocumentsService {
     for (const item of topic.items) {
       switch (item.type) {
         case "document_fragment_ref": {
-          if (item.document_id !== output.document.id) break;
-          const fragment = output.fragments.find(
+          if (item.document_id !== output.document.document_id) break;
+          const fragment = output.document.fragments.find(
             (f) =>
               f.start_offset === item.start_offset &&
               f.end_offset === item.end_offset,
           );
           if (fragment === undefined) break;
           const detail = resolveFragmentDetail(
-            output.document.id,
+            output.document.document_id,
             fragment.index,
             fragmentMap,
           );
@@ -600,7 +593,7 @@ export class DocumentsService {
       title: topic.title,
       short_summary: topic.short_summary,
       long_summary: topic.long_summary,
-      document_id: output.document.id,
+      document_id: output.document.document_id,
       fragments: details,
     };
 
@@ -764,19 +757,19 @@ function itemKey(item: SourceContentRef): string {
   return `doc:${item.document_id}:${item.start_offset}:${item.end_offset}`;
 }
 
-function readTopicIfExists(absPath: string): TopicFileNew | null {
+function readTopicIfExists(absPath: string): TopicFile | null {
   if (!existsSync(absPath)) return null;
   try {
-    return TopicFileNewSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
+    return TopicFileSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
   } catch {
     return null;
   }
 }
 
-function readDecisionIfExists(absPath: string): DecisionFileNew | null {
+function readDecisionIfExists(absPath: string): DecisionFile | null {
   if (!existsSync(absPath)) return null;
   try {
-    return DecisionFileNewSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
+    return DecisionFileSchema.parse(JSON.parse(readFileSync(absPath, "utf-8")));
   } catch {
     return null;
   }
@@ -797,7 +790,7 @@ function fileReferencesDocument(
   return false;
 }
 
-function collectDecisionRefs(file: DecisionFileNew): SourceContentRef[] {
+function collectDecisionRefs(file: DecisionFile): SourceContentRef[] {
   return [
     ...file.context.supporting_content,
     ...file.decision.supporting_content,
@@ -806,10 +799,10 @@ function collectDecisionRefs(file: DecisionFileNew): SourceContentRef[] {
 }
 
 function attachToSlot(
-  file: DecisionFileNew,
+  file: DecisionFile,
   att: AttachToDecision,
   refs: SourceContentRef[],
-): { file: DecisionFileNew; appended: number } {
+): { file: DecisionFile; appended: number } {
   const appendUnique = (
     current: SourceContentRef[],
   ): { next: SourceContentRef[]; appended: number } => {
@@ -861,7 +854,7 @@ function attachToSlot(
       const alt = file.alternative_options[idx];
       const { next, appended } = appendUnique(alt.supporting_content);
       if (appended === 0) return { file, appended: 0 };
-      const updatedAlt: DecisionOptionNew = { ...alt, supporting_content: next };
+      const updatedAlt: DecisionOption = { ...alt, supporting_content: next };
       const alternatives = file.alternative_options.map((a, i) =>
         i === idx ? updatedAlt : a,
       );

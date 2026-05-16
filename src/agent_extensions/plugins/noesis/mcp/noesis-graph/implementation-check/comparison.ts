@@ -1,5 +1,5 @@
 import type {
-  DesignDoc,
+  DesignDocFile,
   DesignedBehaviour,
   DesignedBoundedContext,
   DesignedBuildingBlock,
@@ -23,7 +23,7 @@ export interface ComparisonResult {
 export interface ComparisonInput {
   before: DomainModelTree;
   after: DomainModelTree;
-  doc: DesignDoc;
+  doc: DesignDocFile;
 }
 
 interface BoundedContextSnapshot {
@@ -315,7 +315,7 @@ function changesForRemovedModule(mod: ModuleSnapshot): ChangeKey[] {
 }
 
 function collectExpectedChanges(
-  doc: DesignDoc,
+  doc: DesignDocFile,
   before: Map<string, BoundedContextSnapshot>,
 ): Map<string, ChangeKey> {
   const out = new Map<string, ChangeKey>();
@@ -510,7 +510,7 @@ function findUnexpectedChanges(
 }
 
 function verifyActorAnnotations(
-  doc: DesignDoc,
+  doc: DesignDocFile,
   after: Map<string, BoundedContextSnapshot>,
 ): string[] {
   const out: string[] = [];
@@ -549,7 +549,7 @@ interface ExpectedActor {
   path: string;
 }
 
-function* collectExpectedActors(doc: DesignDoc): Generator<ExpectedActor> {
+function* collectExpectedActors(doc: DesignDocFile): Generator<ExpectedActor> {
   for (const bc of [
     ...(doc.boundedContexts?.added ?? []),
     ...(doc.boundedContexts?.modified ?? []),

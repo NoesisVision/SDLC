@@ -2,7 +2,7 @@ import type {
   DocumentFragment,
   DocumentFragmentKind,
   SectionNode,
-} from "../../shared-contracts/documents.js";
+} from "../../shared-contracts/document.js";
 
 const HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_PATTERN = /^([ \t]*)(```+|~~~+)(.*)$/;

@@ -3,7 +3,7 @@ import { IdeaUnitRefSchema, type IdeaUnitRef } from "./conversation.js";
 import {
   DocumentFragmentRefSchema,
   type DocumentFragmentRef,
-} from "./documents.js";
+} from "./document.js";
 
 export const SourceContentRefSchema = z.union([
   IdeaUnitRefSchema,

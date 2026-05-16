@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
+import type { SectionNode } from "../../shared-contracts/document.js";
 import { contentHashAsUuid } from "../../shared-contracts/uuid.js";
 import { exitError, outputResult, parseArgs, requireFile } from "../io.js";
 import { fragmentMarkdown } from "./fragment-markdown.js";
@@ -7,7 +8,6 @@ import {
   AnalyzeDesignDraftOutputSchema,
   type AnalyzeDesignDraftOutput,
 } from "../../shared-contracts/skills/analyze-design-draft/output.js";
-import { formatSectionTreeMarkdown } from "../../shared-contracts/documents.js";
 import { resolveWorkingDir } from "../../shared-contracts/plugin-paths.js";
 
 const SKILL_NAME = "noesis:analyze-design-draft";
@@ -60,13 +60,13 @@ export function prepareDocument(
 
   const output: AnalyzeDesignDraftOutput = {
     document: {
-      id: documentId,
+      document_id: documentId,
       title: resolvedTitle,
       date,
       content: sourceContent,
+      fragments,
+      section_tree,
     },
-    fragments,
-    section_tree,
     topics: [],
     decision_attachments: [],
     design_doc_id: options.designDocId,
@@ -100,6 +100,24 @@ export function prepareDocument(
 }
 
 // --- Private functions ---
+
+function formatSectionTreeMarkdown(tree: SectionNode[]): string {
+  const lines: string[] = ["# Section tree", ""];
+  const walk = (node: SectionNode) => {
+    const prefix = "  ".repeat(node.level - 1);
+    const fragmentCount = node.fragment_indices.length;
+    lines.push(
+      `${prefix}- ${"#".repeat(node.level)} ${node.title} _(${fragmentCount} fragments)_`,
+    );
+    for (const child of node.children) {
+      walk(child);
+    }
+  };
+  for (const root of tree) {
+    walk(root);
+  }
+  return lines.join("\n");
+}
 
 function defaultTitle(documentPath: string): string {
   return basename(documentPath).replace(/\.[^.]+$/, "");

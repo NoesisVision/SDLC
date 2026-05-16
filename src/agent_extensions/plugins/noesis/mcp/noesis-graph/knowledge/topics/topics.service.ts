@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { TopicFileNew } from "../../../../shared-contracts/source-file-schemas.js";
+import type { TopicFile } from "../../../../shared-contracts/topic.js";
 import type { SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import { newUuid } from "../../../../shared-contracts/uuid.js";
 import type {
@@ -310,7 +310,7 @@ export class TopicsService {
       const file = this.repository.readFile(path);
       const isStale = computeStaleFromItems(file.items, snapshot);
       if (isStale !== file.is_stale) {
-        const updated: TopicFileNew = { ...file, is_stale: isStale };
+        const updated: TopicFile = { ...file, is_stale: isStale };
         this.repository.writeFile(path, updated);
       }
       if (isStale !== topic.is_stale) {
@@ -324,7 +324,7 @@ export class TopicsService {
   // ----- private helpers -----
 
   private async collectCrossDomainRefs(
-    files: Map<string, TopicFileNew>,
+    files: Map<string, TopicFile>,
   ): Promise<Map<string, TopicCrossRefs>> {
     const conversationIds = new Set<string>();
     const documentIds = new Set<string>();
@@ -383,8 +383,8 @@ export class TopicsService {
 
   private async readTopicFiles(
     stored: StoredTopic[],
-  ): Promise<Map<string, TopicFileNew>> {
-    const out = new Map<string, TopicFileNew>();
+  ): Promise<Map<string, TopicFile>> {
+    const out = new Map<string, TopicFile>();
     for (const topic of stored) {
       const file = this.tryReadTopicFile(topic.id);
       if (file !== null) out.set(topic.id, file);
@@ -392,7 +392,7 @@ export class TopicsService {
     return out;
   }
 
-  private async requireTopicFile(topicId: string): Promise<TopicFileNew> {
+  private async requireTopicFile(topicId: string): Promise<TopicFile> {
     const file = this.tryReadTopicFile(topicId);
     if (file === null) throw new Error(`Topic not found: ${topicId}`);
     return file;
@@ -504,7 +504,7 @@ export class TopicsService {
     return null;
   }
 
-  private persistFile(file: TopicFileNew, previousPath: string | null): string {
+  private persistFile(file: TopicFile, previousPath: string | null): string {
     const newPath = this.canonicalPath(file.id, file.title);
     if (previousPath !== null && previousPath !== newPath) {
       this.repository.deleteFile(previousPath);
@@ -513,7 +513,7 @@ export class TopicsService {
     return newPath;
   }
 
-  private tryReadTopicFile(topicId: string): TopicFileNew | null {
+  private tryReadTopicFile(topicId: string): TopicFile | null {
     const path = this.repository.findFileById(this.projectDir, topicId);
     if (path === null) return null;
     return this.repository.readFile(path);
@@ -526,17 +526,17 @@ interface TopicCrossRefs {
 }
 
 interface ApplyResult {
-  file: TopicFileNew;
+  file: TopicFile;
   changes: LockedField[];
 }
 
 function applyTopicEdits(
-  file: TopicFileNew,
+  file: TopicFile,
   fields: TopicEditableFields,
   confirmedByUser: boolean,
 ): ApplyResult {
   const changes: LockedField[] = [];
-  let next: TopicFileNew = file;
+  let next: TopicFile = file;
   if (fields.title !== undefined) {
     next = applyEdit(next, "title", "title_locked", fields.title, confirmedByUser, changes);
   }
@@ -564,13 +564,13 @@ function applyTopicEdits(
 }
 
 function applyEdit(
-  file: TopicFileNew,
+  file: TopicFile,
   fieldKey: "title" | "short_summary" | "long_summary",
   lockKey: "title_locked" | "short_summary_locked" | "long_summary_locked",
   newValue: string,
   confirmedByUser: boolean,
   changes: LockedField[],
-): TopicFileNew {
+): TopicFile {
   if (file[fieldKey] === newValue) return file;
   if (file[lockKey] && !confirmedByUser) {
     throw new Error(
@@ -583,7 +583,7 @@ function applyEdit(
 
 function buildForest(
   stored: StoredTopic[],
-  files: Map<string, TopicFileNew>,
+  files: Map<string, TopicFile>,
   refs: Map<string, TopicCrossRefs>,
 ): TopicNode[] {
   const nodeById = new Map<string, TopicNode>();
@@ -637,7 +637,7 @@ function computeStaleFromItems(
 }
 
 function fileReferencesAny(
-  file: TopicFileNew,
+  file: TopicFile,
   conversationIds: Set<string>,
   documentIds: Set<string>,
 ): boolean {
@@ -655,7 +655,7 @@ function fileReferencesAny(
   return false;
 }
 
-function hasUserLocks(file: TopicFileNew | undefined): boolean {
+function hasUserLocks(file: TopicFile | undefined): boolean {
   if (file === undefined) return false;
   return file.title_locked || file.short_summary_locked || file.long_summary_locked;
 }

@@ -22,9 +22,9 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  DesignDocFileNewSchema,
-  type DesignDocFileNew,
-} from "@noesis/shared-contracts/design-doc-new.js";
+  DesignDocFileSchema,
+  type DesignDocFile,
+} from "@noesis/shared-contracts/design-doc.js";
 
 describe("DesignDocsService — canonical paths, locks, sealing on implemented, actor lifecycle", () => {
   let ctx: KnowledgeNewTestContext;
@@ -217,7 +217,7 @@ describe("DesignDocsService — canonical paths, locks, sealing on implemented, 
       );
     });
     await then("the on-disk file records the implemented flag as true", () => {
-      const file = DesignDocFileNewSchema.parse(
+      const file = DesignDocFileSchema.parse(
         JSON.parse(readFileSync(path, "utf-8")),
       );
       expect(file.implemented).toBe(true);
@@ -426,7 +426,7 @@ describe("DesignDocsService — canonical paths, locks, sealing on implemented, 
     await then("the persisted design doc takes the new name with its lock cleared", () => {
       const found = ctx.designDocsRepository.findFileById(ctx.projectDir, id);
       expect(found).not.toBeNull();
-      const persisted = DesignDocFileNewSchema.parse(
+      const persisted = DesignDocFileSchema.parse(
         JSON.parse(readFileSync(found as string, "utf-8")),
       );
       expect(persisted.name).toBe("invoicing");
@@ -471,7 +471,7 @@ describe("DesignDocsService — canonical paths, locks, sealing on implemented, 
                             name_locked: false,
                             description: "Add an item to the cart",
                             description_locked: false,
-                            type: "command",
+                            type: "Command",
                             type_locked: false,
                             isPublic: true,
                             actor: null,
@@ -547,7 +547,7 @@ describe("DesignDocsService — canonical paths, locks, sealing on implemented, 
                                 name_locked: false,
                                 description: "Add an item to the cart",
                                 description_locked: false,
-                                type: "command",
+                                type: "Command",
                                 type_locked: false,
                                 isPublic: true,
                                 actor: null,
@@ -597,7 +597,7 @@ describe("DesignDocsService — canonical paths, locks, sealing on implemented, 
     await then("the on-disk design doc lists both scenarios under AddItem", () => {
       const found = ctx.designDocsRepository.findFileById(ctx.projectDir, id);
       expect(found).not.toBeNull();
-      const persisted = DesignDocFileNewSchema.parse(
+      const persisted = DesignDocFileSchema.parse(
         JSON.parse(readFileSync(found as string, "utf-8")),
       );
       const scenarios =
@@ -631,7 +631,7 @@ describe("DesignDocsService — canonical paths, locks, sealing on implemented, 
     then("the on-disk design doc keeps the user-set name with the lock still set", () => {
       const found = ctx.designDocsRepository.findFileById(ctx.projectDir, id);
       expect(found).not.toBeNull();
-      const persisted = DesignDocFileNewSchema.parse(
+      const persisted = DesignDocFileSchema.parse(
         JSON.parse(readFileSync(found as string, "utf-8")),
       );
       expect(persisted.name).toBe("billing");
@@ -640,8 +640,8 @@ describe("DesignDocsService — canonical paths, locks, sealing on implemented, 
   });
 });
 
-function designDoc(overrides: Partial<DesignDocFileNew> = {}): DesignDocFileNew {
-  return DesignDocFileNewSchema.parse({
+function designDoc(overrides: Partial<DesignDocFile> = {}): DesignDocFile {
+  return DesignDocFileSchema.parse({
     id: "01928000-0000-7000-8000-000000000001",
     name: "billing",
     description: "Billing context.",
@@ -655,7 +655,7 @@ function designDoc(overrides: Partial<DesignDocFileNew> = {}): DesignDocFileNew 
 function writeDesignDocFile(
   projectDir: string,
   filename: string,
-  file: DesignDocFileNew,
+  file: DesignDocFile,
 ): string {
   const path = join(projectDir, "noesis", "design-docs", filename);
   mkdirSync(join(projectDir, "noesis", "design-docs"), { recursive: true });

@@ -1,9 +1,7 @@
 import { z } from "zod";
-import type {
-  DecisionFileNew,
-  TopicFileNew,
-} from "../../../shared-contracts/source-file-schemas.js";
-import type { DesignDocFileNew } from "../../../shared-contracts/design-doc-new.js";
+import type { DecisionFile } from "../../../shared-contracts/decision.js";
+import type { DesignDocFile } from "../../../shared-contracts/design-doc.js";
+import type { TopicFile } from "../../../shared-contracts/topic.js";
 
 export const TopicLockedFieldSchema = z.enum([
   "title",
@@ -80,7 +78,7 @@ export interface TopicLockableShape {
 export interface DecisionLockableShape {
   id: string;
   title: string;
-  status: DecisionFileNew["status"];
+  status: DecisionFile["status"];
   context: { text: string };
   decision: { text: string; rationale: string };
 }
@@ -103,7 +101,7 @@ export interface ResolvedTopicFields {
 export interface ResolvedDecisionFields {
   title: string;
   title_locked: boolean;
-  status: DecisionFileNew["status"];
+  status: DecisionFile["status"];
   status_locked: boolean;
   context_text: string;
   context_text_locked: boolean;
@@ -121,7 +119,7 @@ export interface ResolvedDesignDocFields {
 }
 
 export function detectTopicConflicts(
-  existing: TopicFileNew | null,
+  existing: TopicFile | null,
   proposed: TopicLockableShape,
 ): ConfirmedEdit[] {
   if (existing === null) return [];
@@ -145,7 +143,7 @@ export function detectTopicConflicts(
 }
 
 export function detectDecisionConflicts(
-  existing: DecisionFileNew | null,
+  existing: DecisionFile | null,
   proposed: DecisionLockableShape,
 ): ConfirmedEdit[] {
   if (existing === null) return [];
@@ -190,7 +188,7 @@ export function detectDecisionConflicts(
 }
 
 export function detectDesignDocConflicts(
-  existing: DesignDocFileNew | null,
+  existing: DesignDocFile | null,
   proposed: DesignDocLockableShape,
 ): ConfirmedEdit[] {
   if (existing === null) return [];
@@ -212,7 +210,7 @@ export function detectDesignDocConflicts(
 }
 
 export function resolveTopicLockedFields(
-  existing: TopicFileNew | null,
+  existing: TopicFile | null,
   proposed: TopicLockableShape,
   confirmed: Set<string>,
   cleared: ConfirmedEdit[],
@@ -259,7 +257,7 @@ export function resolveTopicLockedFields(
 }
 
 export function resolveDecisionLockedFields(
-  existing: DecisionFileNew | null,
+  existing: DecisionFile | null,
   proposed: DecisionLockableShape,
   confirmed: Set<string>,
   cleared: ConfirmedEdit[],
@@ -338,7 +336,7 @@ export function resolveDecisionLockedFields(
 }
 
 export function resolveDesignDocLockedFields(
-  existing: DesignDocFileNew | null,
+  existing: DesignDocFile | null,
   proposed: DesignDocLockableShape,
   confirmed: Set<string>,
   cleared: ConfirmedEdit[],

@@ -21,13 +21,17 @@ import {
   type Conversation,
 } from "@noesis/shared-contracts/conversation.js";
 import {
-  DecisionFileNewSchema,
-  DocumentFileNewSchema,
-  TopicFileNewSchema,
-  type DecisionFileNew,
-  type DocumentFileNew,
-  type TopicFileNew,
-} from "@noesis/shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+} from "@noesis/shared-contracts/decision.js";
+import {
+  DocumentFileSchema,
+  type DocumentFile,
+} from "@noesis/shared-contracts/document.js";
+import {
+  TopicFileSchema,
+  type TopicFile,
+} from "@noesis/shared-contracts/topic.js";
 import {
   conversationJsonPath,
   decisionJsonPath,
@@ -35,7 +39,7 @@ import {
   documentJsonPath,
   topicJsonPath,
 } from "@noesis/shared-contracts/source-files.js";
-import { DesignDocFileNewSchema, type DesignDocFileNew } from "@noesis/shared-contracts/design-doc-new.js";
+import { DesignDocFileSchema, type DesignDocFile } from "@noesis/shared-contracts/design-doc.js";
 
 describe("IndexerService — full-pass orchestration, deletion, staleness, single-flight", () => {
   let ctx: KnowledgeNewTestContext;
@@ -169,7 +173,9 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
         makeDecisionFile("decision-1", {
           decision: {
             text: "dec",
+            text_locked: false,
             rationale: "r",
+            rationale_locked: false,
             supporting_content: [
               {
                 type: "idea_unit_ref",
@@ -340,7 +346,7 @@ describe("IndexerService — full-pass orchestration, deletion, staleness, singl
   });
 
   test("Indexing picks up a file in a subdirectory that was removed and recreated (git-checkout regression)", async () => {
-    const designDoc: DesignDocFileNew = DesignDocFileNewSchema.parse({
+    const designDoc: DesignDocFile = DesignDocFileSchema.parse({
       id: "f9cb90cc-0ec6-4c1a-bb9f-c600ba3b490a",
       name: "Sample",
       description: "Reproduction fixture for git-checkout reindex bug.",
@@ -444,8 +450,8 @@ function makeConversationFile(id: string): Conversation {
   });
 }
 
-function makeDocumentFile(id: string): DocumentFileNew {
-  return DocumentFileNewSchema.parse({
+function makeDocumentFile(id: string): DocumentFile {
+  return DocumentFileSchema.parse({
     document_id: id,
     title: "Doc",
     date: "2026-04-17",
@@ -465,8 +471,8 @@ function makeDocumentFile(id: string): DocumentFileNew {
   });
 }
 
-function makeTopicFile(id: string, overrides: Partial<TopicFileNew> = {}): TopicFileNew {
-  return TopicFileNewSchema.parse({
+function makeTopicFile(id: string, overrides: Partial<TopicFile> = {}): TopicFile {
+  return TopicFileSchema.parse({
     id,
     parent_id: null,
     title: "Topic",
@@ -480,8 +486,8 @@ function makeTopicFile(id: string, overrides: Partial<TopicFileNew> = {}): Topic
   });
 }
 
-function makeDecisionFile(id: string, overrides: Partial<DecisionFileNew> = {}): DecisionFileNew {
-  return DecisionFileNewSchema.parse({
+function makeDecisionFile(id: string, overrides: Partial<DecisionFile> = {}): DecisionFile {
+  return DecisionFileSchema.parse({
     id,
     topic_id: "topic-1",
     title: "Decision",

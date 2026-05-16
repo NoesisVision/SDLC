@@ -1,17 +1,17 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { existsSync, readFileSync, rmSync } from "fs";
 import {
-  DesignDocFileNewSchema,
-  type DesignDocFileNew,
-  type DesignedActorNew,
-  type DesignedBehaviourNew,
-  type DesignedBoundedContextNew,
-  type DesignedBuildingBlockNew,
-  type DesignedDomainModuleNew,
-  type DesignedQualityAttributeNew,
-  type DesignedRuleNew,
-  type DesignedScenarioNew,
-} from "../../../../shared-contracts/design-doc-new.js";
+  DesignDocFileSchema,
+  type DesignDocFile,
+  type DesignedActor,
+  type DesignedBehaviour,
+  type DesignedBoundedContext,
+  type DesignedBuildingBlock,
+  type DesignedDomainModule,
+  type DesignedQualityAttribute,
+  type DesignedRule,
+  type DesignedScenario,
+} from "../../../../shared-contracts/design-doc.js";
 import type {
   DesignDocDetailData,
   DesignDocListItem,
@@ -121,14 +121,14 @@ export interface ModelTarget {
 }
 
 type EditableElement =
-  | DesignedActorNew
-  | DesignedBehaviourNew
-  | DesignedBoundedContextNew
-  | DesignedBuildingBlockNew
-  | DesignedDomainModuleNew
-  | DesignedQualityAttributeNew
-  | DesignedRuleNew
-  | DesignedScenarioNew;
+  | DesignedActor
+  | DesignedBehaviour
+  | DesignedBoundedContext
+  | DesignedBuildingBlock
+  | DesignedDomainModule
+  | DesignedQualityAttribute
+  | DesignedRule
+  | DesignedScenario;
 
 @Injectable()
 export class DesignDocsService {
@@ -172,7 +172,7 @@ export class DesignDocsService {
       );
     }
     const updated: Array<"name" | "description"> = [];
-    let next: DesignDocFileNew = file;
+    let next: DesignDocFile = file;
     if (fields.name !== undefined && file.name !== fields.name) {
       if (file.name_locked && !confirmedByUser) {
         throw new Error(
@@ -276,7 +276,7 @@ export class DesignDocsService {
     const path = await this.requireFilePath(designDocId);
     const file = this.repository.readFile(path);
     if (file.implemented) return { design_doc_id: file.id };
-    const next: DesignDocFileNew = { ...file, implemented: true };
+    const next: DesignDocFile = { ...file, implemented: true };
     this.repository.writeFile(path, next);
     if (await this.repository.exists(designDocId)) {
       await this.repository.writeImplementedFlag(designDocId, true);
@@ -288,11 +288,11 @@ export class DesignDocsService {
    * Read + validate a design-doc working file without writing anything. Returned shape
    * matches the persisted schema. Throws if the working file is missing or malformed.
    */
-  loadWorkingFile(workingDirPath: string): DesignDocFileNew {
+  loadWorkingFile(workingDirPath: string): DesignDocFile {
     if (!existsSync(workingDirPath)) {
       throw new Error(`Design doc working file not found: ${workingDirPath}`);
     }
-    return DesignDocFileNewSchema.parse(
+    return DesignDocFileSchema.parse(
       JSON.parse(readFileSync(workingDirPath, "utf-8")),
     );
   }
@@ -302,7 +302,7 @@ export class DesignDocsService {
    * the current canonical file (if any) and returns one ConfirmedEdit entry per locked
    * field whose value would change. Empty array when there is no canonical file yet.
    */
-  detectConflicts(file: DesignDocFileNew): ConfirmedEdit[] {
+  detectConflicts(file: DesignDocFile): ConfirmedEdit[] {
     const existing = this.readCanonicalIfExists(file.id);
     return detectDesignDocConflicts(existing, file);
   }
@@ -313,7 +313,7 @@ export class DesignDocsService {
    * validated locks) and by tests for setup. Lock-aware skill uploads should go
    * through persistFromWorkingFile instead.
    */
-  persistFile(file: DesignDocFileNew): string {
+  persistFile(file: DesignDocFile): string {
     const newPath = this.canonicalPath(file.id, file.name);
     const previous = this.repository.findFileById(this.projectDir, file.id);
     if (previous !== null && previous !== newPath) {
@@ -338,7 +338,7 @@ export class DesignDocsService {
     const existing = this.readCanonicalIfExists(file.id);
     const cleared: ConfirmedEdit[] = [];
     const resolved = resolveDesignDocLockedFields(existing, file, confirmed, cleared);
-    const withResolvedLocks: DesignDocFileNew = {
+    const withResolvedLocks: DesignDocFile = {
       ...file,
       name: resolved.name,
       name_locked: resolved.name_locked,
@@ -349,7 +349,7 @@ export class DesignDocsService {
     return { path: this.persistFile(merged), cleared };
   }
 
-  private readCanonicalIfExists(designDocId: string): DesignDocFileNew | null {
+  private readCanonicalIfExists(designDocId: string): DesignDocFile | null {
     const path = this.repository.findFileById(this.projectDir, designDocId);
     if (path === null) return null;
     return this.repository.readFile(path);
@@ -377,7 +377,7 @@ export class DesignDocsService {
     return entries;
   }
 
-  async readDesignDoc(designDocId: string): Promise<DesignDocFileNew | null> {
+  async readDesignDoc(designDocId: string): Promise<DesignDocFile | null> {
     const head = await this.repository.read(designDocId);
     if (head === null) return null;
     return this.tryReadFileByPath(head.source_path);
@@ -385,15 +385,15 @@ export class DesignDocsService {
 
   async readModelForTargets(
     targets: ModelTarget[],
-  ): Promise<DesignedBoundedContextNew[]> {
+  ): Promise<DesignedBoundedContext[]> {
     if (targets.length === 0) return [];
     const stored = await this.repository.listAll();
-    const docsById = new Map<string, DesignDocFileNew>();
+    const docsById = new Map<string, DesignDocFile>();
     for (const head of stored) {
       const file = this.tryReadFileByPath(head.source_path);
       if (file !== null) docsById.set(head.id, file);
     }
-    const out: DesignedBoundedContextNew[] = [];
+    const out: DesignedBoundedContext[] = [];
     for (const target of targets) {
       const file = docsById.get(target.design_doc_id);
       if (file === undefined) continue;
@@ -497,7 +497,7 @@ export class DesignDocsService {
     return path;
   }
 
-  private tryReadFileByPath(path: string): DesignDocFileNew | null {
+  private tryReadFileByPath(path: string): DesignDocFile | null {
     if (!existsSync(path)) return null;
     try {
       return this.repository.readFile(path);
@@ -534,7 +534,7 @@ function applyElementFieldEdits(
   const isScenario = path[path.length - 1]?.kind === "scenario";
   if (fields.given !== undefined) {
     if (!isScenario) throw new Error("'given' is only valid for scenario elements");
-    const sc = element as DesignedScenarioNew;
+    const sc = element as DesignedScenario;
     if (sc.given !== fields.given) {
       sc.given = fields.given;
       sc.given_locked = true;
@@ -542,7 +542,7 @@ function applyElementFieldEdits(
   }
   if (fields.when !== undefined) {
     if (!isScenario) throw new Error("'when' is only valid for scenario elements");
-    const sc = element as DesignedScenarioNew;
+    const sc = element as DesignedScenario;
     if (sc.when !== fields.when) {
       sc.when = fields.when;
       sc.when_locked = true;
@@ -550,7 +550,7 @@ function applyElementFieldEdits(
   }
   if (fields.then !== undefined) {
     if (!isScenario) throw new Error("'then' is only valid for scenario elements");
-    const sc = element as DesignedScenarioNew;
+    const sc = element as DesignedScenario;
     if (sc.then !== fields.then) {
       sc.then = fields.then;
       sc.then_locked = true;
@@ -573,7 +573,7 @@ function describePath(path: ElementPathSegment[]): string {
   return path.map((p) => `${p.kind}:${p.name}`).join(" / ");
 }
 
-function deriveDesignDocDate(file: DesignDocFileNew): string {
+function deriveDesignDocDate(file: DesignDocFile): string {
   return file.date;
 }
 
@@ -589,7 +589,7 @@ function findInChangeSet<T extends { name: string }>(
   );
 }
 
-function hasUserLocks(file: DesignDocFileNew): boolean {
+function hasUserLocks(file: DesignDocFile): boolean {
   if (file.name_locked || file.description_locked) return true;
   for (const actor of file.actors) {
     if (actor.name_locked || actor.description_locked) return true;
@@ -600,7 +600,7 @@ function hasUserLocks(file: DesignDocFileNew): boolean {
   return false;
 }
 
-function boundedContextHasLocks(bc: DesignedBoundedContextNew): boolean {
+function boundedContextHasLocks(bc: DesignedBoundedContext): boolean {
   if (bc.name_locked || bc.description_locked) return true;
   for (const m of bc.modules?.added ?? []) {
     if (moduleHasLocks(m)) return true;
@@ -614,7 +614,7 @@ function boundedContextHasLocks(bc: DesignedBoundedContextNew): boolean {
   return false;
 }
 
-function moduleHasLocks(m: DesignedDomainModuleNew): boolean {
+function moduleHasLocks(m: DesignedDomainModule): boolean {
   if (m.name_locked || m.description_locked) return true;
   for (const bb of m.buildingBlocks?.added ?? []) {
     if (buildingBlockHasLocks(bb)) return true;
@@ -625,7 +625,7 @@ function moduleHasLocks(m: DesignedDomainModuleNew): boolean {
   return false;
 }
 
-function buildingBlockHasLocks(bb: DesignedBuildingBlockNew): boolean {
+function buildingBlockHasLocks(bb: DesignedBuildingBlock): boolean {
   if (bb.name_locked || bb.description_locked) return true;
   for (const bh of bb.behaviours?.added ?? []) {
     if (bh.name_locked || bh.description_locked) return true;
@@ -665,7 +665,7 @@ function buildingBlockHasLocks(bb: DesignedBuildingBlockNew): boolean {
 }
 
 function locateElement(
-  file: DesignDocFileNew,
+  file: DesignDocFile,
   path: ElementPathSegment[],
 ): EditableElement | null {
   if (path.length === 0) return null;
@@ -678,7 +678,7 @@ function locateElement(
 }
 
 function locateInBoundedContext(
-  bc: DesignedBoundedContextNew,
+  bc: DesignedBoundedContext,
   path: ElementPathSegment[],
 ): EditableElement | null {
   const [head, ...rest] = path;
@@ -705,7 +705,7 @@ function locateInBoundedContext(
 }
 
 function locateInModule(
-  m: DesignedDomainModuleNew,
+  m: DesignedDomainModule,
   path: ElementPathSegment[],
 ): EditableElement | null {
   const [head, ...rest] = path;
@@ -726,7 +726,7 @@ function locateInModule(
 }
 
 function locateInBuildingBlock(
-  bb: DesignedBuildingBlockNew,
+  bb: DesignedBuildingBlock,
   path: ElementPathSegment[],
 ): EditableElement | null {
   const [head, ...rest] = path;
@@ -751,7 +751,7 @@ function locateInBuildingBlock(
 }
 
 function locateInBehavior(
-  bh: DesignedBehaviourNew,
+  bh: DesignedBehaviour,
   path: ElementPathSegment[],
 ): EditableElement | null {
   if (path.length !== 1) return null;
@@ -769,9 +769,9 @@ function locateInBehavior(
 }
 
 function narrowBoundedContext(
-  bc: DesignedBoundedContextNew,
+  bc: DesignedBoundedContext,
   moduleName: string | null,
-): DesignedBoundedContextNew {
+): DesignedBoundedContext {
   if (moduleName === null) return bc;
   const matchingModules = (bc.modules?.added ?? []).filter(
     (m) => m.name === moduleName,

@@ -16,9 +16,9 @@ import {
   type KnowledgeNewTestContext,
 } from "@tests/helpers/knowledge-test-context.js";
 import {
-  DesignDocFileNewSchema,
-  type DesignDocFileNew,
-} from "@noesis/shared-contracts/design-doc-new.js";
+  DesignDocFileSchema,
+  type DesignDocFile,
+} from "@noesis/shared-contracts/design-doc.js";
 import { designDocCanonicalPath } from "@noesis/shared-contracts/source-files.js";
 import { DesignDocImplementedError } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.service.js";
 
@@ -292,7 +292,7 @@ describe("DesignDocsService — page, detail, deletion, actors, element edits", 
       { description: "new auth" },
     );
 
-    const updated = DesignDocFileNewSchema.parse(
+    const updated = DesignDocFileSchema.parse(
       JSON.parse(readFileSync(path, "utf-8")),
     );
     const bc = updated.boundedContexts?.added[0];
@@ -330,8 +330,8 @@ describe("DesignDocsService — page, detail, deletion, actors, element edits", 
   });
 });
 
-function file(overrides: Partial<DesignDocFileNew> = {}): DesignDocFileNew {
-  return DesignDocFileNewSchema.parse({
+function file(overrides: Partial<DesignDocFile> = {}): DesignDocFile {
+  return DesignDocFileSchema.parse({
     id: "dd-1",
     name: "Vision",
     name_locked: false,
@@ -346,7 +346,7 @@ function file(overrides: Partial<DesignDocFileNew> = {}): DesignDocFileNew {
 
 async function indexDesignDoc(
   ctx: KnowledgeNewTestContext,
-  ddFile: DesignDocFileNew,
+  ddFile: DesignDocFile,
 ): Promise<void> {
   const path = designDocCanonicalPath(ctx.projectDir, ddFile.id, ddFile.name);
   mkdirSync(join(ctx.projectDir, "noesis", "design-docs"), { recursive: true });

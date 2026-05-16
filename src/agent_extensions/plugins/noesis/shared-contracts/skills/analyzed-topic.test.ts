@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { AnalyzedTopicSchema, DecisionSchema } from "./analyzed-topic.js";
+import { AnalyzedTopicSchema, AnalyzedDecisionSchema } from "./analyzed-topic.js";
 
-describe("DecisionSchema", () => {
+describe("AnalyzedDecision", () => {
   const ideaUnitRef = {
     type: "idea_unit_ref" as const,
     conversation_id: "c1",
@@ -10,7 +10,7 @@ describe("DecisionSchema", () => {
   };
 
   test("fills id with a uuid when omitted", () => {
-    const result = DecisionSchema.parse({
+    const result = AnalyzedDecisionSchema.parse({
       title: "t",
       status: "accepted",
       context: { text: "", supporting_content: [] },
@@ -23,7 +23,7 @@ describe("DecisionSchema", () => {
   });
 
   test("accepts supporting_content references attached to every slot", () => {
-    const result = DecisionSchema.parse({
+    const result = AnalyzedDecisionSchema.parse({
       title: "t",
       status: "accepted",
       context: { text: "", supporting_content: [ideaUnitRef] },

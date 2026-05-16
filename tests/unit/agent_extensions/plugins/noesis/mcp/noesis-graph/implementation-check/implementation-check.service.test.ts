@@ -14,7 +14,7 @@ import { and, given, then, when } from "@tests/bdd.js";
 import { ImplementationCheckService } from "@noesis/mcp/noesis-graph/implementation-check/implementation-check.service.js";
 import type { DesignDocsService } from "@noesis/mcp/noesis-graph/knowledge/design-docs/design-docs.service.js";
 import type { ScannerService } from "@noesis/mcp/noesis-graph/scanner/scanner.service.js";
-import type { DesignDoc } from "@noesis/shared-contracts/design-doc.js";
+import type { DesignDocFile } from "@noesis/shared-contracts/design-doc.js";
 import type { DomainModelTree } from "@noesis/mcp/noesis-graph/scanner/domain-model/domain-model.js";
 
 interface FakeScanner {
@@ -22,7 +22,7 @@ interface FakeScanner {
 }
 
 interface FakeDesignDocs {
-  readDesignDoc: (id: string) => Promise<DesignDoc | null>;
+  readDesignDoc: (id: string) => Promise<DesignDocFile | null>;
 }
 
 function newService(
@@ -138,7 +138,7 @@ describe("ImplementationCheckService — comparing live code scans to a design d
           };
           const designDocs: FakeDesignDocs = {
             readDesignDoc: async () =>
-              ({ id: "dd-empty", name: "Empty", description: "" }) as DesignDoc,
+              ({ id: "dd-empty", name: "Empty", description: "" }) as DesignDocFile,
           };
           result = await newService(
             scanner,
@@ -176,7 +176,7 @@ describe("ImplementationCheckService — comparing live code scans to a design d
           };
           const designDocs: FakeDesignDocs = {
             readDesignDoc: async () =>
-              ({ id: "dd-shape", name: "Shape", description: "" }) as DesignDoc,
+              ({ id: "dd-shape", name: "Shape", description: "" }) as DesignDocFile,
           };
           try {
             await newService(

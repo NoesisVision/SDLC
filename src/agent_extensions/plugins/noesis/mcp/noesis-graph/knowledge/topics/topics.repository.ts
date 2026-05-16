@@ -2,9 +2,9 @@ import { Injectable } from "@nestjs/common";
 import { existsSync, unlinkSync } from "fs";
 import { z } from "zod";
 import {
-  TopicFileNewSchema,
-  type TopicFileNew,
-} from "../../../../shared-contracts/source-file-schemas.js";
+  TopicFileSchema,
+  type TopicFile,
+} from "../../../../shared-contracts/topic.js";
 import {
   computeFileSha,
   findTopicJsonById,
@@ -169,8 +169,8 @@ export class TopicsRepository {
     return rows[0] ?? null;
   }
 
-  readFile(absPath: string): TopicFileNew {
-    return readSourceFile(absPath, TopicFileNewSchema);
+  readFile(absPath: string): TopicFile {
+    return readSourceFile(absPath, TopicFileSchema);
   }
 
   async readStaleFlag(topicId: string): Promise<boolean | null> {
@@ -182,7 +182,7 @@ export class TopicsRepository {
     return StaleRowSchema.parse(rows[0]).is_stale;
   }
 
-  async upsert(file: TopicFileNew, sha: string): Promise<void> {
+  async upsert(file: TopicFile, sha: string): Promise<void> {
     await this.db.query(
       "MERGE (t:Topic {id: $id}) SET " +
         "t.sha = $sha, " +
@@ -219,8 +219,8 @@ export class TopicsRepository {
     await this.replaceItemRels(file);
   }
 
-  writeFile(absPath: string, file: TopicFileNew): void {
-    writeSourceFile(absPath, file, TopicFileNewSchema);
+  writeFile(absPath: string, file: TopicFile): void {
+    writeSourceFile(absPath, file, TopicFileSchema);
   }
 
   async writeStaleFlag(topicId: string, isStale: boolean): Promise<void> {
@@ -230,7 +230,7 @@ export class TopicsRepository {
     );
   }
 
-  private async replaceItemRels(file: TopicFileNew): Promise<void> {
+  private async replaceItemRels(file: TopicFile): Promise<void> {
     await this.db.query(
       "MATCH (:IdeaUnit)-[r:IDEA_UNIT_BELONGS_TO_TOPIC]->(t:Topic) WHERE t.id = $id DELETE r",
       { id: file.id },

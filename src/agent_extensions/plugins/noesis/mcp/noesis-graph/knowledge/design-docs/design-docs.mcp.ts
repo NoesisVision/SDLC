@@ -1,16 +1,16 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type {
-  DesignDocFileNew,
-  DesignedActorNew,
-  DesignedBehaviourNew,
-  DesignedBoundedContextNew,
-  DesignedBuildingBlockNew,
-  DesignedDomainModuleNew,
-  DesignedQualityAttributeNew,
-  DesignedRuleNew,
-  DesignedScenarioNew,
-} from "../../../../shared-contracts/design-doc-new.js";
+  DesignDocFile,
+  DesignedActor,
+  DesignedBehaviour,
+  DesignedBoundedContext,
+  DesignedBuildingBlock,
+  DesignedDomainModule,
+  DesignedQualityAttribute,
+  DesignedRule,
+  DesignedScenario,
+} from "../../../../shared-contracts/design-doc.js";
 import {
   runFileOutputTool,
   runInlineJsonTool,
@@ -78,7 +78,7 @@ function registerSaveDesignDoc(
     "save_design_doc",
     {
       description:
-        "Persist a DesignDoc into the knowledge graph from a JSON file matching DesignDocFileNewSchema. " +
+        "Persist a DesignDoc into the knowledge graph from a JSON file matching DesignDocFileSchema. " +
         "Path MUST be the canonical path returned by `prepare_design_doc_path`. " +
         "If the prior on-disk version of the doc has any user-edited (`*_locked: true`) top-level field " +
         "(`name`, `description`) whose value would change, the save rejects with the locked-field list; " +
@@ -345,7 +345,7 @@ function formatBoundedContextMap(entries: BoundedContextMapEntry[]): string {
 }
 
 function formatModelForModules(
-  contexts: DesignedBoundedContextNew[],
+  contexts: DesignedBoundedContext[],
   targets: ModelTarget[],
 ): string {
   const parts: string[] = ["# Model for selected modules", ""];
@@ -373,7 +373,7 @@ function formatModelForModules(
 }
 
 function formatDesignDoc(
-  doc: DesignDocFileNew | null,
+  doc: DesignDocFile | null,
   requestedId: string,
 ): string {
   if (doc === null) return `DesignDoc not found: ${requestedId}`;
@@ -403,7 +403,7 @@ function formatDesignDocList(docs: DesignDocOverview[]): string {
 
 function appendBoundedContexts(
   lines: string[],
-  contexts: DesignedBoundedContextNew[],
+  contexts: DesignedBoundedContext[],
 ): void {
   lines.push("## Bounded Contexts");
   lines.push("");
@@ -423,7 +423,7 @@ function appendBoundedContexts(
 
 function appendModule(
   lines: string[],
-  mod: DesignedDomainModuleNew,
+  mod: DesignedDomainModule,
   level: number,
 ): void {
   lines.push(`${"#".repeat(level)} Module: ${mod.name}`);
@@ -435,7 +435,7 @@ function appendModule(
 
 function appendBuildingBlock(
   lines: string[],
-  bb: DesignedBuildingBlockNew,
+  bb: DesignedBuildingBlock,
   level: number,
 ): void {
   const type = bb.type ? ` _(${bb.type})_` : "";
@@ -458,7 +458,7 @@ function appendBuildingBlock(
 
 function appendBehaviour(
   lines: string[],
-  bh: DesignedBehaviourNew,
+  bh: DesignedBehaviour,
   level: number,
 ): void {
   const tag = bh.type ? ` _[${bh.type}]_` : "";
@@ -480,7 +480,7 @@ function appendBehaviour(
 
 function appendQualityAttributes(
   lines: string[],
-  attrs: DesignedQualityAttributeNew[],
+  attrs: DesignedQualityAttribute[],
 ): void {
   if (attrs.length === 0) return;
   lines.push("");
@@ -491,18 +491,18 @@ function appendQualityAttributes(
   }
 }
 
-function appendRule(lines: string[], rule: DesignedRuleNew): void {
+function appendRule(lines: string[], rule: DesignedRule): void {
   const type = rule.ruleType ? ` _(${rule.ruleType})_` : "";
   lines.push(
     `- **Rule:** ${rule.name}${type}${rule.description ? ` — ${rule.description}` : ""}`,
   );
 }
 
-function appendScenario(lines: string[], scenario: DesignedScenarioNew): void {
+function appendScenario(lines: string[], scenario: DesignedScenario): void {
   lines.push(`- **Scenario:** ${scenario.name} — ${scenario.description}`);
   lines.push(`  - Given: ${scenario.given}`);
   lines.push(`  - When: ${scenario.when}`);
   lines.push(`  - Then: ${scenario.then}`);
 }
 
-export type { DesignedActorNew };
+export type { DesignedActor };

@@ -1,14 +1,6 @@
 import { z } from "zod";
 import { IdeaUnitCategory } from "./idea-unit-category.js";
 
-export const DocumentSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  date: z.string(),
-  content: z.string(),
-});
-export type Document = z.infer<typeof DocumentSchema>;
-
 export const DocumentFragmentRefSchema = z.object({
   type: z.literal("document_fragment_ref"),
   document_id: z.string(),
@@ -62,34 +54,12 @@ export interface SectionNode {
   children: SectionNode[];
 }
 
-// --- Domain functions ---
-
-export function buildFragmentMap(
-  fragments: DocumentFragment[],
-): Map<number, DocumentFragment> {
-  return new Map(fragments.map((f) => [f.index, f]));
-}
-
-export function isIrrelevantFragment(
-  categories: DocumentFragment["categories"],
-): boolean {
-  return categories.length === 1 && categories[0] === "Irrelevant";
-}
-
-export function formatSectionTreeMarkdown(tree: SectionNode[]): string {
-  const lines: string[] = ["# Section tree", ""];
-  const walk = (node: SectionNode) => {
-    const prefix = "  ".repeat(node.level - 1);
-    const fragmentCount = node.fragment_indices.length;
-    lines.push(
-      `${prefix}- ${"#".repeat(node.level)} ${node.title} _(${fragmentCount} fragments)_`,
-    );
-    for (const child of node.children) {
-      walk(child);
-    }
-  };
-  for (const root of tree) {
-    walk(root);
-  }
-  return lines.join("\n");
-}
+export const DocumentFileSchema = z.object({
+  document_id: z.string(),
+  title: z.string(),
+  date: z.string(),
+  content: z.string(),
+  fragments: z.array(DocumentFragmentSchema),
+  section_tree: z.array(SectionNodeSchema),
+});
+export type DocumentFile = z.infer<typeof DocumentFileSchema>;

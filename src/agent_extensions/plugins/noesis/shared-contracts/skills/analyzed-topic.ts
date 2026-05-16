@@ -1,22 +1,13 @@
 import { z } from "zod";
-import { DecisionStatusSchema } from "../decision-status.js";
+import {
+  DecisionContextSchema,
+  DecisionOptionSchema,
+  DecisionStatusSchema,
+} from "../decision.js";
 import { SourceContentRefSchema } from "../source-content.js";
 import { newUuid } from "../uuid.js";
 
-export const DecisionContextSchema = z.object({
-  text: z.string(),
-  supporting_content: z.array(SourceContentRefSchema),
-});
-export type DecisionContext = z.infer<typeof DecisionContextSchema>;
-
-export const DecisionOptionSchema = z.object({
-  text: z.string(),
-  rationale: z.string(),
-  supporting_content: z.array(SourceContentRefSchema),
-});
-export type DecisionOption = z.infer<typeof DecisionOptionSchema>;
-
-export const DecisionSchema = z.object({
+export const AnalyzedDecisionSchema = z.object({
   id: z.string().default(() => newUuid()),
   title: z.string(),
   status: DecisionStatusSchema,
@@ -24,7 +15,7 @@ export const DecisionSchema = z.object({
   decision: DecisionOptionSchema,
   alternative_options: z.array(DecisionOptionSchema),
 });
-export type Decision = z.infer<typeof DecisionSchema>;
+export type AnalyzedDecision = z.infer<typeof AnalyzedDecisionSchema>;
 
 export const AnalyzedTopicSchema = z.object({
   id: z.string(),
@@ -34,7 +25,7 @@ export const AnalyzedTopicSchema = z.object({
   short_summary: z.string(),
   long_summary: z.string(),
   items: z.array(SourceContentRefSchema),
-  decisions: z.array(DecisionSchema).default(() => []),
+  decisions: z.array(AnalyzedDecisionSchema).default(() => []),
   reviewed: z.boolean().default(false),
   decisions_extracted: z.boolean().default(false),
 });

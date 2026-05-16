@@ -1,9 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { assertNever } from "../../../../shared-contracts/assert-never.js";
 import type {
-  DecisionFileNew,
-  DecisionOptionNew,
-} from "../../../../shared-contracts/source-file-schemas.js";
+  DecisionFile,
+  DecisionOption,
+} from "../../../../shared-contracts/decision.js";
 import type { SourceContentRef } from "../../../../shared-contracts/source-content.js";
 import type {
   DecisionAlternativeData,
@@ -138,7 +138,7 @@ export class DecisionsService {
       return next;
     });
     if (updated.length === 0) return { updated: [] };
-    const nextFile: DecisionFileNew = {
+    const nextFile: DecisionFile = {
       ...file,
       alternative_options: updatedAlternatives,
     };
@@ -369,7 +369,7 @@ export class DecisionsService {
     const path = this.requireFilePath(decisionId);
     const file = this.repository.readFile(path);
     const updated: DecisionLockedField[] = [];
-    let next: DecisionFileNew = file;
+    let next: DecisionFile = file;
     if (fields.title !== undefined && file.title !== fields.title) {
       if (file.title_locked && !confirmedByUser) {
         throw new Error(
@@ -437,7 +437,7 @@ export class DecisionsService {
       const file = this.repository.readFile(path);
       const isStale = computeStale(collectAllRefs(file), snapshot);
       if (isStale !== file.is_stale) {
-        const updated: DecisionFileNew = { ...file, is_stale: isStale };
+        const updated: DecisionFile = { ...file, is_stale: isStale };
         this.repository.writeFile(path, updated);
       }
       if (isStale !== decision.is_stale) {
@@ -467,7 +467,7 @@ export class DecisionsService {
     return null;
   }
 
-  private persistFile(file: DecisionFileNew, previousPath: string | null): string {
+  private persistFile(file: DecisionFile, previousPath: string | null): string {
     const newPath = this.canonicalPath(file.id, file.title);
     if (previousPath !== null && previousPath !== newPath) {
       this.repository.deleteFile(previousPath);
@@ -505,13 +505,13 @@ export class DecisionsService {
     return topic?.title ?? "";
   }
 
-  private async requireFile(decisionId: string): Promise<DecisionFileNew> {
+  private async requireFile(decisionId: string): Promise<DecisionFile> {
     const file = this.tryReadFile(decisionId);
     if (file === null) throw new Error(`Decision not found: ${decisionId}`);
     return file;
   }
 
-  private tryReadFile(decisionId: string): DecisionFileNew | null {
+  private tryReadFile(decisionId: string): DecisionFile | null {
     const path = this.repository.findFileById(this.projectDir, decisionId);
     if (path === null) return null;
     return this.repository.readFile(path);
@@ -525,7 +525,7 @@ function byDateDesc(a: { date: string }, b: { date: string }): number {
   return a.date < b.date ? 1 : -1;
 }
 
-function collectAllRefs(file: DecisionFileNew): SourceContentRef[] {
+function collectAllRefs(file: DecisionFile): SourceContentRef[] {
   return [
     ...file.context.supporting_content,
     ...file.decision.supporting_content,
@@ -552,7 +552,7 @@ function decisionDate(
 }
 
 function fileReferencesAny(
-  file: DecisionFileNew,
+  file: DecisionFile,
   conversationIds: Set<string>,
   documentIds: Set<string>,
 ): boolean {
@@ -570,7 +570,7 @@ function fileReferencesAny(
   return false;
 }
 
-function hasUserLocks(file: DecisionFileNew): boolean {
+function hasUserLocks(file: DecisionFile): boolean {
   if (file.title_locked || file.status_locked) return true;
   if (file.context.text_locked) return true;
   if (file.decision.text_locked || file.decision.rationale_locked) return true;
@@ -622,7 +622,7 @@ function parseSlotPath(slot: DecisionSlotPath): Slot {
 }
 
 function positionsForSlotConversation(
-  file: DecisionFileNew,
+  file: DecisionFile,
   slot: Slot,
   conversationId: string,
 ): Array<{ turn_index: number; idea_unit_index: number }> {
@@ -639,7 +639,7 @@ function positionsForSlotConversation(
 }
 
 function rangesForSlotDocument(
-  file: DecisionFileNew,
+  file: DecisionFile,
   slot: Slot,
   documentId: string,
 ): Array<{ start: number; end: number }> {
@@ -652,7 +652,7 @@ function rangesForSlotDocument(
   return out;
 }
 
-function slotItemRefs(file: DecisionFileNew, slot: Slot): SourceContentRef[] {
+function slotItemRefs(file: DecisionFile, slot: Slot): SourceContentRef[] {
   switch (slot.kind) {
     case "context":
       return file.context.supporting_content;
@@ -696,11 +696,11 @@ function uniqueRefIds(
 }
 
 function applyContextEdit(
-  file: DecisionFileNew,
+  file: DecisionFile,
   newText: string,
   confirmedByUser: boolean,
   updated: DecisionLockedField[],
-): DecisionFileNew {
+): DecisionFile {
   if (file.context.text === newText) return file;
   if (file.context.text_locked && !confirmedByUser) {
     throw new Error(
@@ -715,11 +715,11 @@ function applyContextEdit(
 }
 
 function applyDecisionTextEdit(
-  file: DecisionFileNew,
+  file: DecisionFile,
   newText: string,
   confirmedByUser: boolean,
   updated: DecisionLockedField[],
-): DecisionFileNew {
+): DecisionFile {
   return applyDecisionOptionEdit(
     file,
     "text",
@@ -732,11 +732,11 @@ function applyDecisionTextEdit(
 }
 
 function applyDecisionRationaleEdit(
-  file: DecisionFileNew,
+  file: DecisionFile,
   newText: string,
   confirmedByUser: boolean,
   updated: DecisionLockedField[],
-): DecisionFileNew {
+): DecisionFile {
   return applyDecisionOptionEdit(
     file,
     "rationale",
@@ -749,15 +749,15 @@ function applyDecisionRationaleEdit(
 }
 
 function applyDecisionOptionEdit(
-  file: DecisionFileNew,
+  file: DecisionFile,
   fieldKey: "text" | "rationale",
   lockKey: "text_locked" | "rationale_locked",
   reportKey: "decision.text" | "decision.rationale",
   newValue: string,
   confirmedByUser: boolean,
   updated: DecisionLockedField[],
-): DecisionFileNew {
-  const opt: DecisionOptionNew = file.decision;
+): DecisionFile {
+  const opt: DecisionOption = file.decision;
   if (opt[fieldKey] === newValue) return file;
   if (opt[lockKey] && !confirmedByUser) {
     throw new Error(

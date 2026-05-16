@@ -20,13 +20,17 @@ import {
   type Conversation,
 } from "@noesis/shared-contracts/conversation.js";
 import {
-  DecisionFileNewSchema,
-  DocumentFileNewSchema,
-  TopicFileNewSchema,
-  type DecisionFileNew,
-  type DocumentFileNew,
-  type TopicFileNew,
-} from "@noesis/shared-contracts/source-file-schemas.js";
+  DecisionFileSchema,
+  type DecisionFile,
+} from "@noesis/shared-contracts/decision.js";
+import {
+  DocumentFileSchema,
+  type DocumentFile,
+} from "@noesis/shared-contracts/document.js";
+import {
+  TopicFileSchema,
+  type TopicFile,
+} from "@noesis/shared-contracts/topic.js";
 import {
   conversationJsonPath,
   decisionJsonPath,
@@ -280,8 +284,8 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
             document_id: "doc-1",
             content: "Hello world!",
             fragments: [
-              { kind: "paragraph", index: 0, start_offset: 0, end_offset: 5, section_path: [], text: "Hello" },
-              { kind: "paragraph", index: 1, start_offset: 6, end_offset: 11, section_path: [], text: "world" },
+              { kind: "paragraph", index: 0, start_offset: 0, end_offset: 5, section_path: [], text: "Hello", categories: [] },
+              { kind: "paragraph", index: 1, start_offset: 6, end_offset: 11, section_path: [], text: "world", categories: [] },
             ],
           }),
         );
@@ -413,8 +417,8 @@ describe("DecisionsService — page, detail, slot lookups, source filtering", ()
   });
 });
 
-function topicFile(overrides: Partial<TopicFileNew> = {}): TopicFileNew {
-  return TopicFileNewSchema.parse({
+function topicFile(overrides: Partial<TopicFile> = {}): TopicFile {
+  return TopicFileSchema.parse({
     id: "topic-1",
     parent_id: null,
     title: "Topic",
@@ -449,8 +453,8 @@ function conversationFile(
   });
 }
 
-function documentFile(overrides: Partial<DocumentFileNew> = {}): DocumentFileNew {
-  return DocumentFileNewSchema.parse({
+function documentFile(overrides: Partial<DocumentFile> = {}): DocumentFile {
+  return DocumentFileSchema.parse({
     document_id: "doc-1",
     title: "Vision",
     date: "2026-01-02",
@@ -463,8 +467,8 @@ function documentFile(overrides: Partial<DocumentFileNew> = {}): DocumentFileNew
   });
 }
 
-function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew {
-  return DecisionFileNewSchema.parse({
+function decisionFile(overrides: Partial<DecisionFile> = {}): DecisionFile {
+  return DecisionFileSchema.parse({
     id: "d-1",
     topic_id: "topic-1",
     title: "A decision",
@@ -487,7 +491,7 @@ function decisionFile(overrides: Partial<DecisionFileNew> = {}): DecisionFileNew
 
 async function indexTopic(
   ctx: KnowledgeNewTestContext,
-  file: TopicFileNew,
+  file: TopicFile,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "topics"), { recursive: true });
   const path = topicJsonPath(ctx.projectDir, file.id, file.title);
@@ -511,7 +515,7 @@ async function indexConversation(
 
 async function indexDocument(
   ctx: KnowledgeNewTestContext,
-  file: DocumentFileNew,
+  file: DocumentFile,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "documents"), { recursive: true });
   const path = documentJsonPath(ctx.projectDir, file.document_id, file.title);
@@ -521,7 +525,7 @@ async function indexDocument(
 
 async function indexDecision(
   ctx: KnowledgeNewTestContext,
-  file: DecisionFileNew,
+  file: DecisionFile,
 ): Promise<void> {
   mkdirSync(join(ctx.projectDir, "noesis", "decisions"), { recursive: true });
   const path = decisionJsonPath(ctx.projectDir, file.id, file.title);
