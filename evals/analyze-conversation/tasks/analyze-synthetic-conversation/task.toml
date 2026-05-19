@@ -1,0 +1,47 @@
+version = "1.0"
+
+# --- nasde layer: reads [task].name (org/ prefix stripped) and [nasde.*] ---
+[task]
+name = "analyze-conversation/analyze-synthetic-conversation"
+description = "Run the full noesis:analyze-conversation skill pipeline on a synthetic parcel-locker design transcript and merge the result into the noesis knowledge graph."
+
+# --- Harbor layer: top-level [metadata] is dict[str, Any], arbitrary keys ok ---
+[metadata]
+difficulty = "advanced"
+domain = "Conversation analysis / knowledge graph"
+transcript_language = "English"
+# environment/_plugin-staging/ is a frozen snapshot of the noesis plugin taken
+# from this SDLC commit. Refreshing the snapshot (see README) is a deliberate,
+# reviewed action; bump this SHA when you do.
+plugin_snapshot_ref = "b44b84302e5e9cc0b8e7acc5526598bd1800ef00"
+
+[agent]
+# 5-step pipeline + many MCP round-trips + bun/NestJS cold start. Tune down
+# after the first --without-eval dry run if it finishes well under budget.
+timeout_sec = 2700
+
+[environment]
+# No docker_image -> Harbor builds environment/Dockerfile (build context is the
+# environment/ dir, so _plugin-staging/ must live there and COPY paths are
+# relative to environment/).
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 6144
+storage_mb = 10240
+allow_internet = true
+
+# Harbor writes this into the agent's .claude.json and runs command+args inside
+# the container. The wrapper exports the three vars the noesis-graph server +
+# prepare.ts require (the CC plugin loader does NOT inject them when the plugin
+# is baked, not installed): CLAUDE_PLUGIN_DATA, the project dir, CLAUDE_PLUGIN_ROOT.
+[[environment.mcp_servers]]
+name = "noesis-graph"
+transport = "stdio"
+command = "sh"
+args = [
+  "-c",
+  "export CLAUDE_PLUGIN_ROOT=/opt/noesis-plugin CLAUDE_PLUGIN_DATA=/opt/noesis-data NOESIS_PROJECT_DIR=/app && cd /opt/noesis-plugin && exec bun run mcp/noesis-graph/server.ts",
+]
+
+[verifier]
+timeout_sec = 600
