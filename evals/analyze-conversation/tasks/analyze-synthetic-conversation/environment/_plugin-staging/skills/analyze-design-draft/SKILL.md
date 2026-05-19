@@ -1,0 +1,168 @@
+---
+name: noesis:analyze-design-draft
+description: Analyze a software design draft (Markdown document) and integrate it into the knowledge graph. Extracts topics and decisions, attaches new evidence to existing decisions where applicable, and — when the document describes a domain model — captures it as a Design Doc.
+---
+
+# Analyze Design Draft
+
+The main agent does the reasoning. Use the Read tool freely to load as much (or as little) of the source document as you need to keep output quality high — full document, partial windows, overlapping re-reads — that judgement is yours. The knowledge graph lives in the `noesis-graph` MCP server. Persist via the dedicated tools — `save_design_doc` for the design model (Step 6) and `merge_document` for topics, fragments, decisions, and attachments (Step 7) — never write graph data directly.
+
+A document is a **monologue**: one author, no off-topic noise. The atomic item is a `DocumentFragment` (offset range), not an idea unit. Headings are **hints** — the topic structure must respect existing graph topics first; promote a heading to a topic only when no existing topic fits.
+
+## Setup
+
+Get from `$ARGUMENTS`, ask if missing:
+
+- **document_path** — absolute path to the source Markdown.
+- **title** — falls back to the document's first `#` heading or the filename stem.
+- **date** — `YYYY-MM-DD`, falls back to today.
+- **main_topic** — short description used to seed topic search.
+- **Design Doc target** — one of:
+  - `design_doc_id` — attach the extracted model to an existing Design Doc.
+  - `design_doc_title` — create a new Design Doc with this name.
+  - `skip` — the document does not describe a domain model.
+
+  If none provided, ask: *"Should I attach the extracted model to an existing Design Doc (provide id) or create a new one (provide title)? Reply `id=<uuid>`, `title=<name>`, or `skip`."*
+
+- **design_doc_path** — required when not `skip`. Absolute path under `<projectDir>/noesis/design-docs/` where the design doc JSON should be persisted. Default: `<projectDir>/noesis/design-docs/<id-prefix>-<slug>.json` where `<id-prefix>` is the first 8 chars of the design-doc UUIDv7 and `<slug>` is the kebab-case title truncated to 15 chars. The save tool rejects paths outside `noesis/design-docs/`.
+
+## Workflow
+
+### Step 1: Prepare
+
+Run `NOESIS_PROJECT_DIR=$(pwd) bun run ${CLAUDE_PLUGIN_ROOT}/scripts/document/prepare.ts <document_path> "<title>" "<date>"` plus optional flags `--design_doc_id <id>` or `--design_doc_title <title>`.
+
+The script computes `document_id` as the sha-256 of the raw document bytes formatted as a UUID, parses the source Markdown into a section tree + fragment list (with offsets against the raw source), creates a private working directory under the plugin's per-project data dir, and initializes `<working_dir>/output.json` (matching `AnalyzeDesignDraftOutput`: `{ document, fragments, section_tree, topics: [], decision_attachments: [], design_doc_id, design_doc_title, design_doc_extracted: false }`) plus `<working_dir>/section_tree.md`. The source file is **not** modified and **no** file is written under `<projectDir>/noesis/`.
+
+It returns:
+```json
+{
+  "status": "Ok",
+  "working_dir": "<absolute path returned by the script>",
+  "document_id": "<id>",
+  "output_path": "<working_dir>/output.json",
+  "section_tree_path": "<working_dir>/section_tree.md",
+  "source_path": "<the user-provided document_path>",
+  "num_fragments": <n>,
+  "design_doc_id": <id|null>,
+  "design_doc_title": <title|null>
+}
+```
+
+Treat `working_dir` as an opaque absolute path — always use the value returned by the script, never construct it yourself. Use `source_path` whenever Step 3 instructs you to read the source document end-to-end.
+
+Then call MCP tool `noesis-graph:has_document` with `document_id`:
+- `exists: true` AND no Design-Doc target → "This document is a duplicate of one already in the graph; analysis aborted." — the id is the content hash, so an existing row means these exact bytes were already processed. Stop.
+- `exists: true` AND a target was provided → skip Steps 2–5 and jump to Step 6 (re-extract design model only, then merge in Step 7).
+- Otherwise proceed.
+
+### Step 2: Find existing topics (Goldilocks)
+
+Identify topics in the graph already covering the document's subject area, so Step 3 can reuse them.
+
+1. Call `noesis-graph:list_topics` (no `parent_topic_id`). Read the returned file.
+2. Judge relevance against `<main_topic>`.
+3. Drill into relevant topics with `has_subtopics: yes` via `noesis-graph:list_topics` with `parent_topic_id: <id>`. Apply Goldilocks:
+   - **Too broad** — children match more accurately → drop the parent, recurse.
+   - **Too narrow** — children only cover a fraction → keep the parent.
+   - **Worse fit** — children are tangents → keep the parent, abort drill-down.
+   - **Just right** — child comprehensively covers the subject → keep it; consider its subtopics.
+4. Keep the resulting candidate list (each `{ id, title, short_summary, parent_id }`) in working memory for Step 3. Nothing is written to `output.json` yet.
+
+### Step 3: Assign categories and topics to fragments
+
+Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/extract-document-topics.md`.
+
+Prefer `<section_tree_path>` for structural questions and selective fragment reads from `<output_path>` for content questions. Only read `<document_path>` (the source) end-to-end when you need flowing narrative across sections; otherwise an end-to-end read of a 50 KB document is wasted work.
+
+Read `<output_path>` to see the fragment list (under `fragments`) with `index`, `start_offset`, `end_offset`, `section_path`, `kind`, `text`.
+
+For every fragment:
+- Assign one or more categories (`Information`, `Position`, `Argument`, `Decision`, `Irrelevant`).
+- For non-Irrelevant fragments, assign a topic — reuse a Step-2 candidate (set `is_new: false` and copy its `parent_id`) or create a new one (`is_new: true`, sensible `parent_id`, fresh UUID).
+
+Edit `<output_path>` (Edit tool):
+- For each fragment in `fragments`, set its `categories` array.
+- Build `topics: [...]` — one `AnalyzedTopic` per touched topic, each with `id`, `parent_id`, `is_new`, empty summaries, `items: [DocumentFragmentRef, ...]`, empty `decisions`, `reviewed: false`, `decisions_extracted: false`.
+
+`DocumentFragmentRef`: `{ "type": "document_fragment_ref", "document_id": "<id>", "start_offset": N, "end_offset": N }` — copy `start_offset` / `end_offset` directly from the fragment.
+
+#### Bulk-edit pattern
+
+For documents with >100 fragments, editing `output.json` line-by-line with the Edit tool is impractical (250-KB files do not respond well to hundreds of precise edits). Write a short Python helper next to `output.json` (load JSON → mutate in memory → dump JSON) and invoke it via Bash. Re-use the same helper across iterations. Do **not** write helpers speculatively — only when you have a concrete bulk operation in hand.
+
+#### Decision-coverage check
+
+After categorising, run:
+
+```
+bun run ${CLAUDE_PLUGIN_ROOT}/scripts/document/check-decision-coverage.ts <output_path>
+```
+
+The script flags sections whose heading matches `decision|adr|reguły|polityka` and have <30% Decision-categorised fragments. If it warns, revisit those sections — narrative decisions (`ponieważ`, `zamiast`, `zdecydowaliśmy się na`, `we chose`, `rather than`) are easy to miss when scanning for explicit `Decision:`-shaped paragraphs. The script exits 0 either way; the warning is informational.
+
+### Step 4: Find existing decisions
+
+Collect every topic id that ended up in `output.json`'s `topics`. For each id, call `noesis-graph:list_decisions` with `topic_id: <id>` and read the returned file. Discard decisions whose context/title is clearly unrelated to `<main_topic>`. When in doubt, keep — Step 5 makes the final per-fragment attach/skip judgement.
+
+If no topic ids were collected (the document maps entirely to new topics), call `noesis-graph:list_decisions` with no filter to scan top-level decisions.
+
+Note candidate decisions for use in Step 5 — keep a working list in your context, no on-disk file needed.
+
+### Step 5: Review topics, generate summaries, extract or attach decisions
+
+Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/analyze-document-topic.md`.
+
+Two execution modes:
+
+**Iterative** (default — use when ≤10 unreviewed topics remain):
+
+1. Call `noesis-graph:get_topic_for_document_review` with `output_path: <output_path>`. If `{ "status": "Done" }`, exit.
+2. Otherwise read the returned file. It contains the topic's fragments (current document + prior documents from the graph, with `[from <doc title>]` markers).
+3. Decide on summaries, fragment reassignments, and decisions per the REFERENCE.
+4. Edit `<output_path>`: update this topic's `short_summary` / `long_summary` under `topics[]`, set `reviewed: true` and `decisions_extracted: true`. For decisions:
+   - **CREATE** new `Decision` records → add them to this topic's `decisions` array.
+   - **ATTACH** to an existing decision → append an `AttachToDecision` entry to the top-level `decision_attachments` array.
+5. Repeat from sub-step 1.
+
+**Batch** (use when >10 unreviewed topics remain):
+
+1. Call `noesis-graph:list_unreviewed_topics_for_document` with `output_path: <output_path>`. The tool returns one tmp file containing every unreviewed topic's enriched view (current + prior-document fragments, with `[from <doc>]` markers) separated by `<!-- topic_id: ... -->` headers.
+2. Read the bundle. For each topic, decide summaries / reassignments / decisions per the REFERENCE.
+3. Apply all updates to `<output_path>` in one Edit/Write pass (typically via the bulk-edit helper from Step 3).
+4. **Per-topic verification is mandatory**: walk every topic you wrote a summary for and confirm any `[from <doc title>]` prior-document fragments were folded into the summary. The batch shortcut is only safe if this pass actually happens.
+
+In both modes: each topic's `reviewed: true` and `decisions_extracted: true` flags must be flipped, the `short_summary` / `long_summary` regenerated from current+prior fragments, and decisions either CREATE-d locally or ATTACH-ed via `decision_attachments`.
+
+### Step 6: Extract design model (conditional)
+
+Skip if the user replied `skip` in Setup.
+
+Detailed rules: read `${CLAUDE_PLUGIN_ROOT}/skills/analyze-design-draft/references/extract-design-model.md` AND `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` (only at this step — these files are large).
+
+Decide whether the document genuinely describes a domain model (Bounded Contexts / Modules / Building Blocks / Behaviours, with Rules, Scenarios and Quality Attributes nested at the level they apply). Actors are graph-global and attach only to `application_service` behaviours via `behaviour.actor`. If the document describes none of this, skip the rest of this step.
+
+Before extracting, call `noesis-graph:list_actors` and keep the catalog handy — it is the source of truth for `behaviour.actor` reuse. Introduce a new actor only when no existing entry fits, and register it with `noesis-graph:upsert_actor({ name, description })` **before** `save_design_doc`.
+
+If `<design_doc_id>` is provided, call `noesis-graph:read_design_doc` with that id, read the returned file, and produce a ChangeSet diff against the cached state. The rendering's header line `Implemented: yes/no` tells you whether the doc has been sealed by `implement-design-doc`. **If `Implemented: yes`, stop the normal flow** and ask the user via `AskUserQuestion` whether to (a) create a brand new design doc instead (drop the supplied id and switch to `design_doc_title`, then call `noesis-graph:prepare_design_doc_path` with only `{ name }` for a fresh id), or (b) skip the design-extraction step entirely and proceed only with topic / decision merge in Step 7. Otherwise produce a first-iteration design with everything in `added`.
+
+Before writing JSON, call `noesis-graph:prepare_design_doc_path` with `{ name, id? }` (id when iterating, omit when creating). The tool returns either `{ status: "Ok", id, canonical_path }` or `{ status: "AlreadyImplemented", design_doc_id, name }` — apply the same branch as above on `AlreadyImplemented`.
+
+Write the validated DesignDoc payload (matching `DesignDocFileNewSchema` — every editable field has a sibling `*_locked: false` slot) directly to `<design_doc_path>` (canonical, under `noesis/design-docs/`). For every new actor referenced by any `behaviour.actor`, call `noesis-graph:upsert_actor` first — `save_design_doc` validates that referenced actors exist in the catalog and that actors only appear on `application_service` behaviours. Then call MCP tool `noesis-graph:save_design_doc` with `path: <design_doc_path>`. The tool returns `{ status: "Ok", design_doc_id, canonical_path }` on success, or `{ status: "AlreadyImplemented", design_doc_id, name }` if the doc was sealed between checks (handle as above). If the prior on-disk version has any user-edited (`*_locked: true`) top-level field (`name`, `description`) whose value would change, the save rejects with a `LockedFieldsBlockedError` listing each blocked entry as `{ kind: "design_doc", design_doc_id, field }`; ask the user per blocked field via `AskUserQuestion` and re-call with `confirmed_edits` containing only the approved entries (see the **Respect user edits** Rule). On rename, `canonical_path` may differ from the input path and the input is removed. Once the save succeeds, set `<output_path>`'s `design_doc_extracted: true`.
+
+### Step 7: Merge into the knowledge graph
+
+Call MCP tool `noesis-graph:merge_document` with `working_dir: <working_dir>` (and `design_doc_filename` if a design doc was extracted in Step 6 and you want it persisted in the same call — usually the design doc is already saved via `save_design_doc` in Step 6, so leave it out). The server reads `output.json`, validates business rules, and splits the analysis into source files under `<projectDir>/noesis/`: the Document JSON file, per-topic JSON files, per-decision JSON files, and any decision attachments.
+
+Report the returned `document_id`, the count of `topic_paths` and `decision_paths` written, the `decision_attachments` count, and any `cleared_locks` to the user.
+
+## Rules
+
+- Read tool is fine for `<document_path>` (the source), `<output_path>`, `<section_tree_path>`, `<design_doc_path>`, and any path returned by an MCP tool. Do not browse the working dir for other files.
+- Persist graph state only via `noesis-graph` MCP tools. Edit `output.json` / write the design doc JSON to `<design_doc_path>` with Edit/Write.
+- Do NOT load `${CLAUDE_PLUGIN_ROOT}/shared-contracts/design-doc-schema.md` unless Step 6 is actually entered — it is large.
+- **Language.** Two different rules apply depending on the field kind:
+   - **Names / identifiers in the design doc** (Step 6 output): every `name` on a BoundedContext, DesignedDomainModule, DesignedBuildingBlock, DesignedBehaviour, DesignedRule, DesignedScenario, DesignedProperty, DesignedQualityAttribute — plus every cross-reference (`input`, `output`, `usedBuildingBlocks`, `implements`, `properties[].type`, `behaviour.actor`) — must be in **English**, regardless of the source document's language. Use the conventions from `shared-contracts/design-doc-schema.md` §4 (PascalCase for BBs/behaviours, etc.). Preserve ubiquitous-language tokens (proper nouns, established domain terms with no clean English equivalent) verbatim and gloss them in English in the `description` on first use.
+   - **Free-text fields**: topic titles, topic summaries, decision titles and prose, and every `description` / BDD `given` / `when` / `then` field in the design doc MUST be written in the **same language as the source document**. Do not translate prose to English — mixing English names with source-language descriptions is the intended shape. The Actor catalog (`upsert_actor` / `list_actors`) follows the source language for the actor `description`; the actor `name` is free-form and may stay in the source language only when it is a proper noun, otherwise prefer English.
+- Reuse before promote: prefer an existing topic over a new one, an existing decision over a new one, whenever the fit is reasonable.
+- **Respect user edits.** Locks are stored per editable field as `<field>_locked: true` on the on-disk file (e.g. `title_locked`, `description_locked`). Before producing output that would overwrite any locked value on an existing topic, decision, or top-level design-doc field, ask for explicit user acceptance via `AskUserQuestion`. The merge / save tools (`merge_conversation`, `merge_document`, `save_design_doc`) refuse to overwrite a locked field unless the same `{ kind, <id>, field }` entry is passed in `confirmed_edits` for the retry call. **Never include an entry in `confirmed_edits` without an explicit user approval for that exact field.** If the user declines, leave the entity unchanged and route the new evidence elsewhere (different topic, new topic, item-only attachment, or skip the design-doc update).

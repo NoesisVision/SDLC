@@ -1,0 +1,156 @@
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  min-width: 0;
+}
+
+.wrapperBlock {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.editButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--mantine-color-dark-4);
+  background-color: rgba(255, 255, 255, 0.02);
+  color: var(--mantine-color-gray-4);
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+  flex-shrink: 0;
+}
+
+.wrapper:hover .editButton,
+.wrapperBlock:hover .editButton,
+.editButton:focus-visible {
+  opacity: 1;
+}
+
+.editButton:hover {
+  background-color: rgba(79, 141, 226, 0.1);
+  border-color: var(--mantine-color-noesisBlue-7);
+  color: var(--mantine-color-noesisBlue-2);
+}
+
+.saveButton,
+.cancelButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--mantine-color-dark-4);
+  background-color: rgba(255, 255, 255, 0.02);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.saveButton {
+  color: var(--mantine-color-noesisGreen-3);
+  border-color: rgba(74, 222, 128, 0.35);
+  background-color: rgba(74, 222, 128, 0.08);
+}
+
+.saveButton:hover:not(:disabled) {
+  background-color: rgba(74, 222, 128, 0.16);
+  border-color: var(--mantine-color-noesisGreen-5);
+  color: var(--mantine-color-noesisGreen-2);
+  transform: translateY(-1px);
+}
+
+.saveButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cancelButton {
+  color: var(--mantine-color-gray-3);
+}
+
+.cancelButton:hover:not(:disabled) {
+  background-color: rgba(79, 141, 226, 0.1);
+  border-color: var(--mantine-color-noesisBlue-7);
+  color: var(--mantine-color-noesisBlue-2);
+  transform: translateY(-1px);
+}
+
+.cancelButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.editorRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.editorBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.editorBlock .actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  background-color: var(--mantine-color-dark-7);
+  color: var(--mantine-color-gray-1);
+  border: 1px solid var(--mantine-color-dark-3);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font: inherit;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.input:focus {
+  border-color: var(--mantine-color-noesisBlue-5);
+}
+
+.textarea {
+  composes: input;
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+.errorText {
+  color: var(--mantine-color-red-4);
+  font-size: 12px;
+}

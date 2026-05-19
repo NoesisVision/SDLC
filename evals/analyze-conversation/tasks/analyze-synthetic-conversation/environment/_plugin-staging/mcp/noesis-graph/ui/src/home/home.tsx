@@ -1,0 +1,136 @@
+import { useEffect, useState } from "react";
+import {
+  Badge,
+  Card,
+  Container,
+  Group,
+  Stack,
+  Text,
+} from "@mantine/core";
+import {
+  IconMessageCircle,
+  IconGavel,
+  IconCube,
+  IconFileVector,
+  IconFileText,
+  IconSchema,
+  IconMessages,
+} from "@tabler/icons-react";
+import { ActionsGrid, type ActionItem } from "../actions-grid.js";
+import classes from "../actions-grid.module.css";
+
+interface HealthStatus {
+  status: string;
+}
+
+export function HomePage({ onNavigate }: { onNavigate: (path: string) => void }) {
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((res) => res.json())
+      .then((data: HealthStatus) => setHealth(data))
+      .catch((err: Error) => setHealthError(err.message));
+  }, []);
+
+  const actionItems: ActionItem[] = [
+    { title: "Conversations", icon: IconMessages, color: "noesisBlue", onClick: () => onNavigate("/conversations") },
+    { title: "Documents", icon: IconFileText, color: "noesisGreen", onClick: () => onNavigate("/documents") },
+    { title: "Topics", icon: IconMessageCircle, color: "noesisGreen", onClick: () => onNavigate("/topics") },
+    { title: "Decisions", icon: IconGavel, color: "noesisIndigo", onClick: () => onNavigate("/decisions") },
+    { title: "Design Docs", icon: IconFileVector, color: "noesisIndigo", onClick: () => onNavigate("/design-docs") },
+    { title: "Model", icon: IconCube, color: "noesisBlue", onClick: () => onNavigate("/model-explorer") },
+    { title: "Schema", icon: IconSchema, color: "noesisGreen", onClick: () => onNavigate("/schema-explorer") },
+  ];
+
+  return (
+    <Container size="lg" py="xl">
+      <Stack gap="xl">
+        <HomeHeader />
+        <ActionsGrid title="Explore" items={actionItems} cols={7} />
+        <Stack gap="sm">
+          <Text size="sm" c="dimmed" fw={500} tt="uppercase">
+            System Status
+          </Text>
+          <Card withBorder radius="md" className={classes.card}>
+            <ServiceStatusCard
+              name="LadybugDB"
+              status={healthError ? "error" : health ? "connected" : "connecting"}
+              error={healthError ?? undefined}
+            />
+          </Card>
+        </Stack>
+      </Stack>
+    </Container>
+  );
+}
+
+function HomeHeader() {
+  return (
+    <Stack gap="xs" align="center" py="xl">
+      <Text
+        component="h1"
+        size="3rem"
+        fw={700}
+        variant="gradient"
+        gradient={{ from: "#4f46e5", to: "#4ade80", deg: 135 }}
+      >
+        Noesis
+      </Text>
+      <Text size="lg" c="dimmed" fw={300}>
+        Knowledge Graph
+      </Text>
+    </Stack>
+  );
+}
+
+function ServiceStatusCard({
+  name,
+  status,
+  error,
+  detail,
+}: {
+  name: string;
+  status: string;
+  error?: string;
+  detail?: string;
+}) {
+  return (
+    <Card radius="md" padding="lg" bg="dark.6" withBorder>
+      <Group justify="space-between">
+        <div>
+          <Text size="lg" fw={600} c="gray.1">
+            {name}
+          </Text>
+          {detail && (
+            <Text size="xs" c="dimmed" mt={2}>
+              {detail}
+            </Text>
+          )}
+          {error && (
+            <Text size="xs" c="red.4" mt={2}>
+              {error}
+            </Text>
+          )}
+        </div>
+        <ConnectionBadge status={status} />
+      </Group>
+    </Card>
+  );
+}
+
+function ConnectionBadge({ status }: { status: string }) {
+  switch (status) {
+    case "error":
+      return <Badge color="red" size="lg" variant="dot">Error</Badge>;
+    case "disconnected":
+      return <Badge color="gray" size="lg" variant="dot">Disconnected</Badge>;
+    case "connecting":
+      return <Badge color="yellow" size="lg" variant="dot">Connecting...</Badge>;
+    case "connected":
+      return <Badge color="green" size="lg" variant="dot">Connected</Badge>;
+    default:
+      return <Badge color="gray" size="lg" variant="dot">Unknown</Badge>;
+  }
+}
