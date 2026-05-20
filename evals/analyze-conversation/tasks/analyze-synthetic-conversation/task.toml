@@ -1,19 +1,36 @@
 version = "1.0"
 
-# --- nasde layer: reads [task].name (org/ prefix stripped) and [nasde.*] ---
+# --- nasde layer ---
 [task]
 name = "analyze-conversation/analyze-synthetic-conversation"
 description = "Run the full noesis:analyze-conversation skill pipeline on a synthetic parcel-locker design transcript and merge the result into the noesis knowledge graph."
 
-# --- Harbor layer: top-level [metadata] is dict[str, Any], arbitrary keys ok ---
+# Ship the live noesis plugin into the sandbox by reference (nasde-toolkit
+# >=0.3.4). nasde stages the plugin into the build context as _nasde-plugin/,
+# appends a COPY+build stage to environment/Dockerfile, registers the plugin's
+# skills/ for the agent, and injects its MCP server into [environment.mcp_servers]
+# below — between sentinel comments — so no snapshot, no [[environment.mcp_servers]]
+# hand-wiring, no variants/with-skill/skills/ copy is needed.
+[nasde.plugin]
+path = "../../../../src/agent_extensions/plugins/noesis"
+# install_root pinned so tests/verify.ts can import the baked Zod schemas via a
+# stable path. Without this, nasde defaults to /opt/<plugin.json:name> = /opt/noesis.
+install_root = "/opt/noesis-plugin"
+build = "bun install --frozen-lockfile"
+
+[nasde.plugin.env]
+# These three env vars are required by the baked-not-installed noesis-graph
+# server (the CC plugin loader does NOT inject them when the plugin is COPYed
+# rather than installed). nasde merges them into the generated MCP wrapper.
+CLAUDE_PLUGIN_DATA = "/opt/noesis-data"
+NOESIS_PROJECT_DIR = "/app"
+# CLAUDE_PLUGIN_ROOT defaulted by nasde to the plugin's install_root.
+
+# --- Harbor layer ---
 [metadata]
 difficulty = "advanced"
 domain = "Conversation analysis / knowledge graph"
 transcript_language = "English"
-# environment/_plugin-staging/ is a frozen snapshot of the noesis plugin taken
-# from this SDLC commit. Refreshing the snapshot (see README) is a deliberate,
-# reviewed action; bump this SHA when you do.
-plugin_snapshot_ref = "b44b84302e5e9cc0b8e7acc5526598bd1800ef00"
 
 [agent]
 # 5-step pipeline + many MCP round-trips + bun/NestJS cold start. Tune down
@@ -22,26 +39,13 @@ timeout_sec = 2700
 
 [environment]
 # No docker_image -> Harbor builds environment/Dockerfile (build context is the
-# environment/ dir, so _plugin-staging/ must live there and COPY paths are
-# relative to environment/).
+# environment/ dir; nasde stages the plugin into environment/_nasde-plugin/
+# before building, see ADR-009).
 build_timeout_sec = 1200
 cpus = 2
 memory_mb = 6144
 storage_mb = 10240
 allow_internet = true
-
-# Harbor writes this into the agent's .claude.json and runs command+args inside
-# the container. The wrapper exports the three vars the noesis-graph server +
-# prepare.ts require (the CC plugin loader does NOT inject them when the plugin
-# is baked, not installed): CLAUDE_PLUGIN_DATA, the project dir, CLAUDE_PLUGIN_ROOT.
-[[environment.mcp_servers]]
-name = "noesis-graph"
-transport = "stdio"
-command = "sh"
-args = [
-  "-c",
-  "export CLAUDE_PLUGIN_ROOT=/opt/noesis-plugin CLAUDE_PLUGIN_DATA=/opt/noesis-data NOESIS_PROJECT_DIR=/app && cd /opt/noesis-plugin && exec bun run mcp/noesis-graph/server.ts",
-]
 
 [verifier]
 timeout_sec = 600
