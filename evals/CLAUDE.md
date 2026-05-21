@@ -51,6 +51,32 @@ nasde run --variant vanilla --without-eval -C evals/<benchmark>
 nasde eval evals/<benchmark>/jobs/<timestamp> -C evals/<benchmark> --with-opik
 ```
 
+# Reading results
+
+`nasde run` prints a banner, a per-trial progress bar (`Mean: X ━━ wallclock`),
+and a final "Results by agent/dataset" table. It does **not** print token
+counts, $USD cost, or per-phase timing — those are written to JSON files and
+must be read out of the job dir:
+
+```bash
+JOB=evals/<benchmark>/jobs/<timestamp>__<variant>__<suffix>
+
+# Cost + tokens (input / cache-read / output) + reward summary, job-wide
+cat "$JOB"/result.json | python3 -m json.tool | grep -E 'cost_usd|n_.*tokens|n_completed|n_errored|"mean"'
+
+# Per-trial timing: environment_setup / agent_setup / agent_execution / verifier
+cat "$JOB"/*/result.json | python3 -m json.tool | grep -E 'started_at|finished_at|cost_usd'
+
+# LLM-judge scores per dimension (only if assessment ran)
+cat "$JOB"/*/assessment_eval.json | python3 -m json.tool
+```
+
+Useful one-liner for a quick summary:
+
+```bash
+python3 -c "import json,sys;d=json.load(open(sys.argv[1]));s=d['stats']; print(f\"reward mean={s['evals'][next(iter(s['evals']))]['metrics'][0]['mean']}, cost=\${s['cost_usd']:.3f}, in={s['n_input_tokens']:,} cache={s['n_cache_tokens']:,} out={s['n_output_tokens']:,}\")" "$JOB"/result.json
+```
+
 # Prerequisites
 
 nasde-toolkit must be installed (PyPI; `analyze-conversation` requires `>= 0.4.0`):
