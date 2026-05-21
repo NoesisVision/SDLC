@@ -1,7 +1,7 @@
 # Build context is THIS environment/ directory (Harbor sets context = task
 # environment dir). All COPY sources are relative to environment/.
 #
-# nasde-toolkit (>=0.3.4) with [nasde.plugin] in task.toml automatically appends
+# nasde-toolkit (>=0.4.0) with [nasde.plugin] in task.toml automatically appends
 # a fenced stage to this Dockerfile that stages and builds the live noesis
 # plugin into the image, registers its skills for the agent, and injects its
 # MCP server into task.toml. We DO NOT hand-wire those things here.

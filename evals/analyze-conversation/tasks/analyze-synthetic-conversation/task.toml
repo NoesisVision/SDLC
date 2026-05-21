@@ -6,7 +6,7 @@ name = "analyze-conversation/analyze-synthetic-conversation"
 description = "Run the full noesis:analyze-conversation skill pipeline on a synthetic parcel-locker design transcript and merge the result into the noesis knowledge graph."
 
 # Ship the live noesis plugin into the sandbox by reference (nasde-toolkit
-# >=0.3.4). nasde stages the plugin into the build context as _nasde-plugin/,
+# >=0.4.0). nasde stages the plugin into the build context as _nasde-plugin/,
 # appends a COPY+build stage to environment/Dockerfile, registers the plugin's
 # skills/ for the agent, and injects its MCP server into [environment.mcp_servers]
 # below — between sentinel comments — so no snapshot, no [[environment.mcp_servers]]
