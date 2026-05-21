@@ -1,0 +1,35 @@
+{
+  "_comment": "Independent per-dimension max_score. See docs/adr/008. The reviewer model (nasde.toml [evaluation].model) scores each dimension against tasks/<task>/assessment_criteria.md, using the ground_truth/ files as the gold reference and the agent trajectory (include_trajectory=true).",
+  "dimensions": [
+    {
+      "name": "idea_unit_categorization",
+      "title": "Idea-Unit Categorization Accuracy",
+      "max_score": 25,
+      "description": "Idea-unit boundaries and categories match ground truth. Special attention to acknowledgement-token Decision-vs-Irrelevant cases (a bare 'Yes.'/'Okay.' merged into the surrounding unit vs. kept standalone as the load-bearing answer), Irrelevant filler recorded but assigned no topic, and dual-category argument->decision units."
+    },
+    {
+      "name": "topic_tree_correctness",
+      "title": "Topic Tree Correctness",
+      "max_score": 20,
+      "description": "Single root, <=10 first-level siblings, correct container/leaf/hybrid shapes, parent_id referential integrity, every non-Irrelevant idea unit assigned exactly once, no orphan or duplicate topics. The pre-seeded root topic is reused (is_new:false) rather than duplicated; new leaves hang under it with correct parent_id (Goldilocks drill-and-reuse)."
+    },
+    {
+      "name": "decision_extraction",
+      "title": "Decision Extraction (final vs alternative)",
+      "max_score": 25,
+      "description": "The proposal that was raised early and later overturned is demoted to alternative_options with a rejection rationale; the adopted decision and its rationale are correct; the cleanly-accepted decision has empty alternative_options; the unconverged decision has status 'proposed'; supporting_content refs point at the idea units that actually carry the evidence."
+    },
+    {
+      "name": "summary_quality",
+      "title": "Summary Quality",
+      "max_score": 20,
+      "description": "short_summary is search-optimized and <=3 sentences (subject, scope, distinguishing aspect); long_summary is 10-20 sentences covering requirements, design decisions, domain concepts and system behavior, written as established knowledge (no 'the team discussed'/'X proposed'). Container summaries are synthesized from their children's summaries, not left empty."
+    },
+    {
+      "name": "pipeline_execution",
+      "title": "Pipeline Execution & Graph Merge",
+      "max_score": 10,
+      "description": "All five skill steps were executed: prepare.ts ran, has_conversation checked, list_topics drilled per Goldilocks, generate_topic_ids used for new topics, validate_output reached status Ok, prepare_review_bundle consumed, and merge_conversation succeeded and persisted source files under /app/noesis/. The vanilla variant has no MCP server and scores 0 here by construction; that capability gap is the intended signal, not a verifier fault."
+    }
+  ]
+}

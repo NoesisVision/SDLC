@@ -1,0 +1,51 @@
+version = "1.0"
+
+# --- nasde layer ---
+[task]
+name = "analyze-conversation/analyze-synthetic-conversation"
+description = "Run the full noesis:analyze-conversation skill pipeline on a synthetic parcel-locker design transcript and merge the result into the noesis knowledge graph."
+
+# Ship the live noesis plugin into the sandbox by reference (nasde-toolkit
+# >=0.4.0). nasde stages the plugin into the build context as _nasde-plugin/,
+# appends a COPY+build stage to environment/Dockerfile, registers the plugin's
+# skills/ for the agent, and injects its MCP server into [environment.mcp_servers]
+# below — between sentinel comments — so no snapshot, no [[environment.mcp_servers]]
+# hand-wiring, no variants/with-skill/skills/ copy is needed.
+[nasde.plugin]
+path = "../../../../src/agent_extensions/plugins/noesis"
+# install_root pinned so tests/verify.ts can import the baked Zod schemas via a
+# stable path. Without this, nasde defaults to /opt/<plugin.json:name> = /opt/noesis.
+install_root = "/opt/noesis-plugin"
+build = "bun install --frozen-lockfile"
+
+[nasde.plugin.env]
+# These three env vars are required by the baked-not-installed noesis-graph
+# server (the CC plugin loader does NOT inject them when the plugin is COPYed
+# rather than installed). nasde merges them into the generated MCP wrapper.
+CLAUDE_PLUGIN_DATA = "/opt/noesis-data"
+NOESIS_PROJECT_DIR = "/app"
+# CLAUDE_PLUGIN_ROOT defaulted by nasde to the plugin's install_root.
+
+# --- Harbor layer ---
+[metadata]
+difficulty = "advanced"
+domain = "Conversation analysis / knowledge graph"
+transcript_language = "English"
+
+[agent]
+# 5-step pipeline + many MCP round-trips + bun/NestJS cold start. Tune down
+# after the first --without-eval dry run if it finishes well under budget.
+timeout_sec = 2700
+
+[environment]
+# No docker_image -> Harbor builds environment/Dockerfile (build context is the
+# environment/ dir; nasde stages the plugin into environment/_nasde-plugin/
+# before building, see ADR-009).
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 6144
+storage_mb = 10240
+allow_internet = true
+
+[verifier]
+timeout_sec = 600

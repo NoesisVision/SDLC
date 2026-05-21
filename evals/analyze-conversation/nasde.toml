@@ -1,0 +1,19 @@
+[project]
+name = "analyze-conversation"
+version = "1.0.0"
+
+[defaults]
+variant = "with-skill"
+
+[docker]
+base_image = "ubuntu:22.04"
+build_commands = []
+
+[evaluation]
+model = "claude-opus-4-7"
+dimensions_file = "assessment_dimensions.json"
+include_trajectory = true
+
+[reporting]
+platform = "opik"
+project_name = "analyze-conversation"

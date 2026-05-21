@@ -1,0 +1,40 @@
+# Critical: files executed inside benchmark sandboxes (Linux containers via
+# Docker / Daytona / Modal / etc.) MUST be LF. CRLF on a shebang line causes
+# `bash: required file not found` because the kernel reads `#!/bin/bash\r`.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.bash      text eol=lf
+Dockerfile  text eol=lf
+*.dockerfile text eol=lf
+docker-compose.yaml text eol=lf
+docker-compose.yml  text eol=lf
+*.toml      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.py        text eol=lf
+
+# PowerShell / Windows batch keep CRLF.
+*.ps1       text eol=crlf
+*.psd1      text eol=crlf
+*.psm1      text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary assets — never touch line endings.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.tgz       binary
+*.whl       binary
+*.so        binary
+*.dll       binary
+*.exe       binary

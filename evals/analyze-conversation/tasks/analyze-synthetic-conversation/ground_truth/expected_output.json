@@ -1,0 +1,421 @@
+{
+  "conversation": {
+    "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66",
+    "time": "2026-05-18 10:00:00",
+    "main_topic": "Parcel locker pickup-code expiry and retry design",
+    "turns": [
+      {
+        "index": 0,
+        "speaker": "Maya",
+        "time": "00:00:00",
+        "idea_units": [
+          { "index": 0, "sentences": ["Morning everyone.", "Can you all hear me?", "My headset was acting up yesterday."], "categories": ["Irrelevant"] }
+        ]
+      },
+      {
+        "index": 1,
+        "speaker": "Tom",
+        "time": "00:00:12",
+        "idea_units": [
+          { "index": 0, "sentences": ["Yeah, you come through fine.", "Let's give Priya a minute, she pinged that she's grabbing coffee."], "categories": ["Irrelevant"] }
+        ]
+      },
+      {
+        "index": 2,
+        "speaker": "Dev",
+        "time": "00:00:25",
+        "idea_units": [
+          { "index": 0, "sentences": ["No rush.", "The weather is finally decent today, first sun in a week."], "categories": ["Irrelevant"] }
+        ]
+      },
+      {
+        "index": 3,
+        "speaker": "Priya",
+        "time": "00:00:40",
+        "idea_units": [
+          { "index": 0, "sentences": ["I'm here, sorry."], "categories": ["Irrelevant"] },
+          { "index": 1, "sentences": ["Okay, so the topic today is the pickup-code lifecycle for the parcel lockers.", "We need to nail down expiry and what happens on repeated failed attempts."], "categories": ["Information"] }
+        ]
+      },
+      {
+        "index": 4,
+        "speaker": "Maya",
+        "time": "00:01:05",
+        "idea_units": [
+          { "index": 0, "sentences": ["Right."], "categories": ["Irrelevant"] },
+          { "index": 1, "sentences": ["Let's frame the scope first.", "A pickup code is the short numeric code a customer types on the locker keypad to open their compartment.", "We're deciding how long that code stays valid and how the system reacts when someone keeps entering it wrong."], "categories": ["Information"] }
+        ]
+      },
+      {
+        "index": 5,
+        "speaker": "Tom",
+        "time": "00:01:40",
+        "idea_units": [
+          { "index": 0, "sentences": ["On storage: the simplest thing is to store the code in Redis with a TTL equal to the validity window.", "When the TTL elapses the key just disappears and the code is dead.", "No cleanup job, Redis handles eviction for us."], "categories": ["Position", "Argument"] }
+        ]
+      },
+      {
+        "index": 6,
+        "speaker": "Priya",
+        "time": "00:02:10",
+        "idea_units": [
+          { "index": 0, "sentences": ["That's attractive operationally.", "Does it cover the case where support needs to see why a customer's code stopped working?"], "categories": ["Position", "Argument"] }
+        ]
+      },
+      {
+        "index": 7,
+        "speaker": "Maya",
+        "time": "00:02:30",
+        "idea_units": [
+          { "index": 0, "sentences": ["That's exactly my concern.", "If the code only lives in Redis and then evaporates, we have no record that the code ever existed once it expires.", "Support gets a ticket two days later and there's nothing to look at, no expiry timestamp, no audit trail."], "categories": ["Argument"] }
+        ]
+      },
+      {
+        "index": 8,
+        "speaker": "Tom",
+        "time": "00:03:05",
+        "idea_units": [
+          { "index": 0, "sentences": ["Hm.", "We could mirror it into a log line, but that's a side channel nobody will trust as the source of truth."], "categories": ["Position", "Argument"] }
+        ]
+      },
+      {
+        "index": 9,
+        "speaker": "Maya",
+        "time": "00:03:25",
+        "idea_units": [
+          { "index": 0, "sentences": ["Because we need an auditable history of every code and exactly when it expired, we'll persist the pickup code and its expiry timestamp in the Postgres pickup_code row."], "categories": ["Argument", "Decision"] },
+          { "index": 1, "sentences": ["Redis stays purely as a hot-path cache for the validity check, not the source of truth."], "categories": ["Decision"] }
+        ]
+      },
+      {
+        "index": 10,
+        "speaker": "Tom",
+        "time": "00:03:55",
+        "idea_units": [
+          { "index": 0, "sentences": ["Yes."], "categories": ["Irrelevant"] }
+        ]
+      },
+      {
+        "index": 11,
+        "speaker": "Priya",
+        "time": "00:04:10",
+        "idea_units": [
+          { "index": 0, "sentences": ["Good."], "categories": ["Irrelevant"] },
+          { "index": 1, "sentences": ["So Postgres is authoritative, Redis is the cache.", "That settles storage."], "categories": ["Information"] }
+        ]
+      },
+      {
+        "index": 12,
+        "speaker": "Dev",
+        "time": "00:04:30",
+        "idea_units": [
+          { "index": 0, "sentences": ["Quick one while I'm thinking about it -- there's a separate cross-cutting rule we keep coming back to: every state change on a pickup code, issued, used, expired, locked, has to be written to the audit trail.", "That's not specific to storage, it applies everywhere we touch a code."], "categories": ["Position"] }
+        ]
+      },
+      {
+        "index": 13,
+        "speaker": "Maya",
+        "time": "00:05:00",
+        "idea_units": [
+          { "index": 0, "sentences": ["Agreed, treat that as a general rule over the whole code lifecycle, not something owned by one part."], "categories": ["Position"] },
+          { "index": 1, "sentences": ["Now, the retry behaviour.", "What do we do when a customer fumbles the code?"], "categories": ["Information"] }
+        ]
+      },
+      {
+        "index": 14,
+        "speaker": "Tom",
+        "time": "00:05:30",
+        "idea_units": [
+          { "index": 0, "sentences": ["I'd say three attempts.", "After the third wrong entry we lock that compartment slot and notify support so a human can step in.", "Three is the usual ceiling and it stops brute forcing."], "categories": ["Position", "Argument"] }
+        ]
+      },
+      {
+        "index": 15,
+        "speaker": "Priya",
+        "time": "00:05:55",
+        "idea_units": [
+          { "index": 0, "sentences": ["Three then lock and notify support works for me. No objections from product."], "categories": ["Position"] }
+        ]
+      },
+      {
+        "index": 16,
+        "speaker": "Maya",
+        "time": "00:06:10",
+        "idea_units": [
+          { "index": 0, "sentences": ["Then that's decided: three failed attempts, lock the slot, push a notification to the support queue."], "categories": ["Decision"] },
+          { "index": 1, "sentences": ["No alternative on the table, it's clean."], "categories": ["Information"] }
+        ]
+      },
+      {
+        "index": 17,
+        "speaker": "Dev",
+        "time": "00:06:35",
+        "idea_units": [
+          { "index": 0, "sentences": ["So just to be sure I wire the guard correctly -- we hard-fail and lock on the third attempt, we don't give a grace retry after a delay?"], "categories": ["Position"] }
+        ]
+      },
+      {
+        "index": 18,
+        "speaker": "Maya",
+        "time": "00:06:50",
+        "idea_units": [
+          { "index": 0, "sentences": ["Yes."], "categories": ["Decision"] }
+        ]
+      },
+      {
+        "index": 19,
+        "speaker": "Priya",
+        "time": "00:07:05",
+        "idea_units": [
+          { "index": 0, "sentences": ["Last open item: the actual validity duration.", "Is a code good for 24 hours or 48?"], "categories": ["Information"] }
+        ]
+      },
+      {
+        "index": 20,
+        "speaker": "Tom",
+        "time": "00:07:20",
+        "idea_units": [
+          { "index": 0, "sentences": ["Lockers in transit hubs get picked up fast, 24 is plenty.", "But residential lockers in low-traffic areas, people sometimes come on the weekend.", "48 is safer there."], "categories": ["Position", "Argument"] }
+        ]
+      },
+      {
+        "index": 21,
+        "speaker": "Maya",
+        "time": "00:07:45",
+        "idea_units": [
+          { "index": 0, "sentences": ["I lean 48 across the board for simplicity, one number is easier to reason about than per-locker tuning.", "But I don't want to commit until ops confirms the compartment occupancy impact of holding slots for two days."], "categories": ["Position", "Argument"] }
+        ]
+      },
+      {
+        "index": 22,
+        "speaker": "Priya",
+        "time": "00:08:10",
+        "idea_units": [
+          { "index": 0, "sentences": ["Let's leave duration open then.", "Tentatively 48, pending the ops occupancy review.", "We'll confirm next week."], "categories": ["Decision"] }
+        ]
+      },
+      {
+        "index": 23,
+        "speaker": "Dev",
+        "time": "00:08:30",
+        "idea_units": [
+          { "index": 0, "sentences": ["Sounds good."], "categories": ["Irrelevant"] },
+          { "index": 1, "sentences": ["I'll prototype the expiry job assuming a configurable window so we're not blocked on the exact number."], "categories": ["Information"] }
+        ]
+      },
+      {
+        "index": 24,
+        "speaker": "Maya",
+        "time": "00:08:50",
+        "idea_units": [
+          { "index": 0, "sentences": ["Perfect.", "That's everything.", "I'll write this up.", "Thanks all, talk next week."], "categories": ["Irrelevant"] }
+        ]
+      },
+      {
+        "index": 25,
+        "speaker": "Tom",
+        "time": "00:09:00",
+        "idea_units": [
+          { "index": 0, "sentences": ["Thanks, bye."], "categories": ["Irrelevant"] }
+        ]
+      }
+    ],
+    "topics": [
+      {
+        "id": "11111111-1111-7111-8111-111111111111",
+        "parent_id": null,
+        "is_new": false,
+        "title": "Parcel Locker Platform",
+        "short_summary": "Platform-level umbrella for the parcel-locker product, spanning locker hardware and the pickup-code lifecycle. Broad container that frames more specific subsystems.",
+        "long_summary": "The parcel-locker platform is the top-level domain area covering the physical lockers and the software that governs customer pickup. It owns two areas at present: locker hardware, and the pickup-code lifecycle. The pickup-code lifecycle governs how the short numeric code a customer enters on the locker keypad is stored, how long it stays valid, what happens on repeated failed entries, and the requirement that every code state change is audited. Locker hardware concerns the physical compartments and keypad. Decisions specific to codes (Postgres-authoritative storage, three-attempt lockout, configurable validity window) live under the pickup-code lifecycle subtree rather than at the platform level. This topic stays broad and is the parent under which code-specific concerns hang.",
+        "items": [],
+        "decisions": [],
+        "reviewed": true,
+        "decisions_extracted": true
+      },
+      {
+        "id": "22222222-2222-7222-8222-222222222222",
+        "parent_id": "11111111-1111-7111-8111-111111111111",
+        "is_new": false,
+        "title": "Locker Hardware",
+        "short_summary": "Physical parcel-locker hardware: compartments and the customer keypad. Not affected by the pickup-code lifecycle discussion.",
+        "long_summary": "Locker hardware covers the physical compartments a customer opens and the keypad on which the pickup code is entered. It is a sibling concern to the pickup-code lifecycle and received no new requirements or decisions from the pickup-code expiry and retry discussion. It is retained as an existing area of the parcel-locker platform.",
+        "items": [],
+        "decisions": [],
+        "reviewed": true,
+        "decisions_extracted": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-00000000000a",
+        "parent_id": "11111111-1111-7111-8111-111111111111",
+        "is_new": true,
+        "title": "Pickup-Code Lifecycle",
+        "short_summary": "End-to-end lifecycle of a parcel-locker pickup code: storage, validity duration, expiry, and retry/lockout. Distinguished by a cross-cutting rule that every code state change is audited.",
+        "long_summary": "A pickup code is the short numeric code a customer types on the locker keypad to open their compartment. Its lifecycle spans how the code and its expiry are stored, how long the code remains valid, and how the system reacts to repeated failed entries. A cross-cutting rule governs the whole lifecycle: every state change of a pickup code -- issued, used, expired, locked -- must be written to the audit trail, and this requirement applies across storage, retry, and duration rather than to any single component. Storage is resolved: the code and its expiry timestamp are authoritative in Postgres, with Redis acting only as a hot-path cache. Retry behaviour is resolved: three failed entries lock the compartment slot and notify support, with no grace retry. The validity duration remains open, tentatively 48 hours pending an operations review, with the expiry window kept configurable so implementation is not blocked. The audit requirement is the unifying constraint that makes this a coherent lifecycle rather than three unrelated features.",
+        "items": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 3, "idea_unit_index": 1 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 4, "idea_unit_index": 1 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 12, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 13, "idea_unit_index": 0 }
+        ],
+        "decisions": [],
+        "reviewed": true,
+        "decisions_extracted": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-00000000000b",
+        "parent_id": "00000000-0000-7000-8000-00000000000a",
+        "is_new": true,
+        "title": "Code Storage & Persistence",
+        "short_summary": "Storage model for pickup codes: the code and its expiry timestamp are authoritative in the Postgres pickup_code row; Redis is only a hot-path cache. Chosen for auditability over a pure-Redis TTL.",
+        "long_summary": "The pickup code and its expiry timestamp are persisted in the Postgres pickup_code row as the authoritative record. Redis is used purely as a hot-path cache for the validity check and is never the source of truth. This model is required because an auditable history of every code and exactly when it expired must be available: support investigates tickets days after a code stops working, so the record cannot disappear on expiry. A pure-Redis approach with a TTL equal to the validity window was rejected -- although operationally simple because Redis handles eviction with no cleanup job, it leaves no record once the key is evicted, defeating audit and support investigation. Mirroring the code into a log line was also rejected as an untrustworthy side channel that no one would treat as the source of truth. On expiry, the authoritative Postgres record remains; the Redis entry may be absent or stale and is not trusted. This decision is paired with the lifecycle-wide rule that every code state change is audited.",
+        "items": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 5, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 6, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 7, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 8, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 9, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 9, "idea_unit_index": 1 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 11, "idea_unit_index": 1 }
+        ],
+        "decisions": [
+          {
+            "id": "00000000-0000-7000-8000-0000000000d1",
+            "title": "Persist pickup code and expiry in Postgres; Redis is cache only",
+            "status": "accepted",
+            "context": {
+              "text": "The pickup code and its expiry need a storage model; the question is whether Redis with a TTL suffices, given that support must later investigate why a code stopped working.",
+              "text_locked": false,
+              "supporting_content": [
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 6, "idea_unit_index": 0 },
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 7, "idea_unit_index": 0 }
+              ]
+            },
+            "decision": {
+              "text": "Persist the pickup code and its expiry timestamp in the Postgres pickup_code row as the authoritative record; Redis stays purely as a hot-path cache for the validity check, not the source of truth.",
+              "text_locked": false,
+              "rationale": "An auditable history of every code and exactly when it expired is required; a pure-Redis TTL leaves no record once the key is evicted, so support cannot investigate.",
+              "rationale_locked": false,
+              "supporting_content": [
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 9, "idea_unit_index": 0 },
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 9, "idea_unit_index": 1 }
+              ]
+            },
+            "alternative_options": [
+              {
+                "text": "Store the code in Redis with a TTL equal to the validity window; the key disappears on expiry and no cleanup job is needed. A log-line mirror was also floated.",
+                "text_locked": false,
+                "rationale": "Operationally simple because Redis handles eviction, but rejected: once the key is evicted there is no audit record, so support cannot investigate expired-code tickets. The log-line mirror was rejected as an untrustworthy side channel.",
+                "rationale_locked": false,
+                "supporting_content": [
+                  { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 5, "idea_unit_index": 0 },
+                  { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 8, "idea_unit_index": 0 }
+                ]
+              }
+            ]
+          }
+        ],
+        "reviewed": true,
+        "decisions_extracted": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-00000000000c",
+        "parent_id": "00000000-0000-7000-8000-00000000000a",
+        "is_new": true,
+        "title": "Retry & Lockout Policy",
+        "short_summary": "Failed pickup-code entry handling: after three failed attempts the compartment slot is locked and support is notified. The third failure hard-fails with no grace retry.",
+        "long_summary": "When a customer enters the pickup code incorrectly, the system allows three attempts. After the third failed entry the compartment slot is locked and a notification is pushed to the support queue so a human can intervene. The third failure hard-fails immediately; there is no grace retry after a delay. Three attempts is chosen as the usual ceiling that also stops brute forcing, and product raised no objections. No alternative policy was on the table -- this is a clean, accepted decision. The behaviour is part of the broader pickup-code lifecycle and, like every code state change, the lock event is subject to the lifecycle-wide audit requirement.",
+        "items": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 13, "idea_unit_index": 1 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 14, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 15, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 16, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 16, "idea_unit_index": 1 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 17, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 18, "idea_unit_index": 0 }
+        ],
+        "decisions": [
+          {
+            "id": "00000000-0000-7000-8000-0000000000d2",
+            "title": "Three failed attempts then lock the slot and notify support",
+            "status": "accepted",
+            "context": {
+              "text": "Behaviour when a customer repeatedly enters the pickup code incorrectly must be defined, both to help genuine users and to stop brute forcing.",
+              "text_locked": false,
+              "supporting_content": [
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 13, "idea_unit_index": 1 }
+              ]
+            },
+            "decision": {
+              "text": "After three failed code entries, lock the compartment slot and push a notification to the support queue for human intervention. The third failure hard-fails; there is no grace retry after a delay.",
+              "text_locked": false,
+              "rationale": "Three is the usual ceiling and it stops brute forcing; product had no objections.",
+              "rationale_locked": false,
+              "supporting_content": [
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 14, "idea_unit_index": 0 },
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 16, "idea_unit_index": 0 },
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 18, "idea_unit_index": 0 }
+              ]
+            },
+            "alternative_options": []
+          }
+        ],
+        "reviewed": true,
+        "decisions_extracted": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-00000000000d",
+        "parent_id": "00000000-0000-7000-8000-00000000000a",
+        "is_new": true,
+        "title": "Code Validity Duration",
+        "short_summary": "Pickup-code validity window is unresolved: tentatively 48 hours across the board, pending an ops occupancy review. The expiry window is kept configurable so implementation is not blocked.",
+        "long_summary": "How long a pickup code stays valid is not yet finalized. The tentative position is 48 hours across the board, chosen because a single duration is simpler to reason about than per-locker tuning, but it is explicitly not committed: the operations team must first confirm the compartment-occupancy impact of holding slots for two days, with confirmation expected the following week. The trade-off is between 24 hours, which is adequate for transit-hub lockers that are collected quickly, and 48 hours, which protects weekend collection at low-traffic residential lockers. Because the exact number is open, the expiry job is implemented with a configurable window so development is not blocked on the final value. This remains a proposed decision pending the occupancy review.",
+        "items": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 19, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 20, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 21, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 22, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 23, "idea_unit_index": 1 }
+        ],
+        "decisions": [
+          {
+            "id": "00000000-0000-7000-8000-0000000000d3",
+            "title": "Pickup-code validity duration (tentatively 48h, pending ops review)",
+            "status": "proposed",
+            "context": {
+              "text": "Pickup-code validity duration is undecided: 24 hours suits fast transit-hub lockers, 48 hours suits low-traffic residential lockers where customers may collect on the weekend.",
+              "text_locked": false,
+              "supporting_content": [
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 19, "idea_unit_index": 0 },
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 20, "idea_unit_index": 0 }
+              ]
+            },
+            "decision": {
+              "text": "Tentatively use 48 hours across the board, pending an ops review of the compartment-occupancy impact of holding slots for two days; to be confirmed next week. The expiry job treats the window as configurable so implementation is not blocked.",
+              "text_locked": false,
+              "rationale": "A single duration is simpler to reason about than per-locker tuning, but the occupancy cost of a 48h hold is unconfirmed, so it is not committed.",
+              "rationale_locked": false,
+              "supporting_content": [
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 21, "idea_unit_index": 0 },
+                { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 22, "idea_unit_index": 0 }
+              ]
+            },
+            "alternative_options": [
+              {
+                "text": "24-hour validity.",
+                "text_locked": false,
+                "rationale": "Adequate for transit-hub lockers collected quickly, but risks expiring codes for residential lockers where customers collect on the weekend.",
+                "rationale_locked": false,
+                "supporting_content": [
+                  { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 20, "idea_unit_index": 0 }
+                ]
+              }
+            ]
+          }
+        ],
+        "reviewed": true,
+        "decisions_extracted": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "_comment": "Gold reference for the decision_extraction dimension. conversation_id is deterministic. Decisions are keyed to their topic by title path (ids are non-deterministic). supporting_content lists the EXPECTED idea-unit coordinates; the judge checks the agent's refs point at evidence that actually carries the claim, not exact-set equality.",
+  "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66",
+  "decisions": [
+    {
+      "topic_title_path": "Parcel Locker Platform / Pickup-Code Lifecycle / Code Storage & Persistence",
+      "title": "Persist pickup code and expiry in Postgres; Redis is cache only",
+      "status": "accepted",
+      "context": {
+        "text": "The pickup code and its expiry need a storage model. The question is whether Redis with a TTL is sufficient, given that support must later investigate why a customer's code stopped working.",
+        "supporting_content": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 6, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 7, "idea_unit_index": 0 }
+        ]
+      },
+      "decision": {
+        "text": "Persist the pickup code and its expiry timestamp in the Postgres pickup_code row as the authoritative record. Redis stays purely as a hot-path cache for the validity check, not the source of truth.",
+        "rationale": "An auditable history of every code and exactly when it expired is required; a pure-Redis TTL leaves no record once the key is evicted, so support has nothing to investigate.",
+        "supporting_content": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 9, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 9, "idea_unit_index": 1 }
+        ]
+      },
+      "alternative_options": [
+        {
+          "text": "Store the code in Redis with a TTL equal to the validity window; the key disappears on expiry, no cleanup job needed.",
+          "rationale": "Operationally simple (Redis handles eviction), but rejected because once the key is evicted there is no audit record of the code or its expiry, so support cannot investigate expired-code tickets. A log-line mirror was also floated and rejected as an untrustworthy side channel.",
+          "supporting_content": [
+            { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 5, "idea_unit_index": 0 },
+            { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 8, "idea_unit_index": 0 }
+          ]
+        }
+      ],
+      "notes": "CRITICAL: the Redis-TTL approach was proposed first (T5) then overturned (T9). It MUST be an alternative_option, NOT the decision. Inverting these is the primary failure mode for this decision."
+    },
+    {
+      "topic_title_path": "Parcel Locker Platform / Pickup-Code Lifecycle / Retry & Lockout Policy",
+      "title": "Three failed attempts then lock the slot and notify support",
+      "status": "accepted",
+      "context": {
+        "text": "Behaviour when a customer repeatedly enters the pickup code incorrectly needs to be defined, both to help genuine users and to stop brute forcing.",
+        "supporting_content": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 13, "idea_unit_index": 1 }
+        ]
+      },
+      "decision": {
+        "text": "After three failed code entries, lock the compartment slot and push a notification to the support queue so a human can step in. The third failure hard-fails; there is no grace retry after a delay.",
+        "rationale": "Three is the usual ceiling and it stops brute forcing; product had no objections.",
+        "supporting_content": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 14, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 16, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 18, "idea_unit_index": 0 }
+        ]
+      },
+      "alternative_options": [],
+      "notes": "Cleanly accepted, converged immediately. alternative_options MUST be []. T18:IU0 ('Yes.') is the load-bearing confirmation that there is no grace retry — it belongs in the decision's supporting_content."
+    },
+    {
+      "topic_title_path": "Parcel Locker Platform / Pickup-Code Lifecycle / Code Validity Duration",
+      "title": "Pickup-code validity duration (tentatively 48h, pending ops review)",
+      "status": "proposed",
+      "context": {
+        "text": "How long a pickup code stays valid is undecided: 24 hours suits fast transit-hub lockers, 48 hours suits low-traffic residential lockers where customers may collect on the weekend.",
+        "supporting_content": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 19, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 20, "idea_unit_index": 0 }
+        ]
+      },
+      "decision": {
+        "text": "Tentatively use 48 hours across the board, pending an ops review of the compartment-occupancy impact of holding slots for two days. To be confirmed next week; the expiry job will treat the window as configurable so implementation is not blocked.",
+        "rationale": "A single duration is simpler to reason about than per-locker tuning, but the occupancy cost of a 48h hold is unconfirmed, so it is not committed.",
+        "supporting_content": [
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 21, "idea_unit_index": 0 },
+          { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 22, "idea_unit_index": 0 }
+        ]
+      },
+      "alternative_options": [
+        {
+          "text": "24-hour validity.",
+          "rationale": "Adequate for transit-hub lockers that are collected quickly, but risks expiring codes for residential lockers where customers collect on the weekend.",
+          "supporting_content": [
+            { "type": "idea_unit_ref", "conversation_id": "2c4ba4b1-d85d-6389-0452-e26f10c9de66", "turn_index": 20, "idea_unit_index": 0 }
+          ]
+        }
+      ],
+      "notes": "status MUST be 'proposed' — Maya explicitly refused to commit (T21) and the group left it open pending ops review (T22). Marking this 'accepted' is the primary failure mode here. Capturing 24h as an alternative is expected; treating it as the decision is wrong."
+    }
+  ]
+}
