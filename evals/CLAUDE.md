@@ -71,11 +71,41 @@ cat "$JOB"/*/result.json | python3 -m json.tool | grep -E 'started_at|finished_a
 cat "$JOB"/*/assessment_eval.json | python3 -m json.tool
 ```
 
-Useful one-liner for a quick summary:
+Useful one-liners:
 
 ```bash
+# Job-wide: reward + cost + token breakdown (from stats in top-level result.json)
 python3 -c "import json,sys;d=json.load(open(sys.argv[1]));s=d['stats']; print(f\"reward mean={s['evals'][next(iter(s['evals']))]['metrics'][0]['mean']}, cost=\${s['cost_usd']:.3f}, in={s['n_input_tokens']:,} cache={s['n_cache_tokens']:,} out={s['n_output_tokens']:,}\")" "$JOB"/result.json
 ```
+
+LLM-judge scores are stored per trial (one `assessment_eval.json` per trial,
+not aggregated at the job level), so a side-by-side variant comparison means
+iterating over multiple job dirs:
+
+```bash
+# Per-variant total + per-dimension breakdown across one or more jobs (glob).
+# Heredoc keeps the f-strings readable; copy this verbatim.
+python3 - "evals/<benchmark>/jobs/<glob-or-single-job>" <<'PY'
+import json, sys, glob
+for job in sorted(glob.glob(sys.argv[1])):
+    for f in sorted(glob.glob(f"{job}/*/assessment_eval.json")):
+        d = json.load(open(f))
+        max_total = sum(x["max_score"] for x in d["dimensions"])
+        parts = [f'{x["name"][:14]}={x["score"]}/{x["max_score"]}' for x in d["dimensions"]]
+        print(f'{d["agent_name"]:12} total={d["total_score"]:3}/{max_total} ({d["normalized_score"]:.2f})  ' + '  '.join(parts))
+PY
+```
+
+Output example (from a real analyze-conversation paid run):
+
+```
+vanilla      total= 70/100 (0.70)  idea_unit_cate=22/25  topic_tree_cor=10/20  decision_extra=24/25  summary_qualit=6/20  pipeline_execu=8/10
+with-skill   total= 78/100 (0.78)  idea_unit_cate=17/25  topic_tree_cor=12/20  decision_extra=22/25  summary_qualit=17/20  pipeline_execu=10/10
+```
+
+For full reasoning per dimension (long LLM-judge prose explaining each score),
+read the raw `assessment_eval.json` — it has a `reasoning` field on every
+dimension.
 
 # Prerequisites
 
