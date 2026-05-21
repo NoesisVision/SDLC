@@ -3,30 +3,56 @@
 End-to-end nasde benchmark for the `noesis:analyze-conversation` skill. The agent
 runs the full 5-step pipeline against a synthetic parcel-locker design transcript
 and merges the result into the noesis knowledge graph via the `noesis-graph` MCP
-server (baked into the Docker image).
+server.
+
+**Requires `nasde-toolkit >= 0.4.0`** (uses the `[nasde.plugin]` feature to
+ship the live noesis plugin from `src/agent_extensions/plugins/noesis` into the
+Docker sandbox; not runnable on older nasde).
+
+## Quick start
+
+```bash
+# 1. Install nasde 0.4.0+
+uv tool install nasde-toolkit
+
+# 2. Authenticate Claude (subscription OAuth — no per-token cost)
+source ~/.claude/skills/nasde-benchmark-runner/scripts/export_oauth_token.sh
+
+# 3. From this benchmark dir, run both variants in parallel
+cd evals/analyze-conversation
+make run            # vanilla + with-skill in parallel, with LLM-judge eval
+```
+
+See `make help` for all targets.
 
 ## Layout
 
 ```
+Makefile                         convenience wrappers (`make run`, …)
 nasde.toml                       project config (model, opik, dimensions)
 assessment_dimensions.json       5 LLM-judge dimensions (total 100)
 tasks/analyze-synthetic-conversation/
-  task.toml                      0.3.3: [task] (nasde) + [metadata]/[agent]/[environment]/[verifier] (Harbor)
+  task.toml                      nasde 0.4.0 task config + [nasde.plugin]
   instruction.md                 variant-neutral task statement
   assessment_criteria.md         0->max scoring ladder per dimension
   transcript.md                  FROZEN synthetic transcript (26 turns) — CANONICAL
   ground_truth/                  gold reference — NOT exposed to the agent
   environment/
-    Dockerfile                   bakes the plugin, bun install at build time
-    _plugin-staging/             frozen noesis-plugin snapshot (build context)
-    seed/noesis/topics/          2 pre-seeded topics (Goldilocks reuse path)
+    Dockerfile                   minimal base; nasde appends the plugin stage
     transcript.md                COPY of the canonical transcript, baked to /app/
+    seed/noesis/topics/          2 pre-seeded topics (Goldilocks reuse path)
   tests/test.sh + verify.ts      deterministic structural verifier — validates
                                  the PERSISTED graph, not the transient output
   solution/solve.sh              token-free smoke solver (not used by normal runs)
-variants/vanilla/                no skill, no tooling — capability-gap baseline
+variants/vanilla/                no skill — baseline
 variants/with-skill/             runs the analyze-conversation skill + MCP
 ```
+
+Generated at run time and gitignored:
+
+- `tasks/*/environment/_nasde-plugin/` — live plugin staged by `[nasde.plugin]`
+- `variants/*/harbor_config.json` — derived sandbox_files (`make help` shows flags)
+- `jobs/` — run artifacts
 
 ## Deterministic facts
 
@@ -34,17 +60,14 @@ variants/with-skill/             runs the analyze-conversation skill + MCP
   frozen `transcript.md`). If the transcript changes this id changes and ALL
   `ground_truth/*` files must be regenerated (re-run `scripts/conversation/prepare.ts`
   and re-derive the catalog / expected output).
-- **Transcript staging**: nasde only stages `variants/<name>/CLAUDE.md` + `skills/`
-  into the sandbox; Harbor delivers `instruction.md` as the agent prompt. Neither
-  stages the transcript. So `tasks/.../transcript.md` is **copied** to
-  `environment/transcript.md` and baked to `/app/transcript.md` by the Dockerfile.
-  The canonical copy is `tasks/.../transcript.md`; after editing it, re-copy:
-  `cp tasks/analyze-synthetic-conversation/transcript.md tasks/analyze-synthetic-conversation/environment/transcript.md`
-  then rebuild. Drift is self-detecting: `verify.ts` check #2 fails every trial if
-  the baked transcript's hash != the produced `conversation_id`.
 - Pre-seeded topics: `Parcel Locker Platform` (root, id `1111…`) and its child
   `Locker Hardware` (id `2222…`). The skill must reuse the root via Goldilocks,
   not create a new one.
+- The transcript is baked into the image at `/app/transcript.md` (nasde does
+  not stage task input files; Harbor only delivers `instruction.md` as the
+  agent prompt). Keep `tasks/.../environment/transcript.md` byte-identical to
+  `tasks/.../transcript.md` or `verify.ts` check #2 (content-hash match) fails
+  every trial.
 
 ## Verifier contract (why it checks the persisted graph)
 
@@ -73,40 +96,5 @@ a seed id (one attachment, parent = seed id). Zero or multiple attachments, a
 dangling parent, or a cycle → reward 0.
 
 Reward 0/1 is structural only; categorization/decision/summary *quality* vs
-`ground_truth/` is the LLM-judge's job (run without `--without-eval`).
-
-## Refreshing the plugin snapshot (R7 — snapshot drift)
-
-`environment/_plugin-staging/` and `variants/with-skill/skills/analyze-conversation/`
-are frozen copies of the plugin under test. Refresh them deliberately when the
-plugin changes, then bump `task.toml [metadata].plugin_snapshot_ref`:
-
-```bash
-cd <SDLC root>
-SRC=src/agent_extensions/plugins/noesis/
-DST=evals/analyze-conversation/tasks/analyze-synthetic-conversation/environment/_plugin-staging/
-rsync -a --delete \
-  --exclude 'node_modules/' --exclude '.serena/' --exclude 'noesis/' \
-  --exclude '.git/' --exclude 'mcp/noesis-graph/ui/dist/' \
-  --exclude 'NEW-DESIGN.md' --exclude 'REVIEW-*.md' \
-  "$SRC" "$DST"
-cp -R "$DST/skills/analyze-conversation" \
-  evals/analyze-conversation/variants/with-skill/skills/analyze-conversation
-git -C . rev-parse HEAD   # put this in task.toml [metadata].plugin_snapshot_ref
-```
-
-After refreshing, re-run the token-free smoke (see below) before any paid run.
-
-## Running
-
-Token-free smoke first (build + MCP boot + verifier, no LLM tokens) — see the
-project worklog. Then:
-
-```bash
-nasde run --variant vanilla    --tasks analyze-synthetic-conversation -C evals/analyze-conversation --without-eval   # dry
-nasde run --variant with-skill --tasks analyze-synthetic-conversation -C evals/analyze-conversation --without-eval   # dry
-nasde run --variant vanilla    -C evals/analyze-conversation --with-opik
-nasde run --variant with-skill -C evals/analyze-conversation --with-opik
-```
-
-`nasde run` consumes LLM tokens. The smoke steps do not.
+`ground_truth/` is the LLM-judge's job (`make run` includes it; `NOEVAL=1`
+skips it).

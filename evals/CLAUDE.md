@@ -4,51 +4,59 @@ Use the **nasde-toolkit** CLI for all benchmark operations. Do NOT write custom
 evaluation code — nasde handles Harbor orchestration, assessment evaluation,
 and Opik integration.
 
+Each benchmark may also ship a `Makefile` wrapping the common `nasde run` invocations
+(see `analyze-conversation/Makefile` — `make run` launches both variants in parallel
+to work around nasde's sequential `--all-variants`).
+
 # Directory structure
 
 ```
 evals/
-└── decision-extraction/        # Benchmark: architectural decision extraction
-    ├── nasde.toml              # Project config (nasde-toolkit format)
+├── decision-extraction/         # Older benchmark (nasde 0.3.x format — task.json + task.toml)
+│   └── …
+└── analyze-conversation/        # Newer benchmark (nasde 0.4.0+, uses [nasde.plugin])
+    ├── Makefile                 # `make run` / `make run-vanilla` / `make run-with-skill`
+    ├── nasde.toml               # Project config (model, opik, dimensions)
     ├── assessment_dimensions.json
-    ├── .env                    # Opik credentials (gitignored)
     ├── tasks/
-    │   └── extract-decisions-from-review/
-    │       ├── task.json       # Task metadata
-    │       ├── task.toml       # Agent/verifier timeouts
+    │   └── analyze-synthetic-conversation/
+    │       ├── task.toml        # [task] + [nasde.plugin] + [agent]/[environment]/[verifier]
     │       ├── instruction.md
     │       ├── assessment_criteria.md
-    │       ├── ground_truth_decisions.json
     │       ├── transcript.md
+    │       ├── ground_truth/
     │       ├── environment/Dockerfile
-    │       └── tests/test.sh
+    │       └── tests/test.sh + verify.ts
     └── variants/
-        ├── vanilla/            # Baseline (no skill)
-        └── with-skill/         # Uses extract_decisions skill
+        ├── vanilla/             # Baseline (no skill)
+        └── with-skill/          # Uses analyze-conversation skill
 ```
 
 # Running benchmarks
 
 ```bash
-# All tasks, default variant (vanilla)
-nasde run -C evals/decision-extraction
+# Convenience (analyze-conversation): both variants in parallel + LLM-judge
+make -C evals/analyze-conversation run
+
+# Direct nasde — all tasks, default variant from nasde.toml
+nasde run -C evals/<benchmark>
 
 # Specific variant with Opik tracking
-nasde run --variant with-skill --with-opik -C evals/decision-extraction
+nasde run --variant with-skill --with-opik -C evals/<benchmark>
 
 # Skip assessment evaluation
-nasde run --variant vanilla --without-eval -C evals/decision-extraction
+nasde run --variant vanilla --without-eval -C evals/<benchmark>
 
 # Re-evaluate existing results
-nasde eval evals/decision-extraction/jobs/<timestamp> -C evals/decision-extraction --with-opik
+nasde eval evals/<benchmark>/jobs/<timestamp> -C evals/<benchmark> --with-opik
 ```
 
 # Prerequisites
 
-nasde-toolkit must be installed:
+nasde-toolkit must be installed (PyPI; `analyze-conversation` requires `>= 0.4.0`):
 
 ```bash
-uv tool install git+ssh://git@github.com/NoesisVision/nasde-toolkit.git
+uv tool install nasde-toolkit
 ```
 
 To verify: `nasde --version`
