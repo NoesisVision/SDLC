@@ -1,0 +1,52 @@
+{
+  "eval_name": "shipping",
+  "output_dir": "iteration-3/shipping-lombok-spring/without_skill/outputs",
+  "pass_rate": "9/9",
+  "expectations": [
+    {
+      "text": "correct_package_placement",
+      "passed": true,
+      "evidence": "domain pkg: True, application pkg: True"
+    },
+    {
+      "text": "facade_pattern_followed",
+      "passed": true,
+      "evidence": "facade files: ['ShippingFacade.java'], public: True"
+    },
+    {
+      "text": "spring_configuration_present",
+      "passed": true,
+      "evidence": "config files: ['ShippingConfiguration.java'], @Bean+@Configuration: True"
+    },
+    {
+      "text": "lombok_value_for_vos",
+      "passed": true,
+      "evidence": "3/3 VOs use @Value"
+    },
+    {
+      "text": "domain_event_interface_reused",
+      "passed": true,
+      "evidence": "imports existing DomainEvent: True, creates new: False"
+    },
+    {
+      "text": "pending_events_pattern",
+      "passed": true,
+      "evidence": "pendingEvents: True, flushEvents: True"
+    },
+    {
+      "text": "all_building_blocks_present",
+      "passed": true,
+      "evidence": "found 8/8: ['Shipment', 'ShipmentId', 'ShippingAddress', 'TrackingNumber', 'ShipmentCreated', 'ShipmentDispatched', 'ShipmentRepository', 'ShipmentStatus']"
+    },
+    {
+      "text": "business_rules_enforced",
+      "passed": true,
+      "evidence": "tracking check: True, status check: True"
+    },
+    {
+      "text": "orderid_reused_not_recreated",
+      "passed": true,
+      "evidence": "imports OrderId: True, creates new: False"
+    }
+  ]
+}

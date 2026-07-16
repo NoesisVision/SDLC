@@ -1,0 +1,324 @@
+{
+  "actors": [
+    {
+      "id": "actor-1",
+      "name": "Account Holder",
+      "description": "Bank customer who initiates transfers"
+    }
+  ],
+  "businessGoals": [
+    {
+      "id": "bg-1",
+      "name": "Reliable Transfers",
+      "description": "Execute money transfers between accounts safely and atomically"
+    }
+  ],
+  "domainConcepts": [
+    {
+      "id": "dc-1",
+      "name": "Transfer",
+      "description": "Movement of funds from one account to another"
+    },
+    {
+      "id": "dc-2",
+      "name": "Transfer Limit",
+      "description": "Maximum amount that can be transferred in a single transaction"
+    }
+  ],
+  "rules": [
+    {
+      "id": "rule-1",
+      "ruleType": "Consistency",
+      "description": "Source account must have sufficient funds for the transfer"
+    },
+    {
+      "id": "rule-2",
+      "ruleType": "Consistency",
+      "description": "Source and destination accounts must be different"
+    },
+    {
+      "id": "rule-3",
+      "ruleType": "Structure",
+      "description": "Transfer amount must be positive"
+    },
+    {
+      "id": "rule-4",
+      "ruleType": "Computation",
+      "description": "Daily transfer limit is the sum of all transfers made by the source account on the current day"
+    },
+    {
+      "id": "rule-5",
+      "ruleType": "State change",
+      "description": "A completed transfer cannot be modified"
+    }
+  ],
+  "qualityAttributes": [],
+  "boundedContexts": [
+    {
+      "id": "bc-1",
+      "name": "Banking",
+      "description": "Core banking bounded context",
+      "modules": [
+        {
+          "id": "mod-1",
+          "name": "Transfers",
+          "description": "Handles money transfers between accounts",
+          "buildingBlocks": [
+            "bb-1",
+            "bb-2",
+            "bb-3",
+            "bb-4",
+            "bb-5",
+            "bb-6",
+            "bb-7",
+            "bb-8"
+          ]
+        }
+      ]
+    }
+  ],
+  "buildingBlocks": [
+    {
+      "id": "bb-1",
+      "name": "Transfer",
+      "type": "aggregate",
+      "description": "Aggregate root representing a money transfer between two accounts",
+      "properties": [
+        {
+          "name": "id",
+          "type": "TransferId"
+        },
+        {
+          "name": "sourceAccountId",
+          "type": "AccountId"
+        },
+        {
+          "name": "destinationAccountId",
+          "type": "AccountId"
+        },
+        {
+          "name": "amount",
+          "type": "Amount"
+        },
+        {
+          "name": "status",
+          "type": "TransferStatus"
+        },
+        {
+          "name": "initiatedAt",
+          "type": "Instant"
+        }
+      ],
+      "behaviours": [
+        {
+          "name": "initiate",
+          "description": "Initiates a new transfer between two accounts",
+          "input": [
+            "bb-3",
+            "bb-3",
+            "bb-4"
+          ],
+          "output": [
+            "bb-6"
+          ],
+          "rules": [
+            "rule-2",
+            "rule-3"
+          ]
+        },
+        {
+          "name": "complete",
+          "description": "Marks the transfer as completed after funds are moved",
+          "input": [],
+          "output": [
+            "bb-7"
+          ],
+          "rules": [
+            "rule-5"
+          ]
+        },
+        {
+          "name": "fail",
+          "description": "Marks the transfer as failed",
+          "input": [],
+          "output": [],
+          "rules": [
+            "rule-5"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bb-2",
+      "name": "TransferId",
+      "type": "value_object",
+      "description": "Unique identifier for a transfer",
+      "properties": [
+        {
+          "name": "value",
+          "type": "UUID"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-3",
+      "name": "AccountId",
+      "type": "value_object",
+      "description": "Unique identifier for an account.",
+      "properties": [
+        {
+          "name": "value",
+          "type": "UUID"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-4",
+      "name": "Amount",
+      "type": "value_object",
+      "description": "Monetary amount.",
+      "properties": [
+        {
+          "name": "value",
+          "type": "BigDecimal"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-5",
+      "name": "TransferStatus",
+      "type": "value_object",
+      "description": "Enum representing transfer lifecycle: Initiated, Completed, Failed",
+      "properties": [
+        {
+          "name": "value",
+          "type": "String"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-6",
+      "name": "TransferInitiated",
+      "type": "domain_event",
+      "description": "Emitted when a transfer is initiated",
+      "properties": [
+        {
+          "name": "transferId",
+          "type": "TransferId"
+        },
+        {
+          "name": "sourceAccountId",
+          "type": "AccountId"
+        },
+        {
+          "name": "destinationAccountId",
+          "type": "AccountId"
+        },
+        {
+          "name": "amount",
+          "type": "Amount"
+        },
+        {
+          "name": "initiatedAt",
+          "type": "Instant"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-7",
+      "name": "TransferCompleted",
+      "type": "domain_event",
+      "description": "Emitted when a transfer is completed successfully",
+      "properties": [
+        {
+          "name": "transferId",
+          "type": "TransferId"
+        },
+        {
+          "name": "completedAt",
+          "type": "Instant"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-8",
+      "name": "TransferRepository",
+      "type": "repository",
+      "description": "Repository for persisting and retrieving Transfer aggregates",
+      "properties": [],
+      "behaviours": [
+        {
+          "name": "save",
+          "description": "Persists a transfer",
+          "input": [
+            "bb-1"
+          ],
+          "output": [],
+          "rules": []
+        },
+        {
+          "name": "findById",
+          "description": "Finds a transfer by its id",
+          "input": [
+            "bb-2"
+          ],
+          "output": [
+            "bb-1"
+          ],
+          "rules": []
+        }
+      ]
+    }
+  ],
+  "useCases": [
+    {
+      "id": "uc-1",
+      "name": "Initiate Transfer",
+      "actor": "actor-1",
+      "type": "Command",
+      "description": "Account holder initiates a transfer from their account to another",
+      "businessGoal": "bg-1",
+      "input": [
+        "bb-3",
+        "bb-3",
+        "bb-4"
+      ],
+      "output": [
+        "bb-6"
+      ],
+      "usedBuildingBlocks": [
+        "bb-1",
+        "bb-8"
+      ],
+      "rules": [
+        "rule-1",
+        "rule-2",
+        "rule-3"
+      ],
+      "scenarios": [
+        {
+          "name": "Successful transfer initiation",
+          "description": "Transfer between two different accounts with sufficient funds",
+          "given": "Source account with balance 1000 and destination account",
+          "when": "Account holder initiates transfer of 500",
+          "then": "Transfer is created with Initiated status and TransferInitiated event is emitted"
+        },
+        {
+          "name": "Transfer to same account rejected",
+          "description": "Cannot transfer to the same account",
+          "given": "An account",
+          "when": "Account holder tries to transfer to the same account",
+          "then": "Transfer is rejected"
+        }
+      ],
+      "qualities": []
+    }
+  ],
+  "scenarios": []
+}

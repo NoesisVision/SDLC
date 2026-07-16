@@ -1,0 +1,52 @@
+{
+  "eval_name": "payroll",
+  "output_dir": "iteration-9/payroll-mixed/without_skill/outputs",
+  "pass_rate": "7/9",
+  "expectations": [
+    {
+      "text": "correct_package_placement",
+      "passed": true,
+      "evidence": "payroll package: True"
+    },
+    {
+      "text": "uses_rich_model_not_anemic",
+      "passed": true,
+      "evidence": "Either: True, Vavr import: True, no setters: True"
+    },
+    {
+      "text": "immutable_value_objects",
+      "passed": true,
+      "evidence": "final/record: True, no setters: True"
+    },
+    {
+      "text": "service_per_use_case",
+      "passed": true,
+      "evidence": "services: ['ExecutePayrollService.java'], god service: False"
+    },
+    {
+      "text": "domain_application_layer_split",
+      "passed": true,
+      "evidence": "domain pkg: True, application pkg: True"
+    },
+    {
+      "text": "employeeid_reused",
+      "passed": false,
+      "evidence": "imports EmployeeId: False, creates new: True"
+    },
+    {
+      "text": "all_building_blocks_present",
+      "passed": true,
+      "evidence": "found 7/7: ['PayrollRun', 'PayrollRunId', 'PayrollStatus', 'Salary', 'Payslip', 'PayrollExecuted', 'PayrollRunRepository']"
+    },
+    {
+      "text": "payslip_package_private",
+      "passed": false,
+      "evidence": "Payslip package-private: False"
+    },
+    {
+      "text": "business_rules_enforced",
+      "passed": true,
+      "evidence": "empty check: True, executed guard: True"
+    }
+  ]
+}

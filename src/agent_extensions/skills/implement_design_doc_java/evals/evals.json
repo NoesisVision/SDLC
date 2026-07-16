@@ -1,0 +1,25 @@
+{
+  "skill_name": "implement-design-doc-java",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-pricing.json, project: evals/fixtures/style-plain-java/",
+      "files": ["evals/fixtures/designdoc-pricing.json", "evals/fixtures/style-plain-java/"]
+    },
+    {
+      "id": 2,
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-payroll.json, project: evals/fixtures/style-mixed-patterns/",
+      "files": ["evals/fixtures/designdoc-payroll.json", "evals/fixtures/style-mixed-patterns/"]
+    },
+    {
+      "id": 3,
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-receiving.json, project: evals/fixtures/style-unusual-conventions/",
+      "files": ["evals/fixtures/designdoc-receiving.json", "evals/fixtures/style-unusual-conventions/"]
+    },
+    {
+      "id": 4,
+      "prompt": "Implement the DesignDoc JSON into my Java project. DesignDoc: evals/fixtures/designdoc-returns.json, project: evals/fixtures/style-cross-module/",
+      "files": ["evals/fixtures/designdoc-returns.json", "evals/fixtures/style-cross-module/"]
+    }
+  ]
+}

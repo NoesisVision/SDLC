@@ -1,0 +1,224 @@
+{
+  "actors": [
+    {"id": "actor-1", "name": "Warehouse Operator", "description": "Manages order shipments from the warehouse"}
+  ],
+  "businessGoals": [
+    {"id": "bg-1", "name": "Reliable Shipping", "description": "Ensure orders are shipped correctly and on time"}
+  ],
+  "domainConcepts": [
+    {"id": "dc-1", "name": "Shipment", "description": "A package sent to the customer containing ordered items"},
+    {"id": "dc-2", "name": "Tracking Number", "description": "Unique identifier from the carrier for tracking a shipment"},
+    {"id": "dc-3", "name": "Shipping Address", "description": "Destination where the shipment is delivered"}
+  ],
+  "rules": [
+    {"id": "rule-1", "ruleType": "Consistency", "description": "A shipment can only be created for a submitted order"},
+    {"id": "rule-2", "ruleType": "State change", "description": "A shipment can only be dispatched if it has a tracking number assigned"},
+    {"id": "rule-3", "ruleType": "Consistency", "description": "A delivered shipment cannot be dispatched again"},
+    {"id": "rule-4", "ruleType": "Structure", "description": "Shipping address must have street, city, and postal code"}
+  ],
+  "qualityAttributes": [],
+  "boundedContexts": [
+    {
+      "id": "bc-1",
+      "name": "Orders",
+      "description": "Order management bounded context",
+      "modules": [
+        {
+          "id": "mod-1",
+          "name": "Shipping",
+          "description": "Handles shipment lifecycle for orders",
+          "buildingBlocks": ["bb-1", "bb-2", "bb-3", "bb-4", "bb-5", "bb-6", "bb-7", "bb-8"]
+        }
+      ]
+    }
+  ],
+  "buildingBlocks": [
+    {
+      "id": "bb-1",
+      "name": "Shipment",
+      "type": "aggregate",
+      "description": "Aggregate root managing the lifecycle of a shipment. Contains ShippingAddress value object.",
+      "properties": [
+        {"name": "id", "type": "ShipmentId"},
+        {"name": "orderId", "type": "OrderId"},
+        {"name": "address", "type": "ShippingAddress"},
+        {"name": "trackingNumber", "type": "TrackingNumber"},
+        {"name": "status", "type": "ShipmentStatus"}
+      ],
+      "behaviours": [
+        {
+          "name": "createForOrder",
+          "description": "Creates a new shipment for a submitted order",
+          "input": ["bb-2", "bb-3"],
+          "output": ["bb-5"],
+          "rules": ["rule-1"]
+        },
+        {
+          "name": "assignTrackingNumber",
+          "description": "Assigns a carrier tracking number to the shipment",
+          "input": ["bb-4"],
+          "output": [],
+          "rules": []
+        },
+        {
+          "name": "dispatch",
+          "description": "Marks the shipment as dispatched",
+          "input": [],
+          "output": ["bb-6"],
+          "rules": ["rule-2", "rule-3"]
+        },
+        {
+          "name": "confirmDelivery",
+          "description": "Marks the shipment as delivered",
+          "input": [],
+          "output": [],
+          "rules": ["rule-3"]
+        }
+      ]
+    },
+    {
+      "id": "bb-2",
+      "name": "ShipmentId",
+      "type": "value_object",
+      "description": "Unique identifier for a shipment",
+      "properties": [
+        {"name": "value", "type": "UUID"}
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-3",
+      "name": "ShippingAddress",
+      "type": "value_object",
+      "description": "Destination address for a shipment",
+      "properties": [
+        {"name": "street", "type": "String"},
+        {"name": "city", "type": "String"},
+        {"name": "postalCode", "type": "String"},
+        {"name": "country", "type": "String"}
+      ],
+      "behaviours": [],
+      "rules": ["rule-4"]
+    },
+    {
+      "id": "bb-4",
+      "name": "TrackingNumber",
+      "type": "value_object",
+      "description": "Carrier-assigned tracking number",
+      "properties": [
+        {"name": "value", "type": "String"}
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-5",
+      "name": "ShipmentCreated",
+      "type": "domain_event",
+      "description": "Emitted when a new shipment is created for an order",
+      "properties": [
+        {"name": "shipmentId", "type": "ShipmentId"},
+        {"name": "orderId", "type": "OrderId"},
+        {"name": "createdAt", "type": "Instant"}
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-6",
+      "name": "ShipmentDispatched",
+      "type": "domain_event",
+      "description": "Emitted when a shipment is dispatched from warehouse",
+      "properties": [
+        {"name": "shipmentId", "type": "ShipmentId"},
+        {"name": "trackingNumber", "type": "TrackingNumber"},
+        {"name": "dispatchedAt", "type": "Instant"}
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-7",
+      "name": "ShipmentRepository",
+      "type": "repository",
+      "description": "Repository for persisting and retrieving Shipment aggregates",
+      "properties": [],
+      "behaviours": [
+        {
+          "name": "save",
+          "description": "Persists a shipment",
+          "input": ["bb-1"],
+          "output": [],
+          "rules": []
+        },
+        {
+          "name": "findById",
+          "description": "Finds a shipment by its id",
+          "input": ["bb-2"],
+          "output": ["bb-1"],
+          "rules": []
+        }
+      ]
+    },
+    {
+      "id": "bb-8",
+      "name": "ShipmentStatus",
+      "type": "value_object",
+      "description": "Enum representing shipment lifecycle: Created, Dispatched, Delivered",
+      "properties": [
+        {"name": "value", "type": "String"}
+      ],
+      "behaviours": []
+    }
+  ],
+  "useCases": [
+    {
+      "id": "uc-1",
+      "name": "Create Shipment",
+      "actor": "actor-1",
+      "type": "Command",
+      "description": "Creates a shipment for a submitted order",
+      "businessGoal": "bg-1",
+      "input": ["bb-2", "bb-3"],
+      "output": ["bb-5"],
+      "usedBuildingBlocks": ["bb-1", "bb-7"],
+      "rules": ["rule-1"],
+      "scenarios": [
+        {
+          "name": "Successful shipment creation",
+          "description": "Operator creates a shipment for a submitted order",
+          "given": "A submitted order exists with a valid shipping address",
+          "when": "Warehouse operator creates a shipment",
+          "then": "Shipment is created and ShipmentCreated event is emitted"
+        }
+      ],
+      "qualities": []
+    },
+    {
+      "id": "uc-2",
+      "name": "Dispatch Shipment",
+      "actor": "actor-1",
+      "type": "Command",
+      "description": "Dispatches a shipment with tracking number",
+      "input": ["bb-2"],
+      "output": ["bb-6"],
+      "usedBuildingBlocks": ["bb-1", "bb-7"],
+      "rules": ["rule-2", "rule-3"],
+      "scenarios": [
+        {
+          "name": "Successful dispatch",
+          "description": "Shipment with tracking number is dispatched",
+          "given": "A shipment with an assigned tracking number",
+          "when": "Operator dispatches the shipment",
+          "then": "Shipment status changes to Dispatched and ShipmentDispatched event is emitted"
+        },
+        {
+          "name": "Dispatch without tracking fails",
+          "description": "Cannot dispatch without tracking number",
+          "given": "A shipment without a tracking number",
+          "when": "Operator tries to dispatch",
+          "then": "Dispatch is rejected"
+        }
+      ],
+      "qualities": []
+    }
+  ],
+  "scenarios": []
+}

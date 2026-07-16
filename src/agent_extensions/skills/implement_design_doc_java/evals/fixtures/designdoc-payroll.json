@@ -1,0 +1,362 @@
+{
+  "actors": [
+    {
+      "id": "actor-1",
+      "name": "HR Manager",
+      "description": "Manages payroll runs for employees"
+    }
+  ],
+  "businessGoals": [
+    {
+      "id": "bg-1",
+      "name": "Accurate Payroll",
+      "description": "Calculate and execute payroll correctly for all employees"
+    }
+  ],
+  "domainConcepts": [
+    {
+      "id": "dc-1",
+      "name": "Payroll Run",
+      "description": "A monthly execution of salary payments for a set of employees"
+    },
+    {
+      "id": "dc-2",
+      "name": "Salary",
+      "description": "Base monthly salary for an employee"
+    },
+    {
+      "id": "dc-3",
+      "name": "Payslip",
+      "description": "Individual payment record for one employee in a payroll run"
+    }
+  ],
+  "rules": [
+    {
+      "id": "rule-1",
+      "ruleType": "Consistency",
+      "description": "A payroll run can only be executed once \u2014 no double payments"
+    },
+    {
+      "id": "rule-2",
+      "ruleType": "Structure",
+      "description": "Salary must be a positive amount"
+    },
+    {
+      "id": "rule-3",
+      "ruleType": "Computation",
+      "description": "Net pay equals salary minus deductions"
+    },
+    {
+      "id": "rule-4",
+      "ruleType": "State change",
+      "description": "An executed payroll run cannot be modified"
+    },
+    {
+      "id": "rule-5",
+      "ruleType": "Consistency",
+      "description": "A payroll run must contain at least one payslip before execution"
+    }
+  ],
+  "qualityAttributes": [],
+  "boundedContexts": [
+    {
+      "id": "bc-1",
+      "name": "HR",
+      "description": "Human resources bounded context",
+      "modules": [
+        {
+          "id": "mod-1",
+          "name": "Payroll",
+          "description": "Manages payroll calculation and execution",
+          "buildingBlocks": [
+            "bb-1",
+            "bb-2",
+            "bb-3",
+            "bb-4",
+            "bb-5",
+            "bb-6",
+            "bb-7",
+            "bb-8",
+            "bb-9"
+          ]
+        }
+      ]
+    }
+  ],
+  "buildingBlocks": [
+    {
+      "id": "bb-1",
+      "name": "PayrollRun",
+      "type": "aggregate",
+      "description": "Aggregate root managing a monthly payroll execution. Contains Payslip entities.",
+      "properties": [
+        {
+          "name": "id",
+          "type": "PayrollRunId"
+        },
+        {
+          "name": "month",
+          "type": "YearMonth"
+        },
+        {
+          "name": "payslips",
+          "type": "List<Payslip>"
+        },
+        {
+          "name": "status",
+          "type": "PayrollStatus"
+        }
+      ],
+      "behaviours": [
+        {
+          "name": "create",
+          "description": "Creates a new payroll run for a given month",
+          "input": [],
+          "output": [],
+          "rules": []
+        },
+        {
+          "name": "addPayslip",
+          "description": "Adds a payslip for an employee to this payroll run",
+          "input": [
+            "bb-4",
+            "bb-5"
+          ],
+          "output": [],
+          "rules": [
+            "rule-2",
+            "rule-4"
+          ]
+        },
+        {
+          "name": "execute",
+          "description": "Executes the payroll run, marking all payslips as paid",
+          "input": [],
+          "output": [
+            "bb-7"
+          ],
+          "rules": [
+            "rule-1",
+            "rule-4",
+            "rule-5"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bb-2",
+      "name": "PayrollRunId",
+      "type": "value_object",
+      "description": "Unique identifier for a payroll run",
+      "properties": [
+        {
+          "name": "value",
+          "type": "UUID"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-3",
+      "name": "PayrollStatus",
+      "type": "value_object",
+      "description": "Lifecycle state of a payroll run: Draft, Executed",
+      "properties": [
+        {
+          "name": "value",
+          "type": "String"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-4",
+      "name": "EmployeeId",
+      "type": "value_object",
+      "description": "Unique identifier for an employee.",
+      "properties": [
+        {
+          "name": "value",
+          "type": "UUID"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-5",
+      "name": "Salary",
+      "type": "value_object",
+      "description": "Monthly salary amount",
+      "properties": [
+        {
+          "name": "grossAmount",
+          "type": "BigDecimal"
+        },
+        {
+          "name": "deductions",
+          "type": "BigDecimal"
+        }
+      ],
+      "behaviours": [
+        {
+          "name": "netPay",
+          "description": "Calculates net pay after deductions",
+          "input": [],
+          "output": [],
+          "rules": [
+            "rule-3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bb-6",
+      "name": "Payslip",
+      "type": "entity",
+      "description": "Individual payment record within a payroll run. Identity is employeeId within the run.",
+      "properties": [
+        {
+          "name": "employeeId",
+          "type": "EmployeeId"
+        },
+        {
+          "name": "salary",
+          "type": "Salary"
+        },
+        {
+          "name": "paid",
+          "type": "boolean"
+        }
+      ],
+      "behaviours": [
+        {
+          "name": "markPaid",
+          "description": "Marks this payslip as paid",
+          "input": [],
+          "output": [],
+          "rules": []
+        }
+      ]
+    },
+    {
+      "id": "bb-7",
+      "name": "PayrollExecuted",
+      "type": "domain_event",
+      "description": "Emitted when a payroll run is executed",
+      "properties": [
+        {
+          "name": "payrollRunId",
+          "type": "PayrollRunId"
+        },
+        {
+          "name": "month",
+          "type": "YearMonth"
+        },
+        {
+          "name": "totalNetPay",
+          "type": "BigDecimal"
+        },
+        {
+          "name": "executedAt",
+          "type": "Instant"
+        }
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-8",
+      "name": "PayrollRunRepository",
+      "type": "repository",
+      "description": "Repository for persisting and retrieving PayrollRun aggregates",
+      "properties": [],
+      "behaviours": [
+        {
+          "name": "save",
+          "description": "Persists a payroll run",
+          "input": [
+            "bb-1"
+          ],
+          "output": [],
+          "rules": []
+        },
+        {
+          "name": "findById",
+          "description": "Finds a payroll run by id",
+          "input": [
+            "bb-2"
+          ],
+          "output": [
+            "bb-1"
+          ],
+          "rules": []
+        }
+      ]
+    },
+    {
+      "id": "bb-9",
+      "name": "ExecutePayrollService",
+      "type": "application_service",
+      "description": "Orchestrates payroll execution use case",
+      "properties": [],
+      "behaviours": [
+        {
+          "name": "execute",
+          "description": "Loads the payroll run and executes it",
+          "input": [
+            "bb-2"
+          ],
+          "output": [
+            "bb-7"
+          ],
+          "rules": [
+            "rule-1",
+            "rule-5"
+          ]
+        }
+      ]
+    }
+  ],
+  "useCases": [
+    {
+      "id": "uc-1",
+      "name": "Execute Payroll",
+      "actor": "actor-1",
+      "type": "Command",
+      "description": "HR Manager executes the monthly payroll run",
+      "businessGoal": "bg-1",
+      "input": [
+        "bb-2"
+      ],
+      "output": [
+        "bb-7"
+      ],
+      "usedBuildingBlocks": [
+        "bb-1",
+        "bb-8",
+        "bb-9"
+      ],
+      "rules": [
+        "rule-1",
+        "rule-5"
+      ],
+      "scenarios": [
+        {
+          "name": "Successful execution",
+          "description": "Payroll with payslips is executed",
+          "given": "A draft payroll run with 3 payslips",
+          "when": "HR Manager executes the payroll",
+          "then": "Payroll status becomes Executed, all payslips marked paid, PayrollExecuted event emitted"
+        },
+        {
+          "name": "Empty payroll rejected",
+          "description": "Cannot execute empty payroll",
+          "given": "A draft payroll run with no payslips",
+          "when": "HR Manager tries to execute",
+          "then": "Execution is rejected"
+        }
+      ],
+      "qualities": []
+    }
+  ],
+  "scenarios": []
+}

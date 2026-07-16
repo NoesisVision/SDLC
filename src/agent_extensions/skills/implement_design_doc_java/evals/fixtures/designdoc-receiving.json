@@ -1,0 +1,169 @@
+{
+  "actors": [
+    {"id": "actor-1", "name": "Warehouse Worker", "description": "Processes incoming shipments at the receiving dock"}
+  ],
+  "businessGoals": [
+    {"id": "bg-1", "name": "Accurate Receiving", "description": "Track all incoming goods and ensure accuracy against purchase orders"}
+  ],
+  "domainConcepts": [
+    {"id": "dc-1", "name": "Receiving Note", "description": "A record of goods received at the warehouse dock"},
+    {"id": "dc-2", "name": "Received Line", "description": "A line item representing a specific SKU and quantity received"},
+    {"id": "dc-3", "name": "Discrepancy", "description": "A mismatch between expected and actual received quantity"}
+  ],
+  "rules": [
+    {"id": "rule-1", "ruleType": "Consistency", "description": "A receiving note must have at least one line before it can be finalized"},
+    {"id": "rule-2", "ruleType": "State change", "description": "A finalized receiving note cannot be modified"},
+    {"id": "rule-3", "ruleType": "Structure", "description": "Received quantity must be non-negative"},
+    {"id": "rule-4", "ruleType": "Computation", "description": "Discrepancy is the difference between expected quantity and actual received quantity"}
+  ],
+  "qualityAttributes": [],
+  "boundedContexts": [
+    {
+      "id": "bc-1",
+      "name": "Warehouse",
+      "description": "Warehouse management bounded context",
+      "modules": [
+        {
+          "id": "mod-1",
+          "name": "Receiving",
+          "description": "Handles incoming goods at the warehouse",
+          "buildingBlocks": ["bb-1", "bb-2", "bb-3", "bb-4", "bb-5", "bb-6", "bb-7", "bb-8"]
+        }
+      ]
+    }
+  ],
+  "buildingBlocks": [
+    {
+      "id": "bb-1",
+      "name": "ReceivingNote",
+      "type": "aggregate",
+      "description": "Aggregate root tracking goods received at the dock. Contains ReceivedLine entities.",
+      "properties": [
+        {"name": "id", "type": "ReceivingNoteId"},
+        {"name": "lines", "type": "List<ReceivedLine>"},
+        {"name": "status", "type": "ReceivingStatus"},
+        {"name": "receivedAt", "type": "Instant"}
+      ],
+      "behaviours": [
+        {
+          "name": "create",
+          "description": "Creates a new receiving note",
+          "input": [],
+          "output": [],
+          "rules": []
+        },
+        {
+          "name": "addLine",
+          "description": "Adds a received line for a SKU",
+          "input": ["bb-4", "bb-5"],
+          "output": [],
+          "rules": ["rule-2", "rule-3"]
+        },
+        {
+          "name": "finalize",
+          "description": "Finalizes the receiving note, locking further changes",
+          "input": [],
+          "output": ["bb-7"],
+          "rules": ["rule-1", "rule-2"]
+        }
+      ]
+    },
+    {
+      "id": "bb-2",
+      "name": "ReceivingNoteId",
+      "type": "value_object",
+      "description": "Unique identifier for a receiving note",
+      "properties": [{"name": "value", "type": "UUID"}],
+      "behaviours": []
+    },
+    {
+      "id": "bb-3",
+      "name": "ReceivedLine",
+      "type": "entity",
+      "description": "A line item in a receiving note tracking actual received quantity for a SKU",
+      "properties": [
+        {"name": "sku", "type": "Sku"},
+        {"name": "expectedQuantity", "type": "Quantity"},
+        {"name": "actualQuantity", "type": "Quantity"}
+      ],
+      "behaviours": [
+        {
+          "name": "discrepancy",
+          "description": "Calculates the discrepancy between expected and actual quantity",
+          "input": [],
+          "output": ["bb-5"],
+          "rules": ["rule-4"]
+        }
+      ]
+    },
+    {
+      "id": "bb-4",
+      "name": "Sku",
+      "type": "value_object",
+      "description": "Stock keeping unit identifier.",
+      "properties": [{"name": "value", "type": "String"}],
+      "behaviours": []
+    },
+    {
+      "id": "bb-5",
+      "name": "Quantity",
+      "type": "value_object",
+      "description": "A non-negative quantity.",
+      "properties": [{"name": "value", "type": "int"}],
+      "behaviours": []
+    },
+    {
+      "id": "bb-6",
+      "name": "ReceivingStatus",
+      "type": "value_object",
+      "description": "Lifecycle state: Open, Finalized",
+      "properties": [{"name": "value", "type": "String"}],
+      "behaviours": []
+    },
+    {
+      "id": "bb-7",
+      "name": "ReceivingFinalized",
+      "type": "domain_event",
+      "description": "Emitted when a receiving note is finalized",
+      "properties": [
+        {"name": "receivingNoteId", "type": "ReceivingNoteId"},
+        {"name": "lineCount", "type": "int"},
+        {"name": "finalizedAt", "type": "Instant"}
+      ],
+      "behaviours": []
+    },
+    {
+      "id": "bb-8",
+      "name": "FinalizeReceivingHandler",
+      "type": "application_service",
+      "description": "Orchestrates finalization of a receiving note",
+      "properties": [],
+      "behaviours": [
+        {
+          "name": "handle",
+          "description": "Loads a receiving note and finalizes it",
+          "input": ["bb-2"],
+          "output": ["bb-7"],
+          "rules": ["rule-1", "rule-2"]
+        }
+      ]
+    }
+  ],
+  "useCases": [
+    {
+      "id": "uc-1",
+      "name": "Finalize Receiving",
+      "actor": "actor-1",
+      "type": "Command",
+      "description": "Worker finalizes a receiving note after counting all goods",
+      "businessGoal": "bg-1",
+      "input": ["bb-2"],
+      "output": ["bb-7"],
+      "usedBuildingBlocks": ["bb-1", "bb-8"],
+      "rules": ["rule-1", "rule-2"],
+      "scenarios": [],
+      "qualities": []
+    }
+  ],
+  "scenarios": []
+}

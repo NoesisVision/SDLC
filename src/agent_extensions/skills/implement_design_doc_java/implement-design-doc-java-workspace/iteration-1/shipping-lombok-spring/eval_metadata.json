@@ -1,0 +1,52 @@
+{
+  "eval_id": 1,
+  "eval_name": "shipping-lombok-spring",
+  "prompt": "Implement Shipping module in Lombok+Spring project with facade pattern",
+  "assertions": [
+    {
+      "name": "correct_package_placement",
+      "description": "Classes placed in shipping/domain/ and shipping/application/ sub-packages",
+      "type": "structural"
+    },
+    {
+      "name": "facade_pattern_followed",
+      "description": "ShippingFacade exists as public class delegating to package-private services",
+      "type": "structural"
+    },
+    {
+      "name": "spring_configuration_present",
+      "description": "@Configuration class with @Bean methods wiring services like OrderConfiguration/FulfillmentConfiguration",
+      "type": "structural"
+    },
+    {
+      "name": "lombok_value_for_vos",
+      "description": "ShipmentId, ShippingAddress, TrackingNumber use @Value annotation like OrderId/Money",
+      "type": "style"
+    },
+    {
+      "name": "domain_event_interface_reused",
+      "description": "Events implement existing com.example.orders.domain.DomainEvent, not a new interface",
+      "type": "correctness"
+    },
+    {
+      "name": "pending_events_pattern",
+      "description": "Shipment aggregate uses pendingEvents + flushEvents() pattern like Order and Fulfillment",
+      "type": "style"
+    },
+    {
+      "name": "all_building_blocks_present",
+      "description": "All 8 building blocks from DesignDoc have corresponding Java classes",
+      "type": "completeness"
+    },
+    {
+      "name": "business_rules_enforced",
+      "description": "dispatch() checks tracking number (rule-2), confirmDelivery checks not already delivered (rule-3)",
+      "type": "correctness"
+    },
+    {
+      "name": "orderid_reused_not_recreated",
+      "description": "Uses import from com.example.orders.domain.OrderId, does not create a new OrderId class",
+      "type": "correctness"
+    }
+  ]
+}

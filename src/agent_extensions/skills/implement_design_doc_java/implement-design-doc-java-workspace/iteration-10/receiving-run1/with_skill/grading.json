@@ -1,0 +1,47 @@
+{
+  "eval_name": "receiving",
+  "output_dir": "iteration-10/receiving-run1/with_skill/outputs",
+  "pass_rate": "8/8",
+  "expectations": [
+    {
+      "text": "correct_package_placement",
+      "passed": true,
+      "evidence": "receiving package: True"
+    },
+    {
+      "text": "sealed_events_in_separate_file",
+      "passed": true,
+      "evidence": "event files: ['ReceivingEvents.java'], sealed: True"
+    },
+    {
+      "text": "repository_as_nested_interface",
+      "passed": true,
+      "evidence": "nested Repository interface in ReceivingNote: True"
+    },
+    {
+      "text": "sku_reused",
+      "passed": true,
+      "evidence": "imports Sku: True, creates new: False"
+    },
+    {
+      "text": "quantity_reused",
+      "passed": true,
+      "evidence": "imports Quantity: True, creates new: False"
+    },
+    {
+      "text": "all_building_blocks_present",
+      "passed": true,
+      "evidence": "found 6/6: ['ReceivingNote', 'ReceivingNoteId', 'ReceivedLine', 'ReceivingStatus', 'ReceivingFinalized', 'FinalizeReceivingHandler']"
+    },
+    {
+      "text": "received_line_package_private",
+      "passed": true,
+      "evidence": "ReceivedLine package-private: True"
+    },
+    {
+      "text": "business_rules_enforced",
+      "passed": true,
+      "evidence": "empty check: True, finalized guard: True"
+    }
+  ]
+}

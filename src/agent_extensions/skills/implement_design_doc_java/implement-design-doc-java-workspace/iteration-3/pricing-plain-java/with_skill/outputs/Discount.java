@@ -1,0 +1,43 @@
+package pl.shop.catalog.pricing;
+
+import pl.shop.catalog.Money;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Objects;
+
+public final class Discount {
+
+    private final int percentage;
+
+    public Discount(int percentage) {
+        if (percentage < 0 || percentage > 100) {
+            throw new IllegalArgumentException("Discount percentage must be between 0 and 100");
+        }
+        this.percentage = percentage;
+    }
+
+    public Money applyTo(Money price) {
+        BigDecimal discountAmount = price.amount()
+                .multiply(BigDecimal.valueOf(percentage))
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        return price.subtract(discountAmount);
+    }
+
+    public int percentage() {
+        return percentage;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Discount discount = (Discount) o;
+        return percentage == discount.percentage;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(percentage);
+    }
+}

@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I have a design-doc.json that describes our new Invoicing bounded context with aggregates, value objects, and domain events. Can you implement the Java classes for it? The project is a Spring Boot app at src/main/java/com/acme/billing/",
+    "should_trigger": true
+  },
+  {
+    "query": "hey so we just finished the design workshop and the output is this designdoc json file at docs/design/membership-design.json - it has all the building blocks for the membership module. need you to create the java domain model from it, our project uses plain java with vavr for error handling",
+    "should_trigger": true
+  },
+  {
+    "query": "Take the DesignDoc at contracts/order-fulfillment.json and implement all the building blocks described there into our existing Java codebase. Some of the types already exist — check before creating duplicates. Project root is services/fulfillment/",
+    "should_trigger": true
+  },
+  {
+    "query": "we need to generate java code from this design document json. it describes a Warehouse module with aggregates like StockItem and ReceivingNote, plus domain events and repositories. the json follows the DesignDoc schema with boundedContexts and buildingBlocks",
+    "should_trigger": true
+  },
+  {
+    "query": "I've got a design doc JSON (the one with actors, businessGoals, buildingBlocks, useCases etc.) for a new Payment processing module. Need to implement it in Java — the project uses records for VOs and sealed interfaces for events. Can you read the JSON and create all the domain classes?",
+    "should_trigger": true
+  },
+  {
+    "query": "Please implement this DesignDoc JSON into my Java project. The JSON has building blocks of types aggregate, entity, value_object, domain_event, domain_service, application_service, and repository. Project at /Users/me/projects/ecommerce/",
+    "should_trigger": true
+  },
+  {
+    "query": "I updated the design document with new behaviours on the Order aggregate and a new ShippingAddress value object. Can you sync the Java code to match what's in the updated designdoc json? Some classes need modification, others are new.",
+    "should_trigger": true
+  },
+  {
+    "query": "zaimplementuj design doc json do mojego projektu java — plik jest w contracts/design-doc.json, projekt w src/. JSON zawiera boundedContexts, buildingBlocks, useCases i rules",
+    "should_trigger": true
+  },
+  {
+    "query": "our architect produced a DesignDoc JSON with the full domain model for the HR system — 3 bounded contexts, 15 building blocks, use cases with scenarios. I need all of this turned into Java classes following our existing project conventions at hr-service/src/main/java/",
+    "should_trigger": true
+  },
+  {
+    "query": "the team designed a new Claims module and exported it as a DesignDoc JSON. It references existing types from the Policy module (PolicyId, Premium). Need to implement the Java code, making sure to import existing types instead of recreating them",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you write a REST API in Spring Boot for managing users? I need endpoints for CRUD operations with validation and proper error handling",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to refactor this Java service class — it's 500 lines long and does too many things. Can you help me split it into smaller classes following single responsibility principle?",
+    "should_trigger": false
+  },
+  {
+    "query": "help me write unit tests for my Order aggregate using JUnit 5 and Mockito. The aggregate is at src/main/java/com/shop/orders/Order.java",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to create a design document for our new feature. We need to describe the domain model, bounded contexts, and building blocks. Can you help me write the design doc?",
+    "should_trigger": false
+  },
+  {
+    "query": "can you review this java code and tell me if it follows DDD patterns correctly? I'm not sure if my aggregate boundaries are right",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to set up a new Spring Boot project with Java 21, Maven, and the usual dependencies (web, jpa, lombok). Can you create the project structure?",
+    "should_trigger": false
+  },
+  {
+    "query": "convert this Python dataclass model to Java records — I have a User class with name, email, and created_at fields",
+    "should_trigger": false
+  },
+  {
+    "query": "I have a JSON schema file that describes our API request/response models. Can you generate Java DTOs from it using Jackson annotations?",
+    "should_trigger": false
+  },
+  {
+    "query": "we're migrating from Java 11 to Java 21 — can you update our value objects from final classes to records and our domain events to use sealed interfaces?",
+    "should_trigger": false
+  },
+  {
+    "query": "implement the database migration scripts for our new Order tables based on the domain model in src/main/java/com/shop/orders/",
+    "should_trigger": false
+  }
+]

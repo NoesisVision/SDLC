@@ -1,0 +1,62 @@
+{
+  "eval_name": "order-delta",
+  "output_dir": "iteration-7/order-delta/with_skill/outputs",
+  "pass_rate": "11/11",
+  "expectations": [
+    {
+      "text": "order_modified_not_recreated",
+      "passed": true,
+      "evidence": "has Order: True, old methods: True, new methods: True"
+    },
+    {
+      "text": "status_enum_extended",
+      "passed": true,
+      "evidence": "CANCELLED: True, DRAFT: True, PLACED: True"
+    },
+    {
+      "text": "new_fields_added",
+      "passed": true,
+      "evidence": "shippingAddress: True, discountCode: True"
+    },
+    {
+      "text": "new_vo_classes_created",
+      "passed": true,
+      "evidence": "DiscountCode: True, ShippingAddress: True"
+    },
+    {
+      "text": "discount_validation",
+      "passed": true,
+      "evidence": "percentage validation: True"
+    },
+    {
+      "text": "shipping_address_validation",
+      "passed": true,
+      "evidence": "address validation: True"
+    },
+    {
+      "text": "cancel_rule_enforced",
+      "passed": true,
+      "evidence": "cancel only-placed guard: True"
+    },
+    {
+      "text": "order_cancelled_event",
+      "passed": true,
+      "evidence": "OrderCancelled event: True"
+    },
+    {
+      "text": "cancel_order_service",
+      "passed": true,
+      "evidence": "CancelOrderService: True"
+    },
+    {
+      "text": "existing_types_not_duplicated",
+      "passed": true,
+      "evidence": "all existing types in correct package or not emitted"
+    },
+    {
+      "text": "records_style_preserved",
+      "passed": true,
+      "evidence": "DiscountCode record: True, ShippingAddress record: True"
+    }
+  ]
+}
