@@ -13,10 +13,13 @@ import type { BehaviorMatch, ScannedType } from "../language-scanner.js";
  * is a behavior.
  */
 
+/** The package of the Noesis Java annotations module. */
+export const NOESIS_ANNOTATIONS_PACKAGE = "vision.noesis.annotations";
+
 /**
- * The stereotype annotations of the Noesis Java annotations module
- * (`vision.noesis.annotations`), by simple name, with the building block type
- * each one declares in the model's vocabulary.
+ * The stereotype annotations of the Noesis Java annotations module, by simple
+ * name, with the building block type each one declares in the model's
+ * vocabulary.
  */
 export const STEREOTYPE_ANNOTATIONS: Readonly<Record<string, string>> = {
   AggregateRoot: "Aggregate",
@@ -37,6 +40,7 @@ export const STEREOTYPE_ANNOTATIONS: Readonly<Record<string, string>> = {
 type TypeKind = "class" | "interface" | "enum" | "record";
 
 const PACKAGE_PATTERN = /^[ \t]*package[ \t]+([\w.]+)[ \t]*;/m;
+const IMPORT_PATTERN = /^[ \t]*import[ \t]+([\w.]+)[ \t]*;/gm;
 
 // An annotation's arguments are blanked out before matching, so only its name is left.
 const ANNOTATION = String.raw`@[\w.]+`;
@@ -63,10 +67,11 @@ export function extractPackage(content: string): string | null {
 /** Every type in the file that carries a stereotype annotation, with its non-private methods. */
 export function parseStereotypedTypes(content: string): ScannedType[] {
   const text = blankAnnotationArguments(blankOut(content));
+  const foreignImports = foreignlyImportedNames(text);
   const types: ScannedType[] = [];
   for (const match of text.matchAll(TYPE_DECLARATION_PATTERN)) {
     const [, prefix = "", kind = "", typeName = ""] = match;
-    const blockType = stereotypeOf(annotationNames(prefix));
+    const blockType = stereotypeOf(annotationNames(prefix), foreignImports);
     if (blockType === null) continue;
     const declarationEnd = match.index + match[0].length;
     types.push({
@@ -79,13 +84,34 @@ export function parseStereotypedTypes(content: string): ScannedType[] {
   return types;
 }
 
-/** The block type the annotations declare, or null when none is a stereotype. */
-export function stereotypeOf(annotations: string[]): string | null {
+/**
+ * The block type the annotations declare, or null when none is a stereotype.
+ * An annotation is a Noesis stereotype when written fully qualified with the
+ * Noesis package, or by simple name unless an import binds that name to
+ * another package (`import jakarta.persistence.Entity;` makes `@Entity` JPA's).
+ */
+export function stereotypeOf(
+  annotations: string[],
+  foreignImports: ReadonlySet<string> = new Set()
+): string | null {
   for (const annotation of annotations) {
-    const blockType = STEREOTYPE_ANNOTATIONS[annotation];
+    const simpleName = noesisSimpleName(annotation, foreignImports);
+    const blockType = simpleName === null ? undefined : STEREOTYPE_ANNOTATIONS[simpleName];
     if (blockType !== undefined) return blockType;
   }
   return null;
+}
+
+/** The simple names the file imports from packages other than the Noesis one. */
+export function foreignlyImportedNames(text: string): Set<string> {
+  const names = new Set<string>();
+  for (const match of text.matchAll(IMPORT_PATTERN)) {
+    const qualified = match[1] ?? "";
+    const dot = qualified.lastIndexOf(".");
+    if (dot === -1 || qualified.slice(0, dot) === NOESIS_ANNOTATIONS_PACKAGE) continue;
+    names.add(qualified.slice(dot + 1));
+  }
+  return names;
 }
 
 /** Comments and string/char literals replaced by spaces, newlines kept, so nothing inside them is matched. */
@@ -142,11 +168,15 @@ export function blankAnnotationArguments(text: string): string {
   return out;
 }
 
+/** The annotation names as written, simple or fully qualified. */
 function annotationNames(prefix: string): string[] {
-  return [...prefix.matchAll(ANNOTATION_NAME_PATTERN)].map((match) => {
-    const qualified = match[1] ?? "";
-    return qualified.slice(qualified.lastIndexOf(".") + 1);
-  });
+  return [...prefix.matchAll(ANNOTATION_NAME_PATTERN)].map((match) => match[1] ?? "");
+}
+
+function noesisSimpleName(annotation: string, foreignImports: ReadonlySet<string>): string | null {
+  const dot = annotation.lastIndexOf(".");
+  if (dot === -1) return foreignImports.has(annotation) ? null : annotation;
+  return annotation.slice(0, dot) === NOESIS_ANNOTATIONS_PACKAGE ? annotation.slice(dot + 1) : null;
 }
 
 function extractBehaviors(

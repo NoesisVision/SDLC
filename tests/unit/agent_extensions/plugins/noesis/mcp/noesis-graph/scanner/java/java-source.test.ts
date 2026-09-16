@@ -241,12 +241,50 @@ describe("Java source — stereotype-annotated types and their public methods", 
     });
   });
 
+  test("an annotation of the same name imported from another package is not a stereotype", async () => {
+    let types: ScannedType[];
+
+    await given(
+      "a file importing JPA's @Entity and Spring's @Repository next to Noesis' @AggregateRoot, with types under each, a fully qualified Noesis @ValueObject and a fully qualified JPA annotation",
+      () => {}
+    );
+    await when("the file is parsed", async () => {
+      types = parseStereotypedTypes(await javaSource("ForeignAnnotations"));
+    });
+    await then("only the types under Noesis annotations are building blocks", () => {
+      expect(types.map((t) => [t.typeName, t.blockType])).toEqual([
+        ["Order", "Aggregate"],
+        ["Money", "ValueObject"],
+      ]);
+    });
+  });
+
+  test("a wildcard import of the Noesis package leaves every stereotype by simple name", async () => {
+    let types: ScannedType[];
+
+    await given("a file with `import vision.noesis.annotations.*;` and an @Entity", () => {});
+    await when("the file is parsed", async () => {
+      types = parseStereotypedTypes(await javaSource("WildcardImport"));
+    });
+    await then("the type is an Entity block", () => {
+      expect(types.map((t) => [t.typeName, t.blockType])).toEqual([["Customer", "Entity"]]);
+    });
+  });
+
   test("the first stereotype among a declaration's annotations names the block type", () => {
     expect(stereotypeOf(["Component", "Entity", "Repository"])).toBe("Entity");
     expect(stereotypeOf(["Component", "Override"])).toBeNull();
     expect(stereotypeOf(["AggregateRoot"])).toBe("Aggregate");
     expect(stereotypeOf(["Event"])).toBe("DomainEvent");
     expect(stereotypeOf(["Identifier"])).toBe("Identifier");
+  });
+
+  test("a stereotype name bound to another package by an import, or fully qualified with another package, does not count", () => {
+    const foreign = new Set(["Entity", "Repository"]);
+    expect(stereotypeOf(["Entity", "Repository"], foreign)).toBeNull();
+    expect(stereotypeOf(["Entity", "ValueObject"], foreign)).toBe("ValueObject");
+    expect(stereotypeOf(["vision.noesis.annotations.Entity"], foreign)).toBe("Entity");
+    expect(stereotypeOf(["jakarta.persistence.Entity"])).toBeNull();
   });
 });
 
