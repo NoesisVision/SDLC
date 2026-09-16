@@ -33,6 +33,27 @@ describe("Java scanner — which files of a project are read", () => {
     });
   });
 
+  test("build output is skipped only beside a build file; packages named out or build are read", async () => {
+    let files: string[];
+    const project = fixturePath("java", "hexagonal");
+
+    await given(
+      "a multi-module Maven project with target/ beside each pom.xml and packages adapter.out, application.port.out and build",
+      () => {}
+    );
+    await when("the project's Java files are listed", async () => {
+      files = (await findJavaFiles(project)).map((f) => relative(project, f));
+    });
+    await then("the hexagonal packages are listed and both target/ trees are not", () => {
+      expect(files).toEqual([
+        "orders/src/main/java/com/acme/orders/Order.java",
+        "src/main/java/com/acme/adapter/out/persistence/JpaOrderAdapter.java",
+        "src/main/java/com/acme/application/port/out/SaveOrderPort.java",
+        "src/main/java/com/acme/build/OrderBuilder.java",
+      ]);
+    });
+  });
+
   test("a project without Java sources yields no files, which is how the service knows it has no Java", async () => {
     let scanned: ScannedFile[];
 

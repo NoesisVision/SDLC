@@ -11,13 +11,16 @@ import { extractPackage, parseStereotypedTypes } from "./java-source.js";
 /*
  * The Java scanner: the package is the namespace, a type is a building block
  * when it carries a stereotype annotation of the Noesis Java annotations
- * module, its non-private methods are behaviors. Build outputs and test
- * sources are left out.
+ * module, its non-private methods are behaviors. Build outputs (beside the
+ * module's build file) and test sources are left out.
  */
 
 const JAVA_SOURCES: SourceFileSet = {
   extension: ".java",
-  skippedDirs: new Set(["target", "build", "out"]),
+  buildOutput: {
+    dirs: new Set(["target", "build", "out"]),
+    buildFiles: new Set(["pom.xml", "build.gradle", "build.gradle.kts"]),
+  },
   /** Files that declare a package or a module rather than types. */
   ignoredFiles: new Set(["package-info.java", "module-info.java"]),
 };

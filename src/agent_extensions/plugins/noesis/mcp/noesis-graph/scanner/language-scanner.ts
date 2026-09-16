@@ -46,8 +46,13 @@ export interface LanguageScanner {
 export interface SourceFileSet {
   /** The file extension, with the dot. */
   extension: string;
-  /** This language's build output directories, skipped wherever they occur. */
-  skippedDirs: ReadonlySet<string>;
+  /** Directories skipped wherever they occur. */
+  skippedDirs?: ReadonlySet<string>;
+  /**
+   * A build's output directories, skipped only beside one of its build files:
+   * `target/` next to `pom.xml` is output, `adapter/out/` is a package.
+   */
+  buildOutput?: { dirs: ReadonlySet<string>; buildFiles: ReadonlySet<string> };
   /** File names that never declare types. */
   ignoredFiles?: ReadonlySet<string>;
 }
@@ -92,21 +97,33 @@ export async function scanSourceFiles(
   return results;
 }
 
-export function shouldSkipDir(name: string, languageSkipped: ReadonlySet<string>): boolean {
-  return COMMON_SKIPPED_DIRS.has(name) || languageSkipped.has(name) || name.startsWith(".");
+export function shouldSkipDir(name: string, languageSkipped?: ReadonlySet<string>): boolean {
+  return (
+    COMMON_SKIPPED_DIRS.has(name) || languageSkipped?.has(name) === true || name.startsWith(".")
+  );
 }
 
 async function walkDir(dir: string, set: SourceFileSet, results: string[]): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true });
+  const buildOutputDirs = holdsBuildFile(entries, set) ? set.buildOutput?.dirs : undefined;
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (shouldSkipDir(entry.name, set.skippedDirs)) continue;
+      if (shouldSkipDir(entry.name, set.skippedDirs) || buildOutputDirs?.has(entry.name)) continue;
       await walkDir(fullPath, set, results);
     } else if (entry.name.endsWith(set.extension) && !set.ignoredFiles?.has(entry.name)) {
       results.push(fullPath);
     }
   }
+}
+
+function holdsBuildFile(
+  entries: { name: string; isFile(): boolean }[],
+  set: SourceFileSet
+): boolean {
+  return entries.some(
+    (entry) => entry.isFile() && set.buildOutput?.buildFiles.has(entry.name) === true
+  );
 }
 
 function toBatches<T>(items: T[], size: number): T[][] {
