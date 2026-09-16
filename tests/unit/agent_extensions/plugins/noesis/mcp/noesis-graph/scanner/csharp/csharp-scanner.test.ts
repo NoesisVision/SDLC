@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "fs/promises";
 import { and, given, then, when } from "@tests/bdd.js";
+import { fixturePath } from "@tests/helpers/fixtures.js";
 import {
   extractNamespace,
   parseAnnotations,
 } from "@noesis/mcp/noesis-graph/scanner/csharp/csharp-scanner.js";
+
+const csharpSource = (name: string) =>
+  readFile(fixturePath("csharp", "sources", `${name}.cs`), "utf-8");
 
 describe("C# scanner — namespace and [Ddd*]-annotated types with their public methods", () => {
   test("extractNamespace finds the namespace declaration in a C# file", async () => {
@@ -33,20 +38,7 @@ describe("C# scanner — namespace and [Ddd*]-annotated types with their public 
   test("parseAnnotations recognises a DDD annotation and its public methods", async () => {
     let matches: ReturnType<typeof parseAnnotations>;
 
-    const source = `
-namespace MyCompany.Sales;
-
-[DddAggregate]
-public class Order
-{
-    public void Confirm() {}
-
-    [DomainBehavior("Cancel order")]
-    public void Cancel() {}
-
-    private void Internal() {}
-}
-`;
+    const source = await csharpSource("Order");
 
     await given("a C# class annotated [DddAggregate] with mixed-visibility methods", () => {});
     await when("the helper parses annotations from the source", () => {
@@ -70,14 +62,7 @@ public class Order
   test("parseAnnotations honours an explicit name override on the type itself", async () => {
     let matches: ReturnType<typeof parseAnnotations>;
 
-    const source = `
-namespace MyCompany.Sales;
-
-[DddAggregate("Customer Order")]
-public class Order
-{
-}
-`;
+    const source = await csharpSource("NamedOrder");
 
     await given(
       'an [Aggregate("Customer Order")] annotation with an explicit display name',
@@ -96,19 +81,7 @@ public class Order
   test("parseAnnotations skips inherited object methods (Equals, GetHashCode, …) so they are not surfaced as behaviours", async () => {
     let matches: ReturnType<typeof parseAnnotations>;
 
-    const source = `
-namespace MyCompany.Sales;
-
-[DddValueObject]
-public class Money
-{
-    public override bool Equals(object? other) => false;
-    public override int GetHashCode() => 0;
-    public override string ToString() => "";
-
-    public bool IsZero() => true;
-}
-`;
+    const source = await csharpSource("Money");
 
     await given(
       "a value-object class whose methods include Equals/GetHashCode/ToString and a domain method",
