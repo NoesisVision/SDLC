@@ -40,7 +40,7 @@ describe("Java source — stereotype-annotated types and their public methods", 
     });
   });
 
-  test("an aggregate root's public methods are its behaviors; constructors, non-public methods and the Object trio are not", async () => {
+  test("an aggregate root's non-private methods are its behaviors; constructors, private methods and the Object trio are not", async () => {
     let types: ScannedType[];
 
     await given(
@@ -54,9 +54,15 @@ describe("Java source — stereotype-annotated types and their public methods", 
       expect(types.map((t) => [t.typeName, t.blockType])).toEqual([["Order", "Aggregate"]]);
     });
     await and(
-      "only the public methods that are not constructors or Object overrides are behaviors, in declaration order",
+      "every method that is not private, a constructor or an Object override is a behavior, in declaration order",
       () => {
-        expect(methodNames(types[0])).toEqual(["place", "apply", "draft"]);
+        expect(methodNames(types[0])).toEqual([
+          "place",
+          "apply",
+          "draft",
+          "audit",
+          "packagePrivate",
+        ]);
       }
     );
     await and(
@@ -186,6 +192,21 @@ describe("Java source — stereotype-annotated types and their public methods", 
     });
     await then("only the method is a behavior", () => {
       expect(methodNames(types[0])).toEqual(["entries"]);
+    });
+  });
+
+  test("Lombok changes nothing: the hand-written non-private methods are the behaviors, generated accessors never appear", async () => {
+    let types: ScannedType[];
+
+    await given(
+      "a @Value @Builder value object with fields of every shape Lombok touches, plus package-private, protected and private methods",
+      () => {}
+    );
+    await when("the file is parsed", async () => {
+      types = parseStereotypedTypes(await javaSource("LombokValue"));
+    });
+    await then("only the hand-written methods that are not private are behaviors", () => {
+      expect(methodNames(types[0])).toEqual(["pick", "allows", "recompute"]);
     });
   });
 

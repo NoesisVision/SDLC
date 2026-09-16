@@ -6,6 +6,11 @@ import type { BehaviorMatch, ScannedType } from "../language-scanner.js";
  * is matched, so braces inside them never count, and an annotation must sit
  * directly on the declaration (annotations and modifiers only in between)
  * rather than anywhere before it.
+ *
+ * Behaviors are the methods that are not private: in Java the default,
+ * package-private visibility is how a domain package exposes logic to
+ * itself. Nothing Lombok generates is in the source, so nothing it generates
+ * is a behavior.
  */
 
 /**
@@ -53,7 +58,7 @@ export function extractPackage(content: string): string | null {
   return PACKAGE_PATTERN.exec(blankOut(content))?.[1] ?? null;
 }
 
-/** Every type in the file that carries a stereotype annotation, with its public methods. */
+/** Every type in the file that carries a stereotype annotation, with its non-private methods. */
 export function parseStereotypedTypes(content: string): ScannedType[] {
   const text = blankOut(content);
   const types: ScannedType[] = [];
@@ -184,8 +189,8 @@ function flattenBraceBlocks(content: string): string {
 }
 
 /**
- * Reads one statement as a method header. Public is required in a class or
- * record; in an interface every member is public unless said otherwise.
+ * Reads one statement as a method header. Any method that is not private is
+ * a behavior — package-private included.
  * Constructors, the Object trio and anything with an initialiser (a field)
  * or a statement keyword are not methods.
  */
@@ -203,9 +208,7 @@ function parseMethodStatement(
   if (header.includes("=")) return null;
 
   const modifiers: string[] = header.match(MODIFIER_WORD_PATTERN) ?? [];
-  if (kind === "interface") {
-    if (modifiers.includes("private")) return null;
-  } else if (!modifiers.includes("public")) return null;
+  if (modifiers.includes("private")) return null;
 
   const methodName = trailingWord(header.trimEnd());
   if (methodName === "") return null;
