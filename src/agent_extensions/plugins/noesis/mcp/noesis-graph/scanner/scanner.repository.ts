@@ -11,6 +11,7 @@ import {
   type DomainModelTree,
   type Module,
   type ModuleBranch,
+  type Property,
 } from "./domain-model/domain-model.js";
 import type { CodeNamespace, CodeType } from "./code-structure.js";
 
@@ -19,6 +20,7 @@ const SCHEMA_STATEMENTS = [
   "CREATE NODE TABLE IF NOT EXISTS Module(name STRING, fullPath STRING, PRIMARY KEY(fullPath))",
   "CREATE NODE TABLE IF NOT EXISTS BuildingBlock(id STRING, name STRING, type STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS Behavior(id STRING, name STRING, actor STRING, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS Property(id STRING, name STRING, type STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS CodeNamespace(name STRING, fullName STRING, language STRING, PRIMARY KEY(fullName))",
   "CREATE NODE TABLE IF NOT EXISTS CodeType(id STRING, name STRING, fullName STRING, filePath STRING, language STRING, PRIMARY KEY(id))",
   "CREATE REL TABLE IF NOT EXISTS BC_CONTAINS_MODULE(FROM BoundedContext TO Module)",
@@ -26,6 +28,7 @@ const SCHEMA_STATEMENTS = [
   "CREATE REL TABLE IF NOT EXISTS BC_CONTAINS_BB(FROM BoundedContext TO BuildingBlock)",
   "CREATE REL TABLE IF NOT EXISTS MODULE_CONTAINS_BB(FROM Module TO BuildingBlock)",
   "CREATE REL TABLE IF NOT EXISTS BB_CONTAINS_BEHAVIOR(FROM BuildingBlock TO Behavior)",
+  "CREATE REL TABLE IF NOT EXISTS BB_HAS_PROPERTY(FROM BuildingBlock TO Property)",
   "CREATE REL TABLE IF NOT EXISTS BC_REPRESENTED_BY_CODE_NAMESPACE(FROM BoundedContext TO CodeNamespace)",
   "CREATE REL TABLE IF NOT EXISTS MODULE_REPRESENTED_BY_CODE_NAMESPACE(FROM Module TO CodeNamespace)",
   "CREATE REL TABLE IF NOT EXISTS BB_REPRESENTED_BY_CODE_TYPE(FROM BuildingBlock TO CodeType)",
@@ -34,6 +37,7 @@ const SCHEMA_STATEMENTS = [
 
 const CLEAR_STATEMENTS = [
   "MATCH (n:Behavior) DETACH DELETE n",
+  "MATCH (n:Property) DETACH DELETE n",
   "MATCH (n:BuildingBlock) DETACH DELETE n",
   "MATCH (n:CodeType) DETACH DELETE n",
   "MATCH (n:CodeNamespace) DETACH DELETE n",
@@ -69,6 +73,14 @@ const BehaviorWithBbRowSchema = z.object({
   actor: z.string(),
 });
 type BehaviorWithBbRow = z.infer<typeof BehaviorWithBbRowSchema>;
+
+// A property's type is "" in the graph when the source states none; the tree reads it back as null.
+const PropertyWithBbRowSchema = z.object({
+  buildingBlockId: z.string(),
+  name: z.string(),
+  type: z.string(),
+});
+type PropertyWithBbRow = z.infer<typeof PropertyWithBbRowSchema>;
 
 const BehaviorLocationRowSchema = z.object({
   id: z.string(),
@@ -127,6 +139,17 @@ export class ScannerRepository {
     await this.db.query(
       "MATCH (b:BuildingBlock), (x:Behavior) WHERE b.id = $bbId AND x.id = $behaviorId CREATE (b)-[:BB_CONTAINS_BEHAVIOR]->(x)",
       { bbId: buildingBlockId, behaviorId: behavior.id },
+    );
+  }
+
+  async insertProperty(property: Property, buildingBlockId: string): Promise<void> {
+    await this.db.query(
+      "CREATE (p:Property {id: $id, name: $name, type: $type})",
+      { id: `${buildingBlockId}.${property.name}`, name: property.name, type: property.type ?? "" },
+    );
+    await this.db.query(
+      "MATCH (b:BuildingBlock), (p:Property) WHERE b.id = $bbId AND p.id = $propertyId CREATE (b)-[:BB_HAS_PROPERTY]->(p)",
+      { bbId: buildingBlockId, propertyId: `${buildingBlockId}.${property.name}` },
     );
   }
 
@@ -224,7 +247,15 @@ export class ScannerRepository {
         ),
       );
 
-    return buildTree(boundedContexts, modules, [...bbInModules, ...bbInBcs], behaviorRows);
+    const propertyRows = z
+      .array(PropertyWithBbRowSchema)
+      .parse(
+        await this.db.query<PropertyWithBbRow>(
+          "MATCH (b:BuildingBlock)-[:BB_HAS_PROPERTY]->(p:Property) RETURN b.id AS buildingBlockId, p.name AS name, p.type AS type ORDER BY p.name",
+        ),
+      );
+
+    return buildTree(boundedContexts, modules, [...bbInModules, ...bbInBcs], behaviorRows, propertyRows);
   }
 
   private async linkModuleToParent(mod: Module): Promise<void> {
@@ -283,10 +314,12 @@ function buildTree(
   modules: Module[],
   buildingBlocks: Array<BuildingBlock & { containerPath: string }>,
   behaviors: Array<{ buildingBlockId: string; id: string; name: string; actor: string }>,
+  properties: PropertyWithBbRow[],
 ): DomainModelTree {
   const modulesByParent = groupModulesByParent(modules);
   const behaviorsByBb = groupBehaviorsByBb(behaviors);
-  const bbByContainer = groupBbByContainer(buildingBlocks, behaviorsByBb);
+  const propertiesByBb = groupPropertiesByBb(properties);
+  const bbByContainer = groupBbByContainer(buildingBlocks, behaviorsByBb, propertiesByBb);
 
   const tree: BoundedContextBranch<BuildingBlockBranch>[] = boundedContexts.map((bc) => ({
     name: bc.name,
@@ -311,6 +344,7 @@ function groupModulesByParent(modules: Module[]): Map<string, Module[]> {
 function groupBbByContainer(
   blocks: Array<BuildingBlock & { containerPath: string }>,
   behaviorsByBb: Map<string, Behavior[]>,
+  propertiesByBb: Map<string, Property[]>,
 ): Map<string, BuildingBlockBranch[]> {
   const map = new Map<string, BuildingBlockBranch[]>();
   for (const bb of blocks) {
@@ -320,6 +354,7 @@ function groupBbByContainer(
       name: bb.name,
       type: bb.type,
       behaviors: behaviorsByBb.get(bb.id) ?? [],
+      properties: propertiesByBb.get(bb.id) ?? [],
     });
     map.set(bb.containerPath, list);
   }
@@ -333,6 +368,16 @@ function groupBehaviorsByBb(
   for (const row of behaviors) {
     const list = map.get(row.buildingBlockId) ?? [];
     list.push({ id: row.id, name: row.name, actor: row.actor === "" ? null : row.actor });
+    map.set(row.buildingBlockId, list);
+  }
+  return map;
+}
+
+function groupPropertiesByBb(properties: PropertyWithBbRow[]): Map<string, Property[]> {
+  const map = new Map<string, Property[]>();
+  for (const row of properties) {
+    const list = map.get(row.buildingBlockId) ?? [];
+    list.push({ name: row.name, type: row.type === "" ? null : row.type });
     map.set(row.buildingBlockId, list);
   }
   return map;

@@ -14,6 +14,12 @@ export interface BehaviorMatch {
   actor: string | null;
 }
 
+export interface PropertyMatch {
+  name: string;
+  /** The declared type as spelled in the source; null when the language does not state one. */
+  type: string | null;
+}
+
 export interface ScannedType {
   typeName: string;
   /** The building block type as the model names it: "Aggregate", "Repository", ... */
@@ -21,6 +27,8 @@ export interface ScannedType {
   /** A display name the code declares for the block, when the language supports one. */
   nameOverride: string | null;
   behaviors: BehaviorMatch[];
+  /** The data the type holds; empty when the scanner of its language does not read it yet. */
+  properties: PropertyMatch[];
 }
 
 export interface ScannedFile {

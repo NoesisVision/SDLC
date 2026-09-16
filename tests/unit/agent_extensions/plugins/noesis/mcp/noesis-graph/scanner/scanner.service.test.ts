@@ -180,6 +180,7 @@ describe("ScannerService — the scanned model persisted in the graph", () => {
     let inMemory: DomainModelTree;
     let codeTypes: unknown[];
     let namespaceLinks: unknown[];
+    let properties: unknown[];
 
     await given("an empty graph and the polyglot repository", async () => {
       const module = await modulePromise;

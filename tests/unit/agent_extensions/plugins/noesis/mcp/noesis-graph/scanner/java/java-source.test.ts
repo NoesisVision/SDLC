@@ -14,6 +14,8 @@ const javaSource = (name: string) =>
 
 const methodNames = (type: ScannedType | undefined) =>
   type?.behaviors.map((b) => b.methodName) ?? [];
+const propertyNames = (type: ScannedType | undefined) =>
+  type?.properties.map((p) => `${p.name}: ${p.type}`) ?? [];
 
 describe("Java source — stereotype-annotated types and their public methods", () => {
   test("the package declaration is the file's namespace", async () => {
@@ -65,6 +67,9 @@ describe("Java source — stereotype-annotated types and their public methods", 
         ]);
       }
     );
+    await and("its fields are its properties, with the type as spelled", () => {
+      expect(propertyNames(types[0])).toEqual(["id: OrderId", "lines: List<OrderLine>"]);
+    });
     await and(
       "Java declares no display names, so block and behaviors keep their code names",
       () => {
@@ -102,6 +107,9 @@ describe("Java source — stereotype-annotated types and their public methods", 
       expect(types.map((t) => [t.typeName, t.blockType])).toEqual([["Money", "ValueObject"]]);
       expect(methodNames(types[0])).toEqual(["add", "zero", "compareTo"]);
     });
+    await and("the header components are its properties", () => {
+      expect(propertyNames(types[0])).toEqual(["amount: BigDecimal", "currency: Currency"]);
+    });
   });
 
   test("an enum is a building block without behaviors", async () => {
@@ -113,7 +121,13 @@ describe("Java source — stereotype-annotated types and their public methods", 
     });
     await then("the enum is reported with no behaviors", () => {
       expect(types).toEqual([
-        { typeName: "OrderStatus", blockType: "ValueObject", nameOverride: null, behaviors: [] },
+        {
+          typeName: "OrderStatus",
+          blockType: "ValueObject",
+          nameOverride: null,
+          behaviors: [],
+          properties: [],
+        },
       ]);
     });
   });
@@ -180,11 +194,11 @@ describe("Java source — stereotype-annotated types and their public methods", 
     });
   });
 
-  test("fields, initialiser blocks and generic-typed fields are not behaviors", async () => {
+  test("fields and initialiser blocks are not behaviors; instance fields are properties, static ones are not", async () => {
     let types: ScannedType[];
 
     await given(
-      "an @Entity with public fields, an array initialiser, static and instance initialiser blocks and one method",
+      "an @Entity with public fields, an array initialiser, a static field, static and instance initialiser blocks and one method",
       () => {}
     );
     await when("the file is parsed", async () => {
@@ -193,9 +207,18 @@ describe("Java source — stereotype-annotated types and their public methods", 
     await then("only the method is a behavior", () => {
       expect(methodNames(types[0])).toEqual(["entries"]);
     });
+    await and(
+      "the instance fields are properties, generics and arrays spelled as in the source; the static counter is not",
+      () => {
+        expect(propertyNames(types[0])).toEqual([
+          "entries: Map<String, List<Integer>>",
+          "sizes: int[]",
+        ]);
+      }
+    );
   });
 
-  test("Lombok changes nothing: the hand-written non-private methods are the behaviors, generated accessors never appear", async () => {
+  test("Lombok changes nothing: the fields are the properties and the generated accessors are not behaviors", async () => {
     let types: ScannedType[];
 
     await given(
@@ -205,9 +228,28 @@ describe("Java source — stereotype-annotated types and their public methods", 
     await when("the file is parsed", async () => {
       types = parseStereotypedTypes(await javaSource("LombokValue"));
     });
-    await then("only the hand-written methods that are not private are behaviors", () => {
-      expect(methodNames(types[0])).toEqual(["pick", "allows", "recompute"]);
-    });
+    await then(
+      "every instance field is a property whatever its visibility, initialiser or annotation; the static ones are not",
+      () => {
+        expect(propertyNames(types[0])).toEqual([
+          "userStatus: UserStatus",
+          "discounts: List<Discount>",
+          "cachedHash: int",
+          "limit: int",
+          "threshold: int",
+          "exclusiveType: Class<? extends Discount>",
+          "buckets: Map<String, List<Integer>>",
+          "sizes: int[]",
+          "onChange: Runnable",
+        ]);
+      }
+    );
+    await and(
+      "the hand-written non-private methods are the behaviors; nothing Lombok would generate appears",
+      () => {
+        expect(methodNames(types[0])).toEqual(["pick", "allows", "recompute"]);
+      }
+    );
   });
 
   test("the first stereotype among a declaration's annotations names the block type", () => {
@@ -229,6 +271,7 @@ describe("Java source — formatting does not change what is found", () => {
         { methodName: "place", nameOverride: null, actor: null },
         { methodName: "cancel", nameOverride: null, actor: null },
       ],
+      properties: [{ name: "id", type: "OrderId" }],
     },
   ];
 

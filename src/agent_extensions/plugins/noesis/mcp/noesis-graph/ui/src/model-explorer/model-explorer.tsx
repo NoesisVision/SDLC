@@ -22,6 +22,7 @@ import {
   IconLayoutGrid,
   IconPackage,
   IconRefresh,
+  IconTag,
 } from "@tabler/icons-react";
 import { blockTypeStyle, type BehaviorMeta } from "./block-type.js";
 import { InvocationFlow } from "./invocation-flow.js";
@@ -32,6 +33,7 @@ import type {
   DomainModelTree,
   ModelExplorerData,
   ModuleBranch,
+  Property,
 } from "../../../ui-contracts/model-explorer/model-explorer-data.js";
 import classes from "./model-explorer.module.css";
 
@@ -674,8 +676,43 @@ function BuildingBlockDetails({
             </Stack>
           )}
         </Stack>
+
+        <Stack gap="xs">
+          <Text size="sm" fw={600} c="gray.2">
+            Properties
+          </Text>
+          {buildingBlock.properties.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              No properties discovered.
+            </Text>
+          ) : (
+            <Stack gap={4}>
+              {buildingBlock.properties.map((property) => (
+                <PropertyRow key={property.name} property={property} />
+              ))}
+            </Stack>
+          )}
+        </Stack>
       </Stack>
     </Box>
+  );
+}
+
+function PropertyRow({ property }: { property: Property }) {
+  return (
+    <Group gap="xs" py={6} px="sm" wrap="nowrap">
+      <ThemeIcon size="sm" variant="light" color="cyan" radius="sm">
+        <IconTag size={14} stroke={1.5} />
+      </ThemeIcon>
+      <Text size="sm" fw={500} c="gray.1">
+        {property.name}
+      </Text>
+      {property.type !== null && (
+        <Text size="xs" c="dimmed" ff="monospace" truncate>
+          {property.type}
+        </Text>
+      )}
+    </Group>
   );
 }
 
