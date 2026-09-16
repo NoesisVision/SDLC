@@ -131,6 +131,8 @@ function toScannedType(match: AnnotationMatch): ScannedType {
     blockType: annotationToBlockType(match.annotation),
     nameOverride: match.nameOverride,
     behaviors: match.behaviors,
+    // C# properties are not read yet; see the scanner feedback in NOE-5.
+    properties: [],
   };
 }
 

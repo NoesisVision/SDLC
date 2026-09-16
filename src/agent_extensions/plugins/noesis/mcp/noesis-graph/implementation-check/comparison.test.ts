@@ -25,6 +25,7 @@ function bb(
       name: n,
       actor: behaviourActors[n] ?? null,
     })),
+    properties: [],
   };
 }
 

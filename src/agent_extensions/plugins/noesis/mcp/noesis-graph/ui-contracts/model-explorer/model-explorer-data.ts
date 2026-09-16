@@ -3,11 +3,17 @@ export interface Behavior {
   name: string;
 }
 
+export interface Property {
+  name: string;
+  type: string | null;
+}
+
 export interface BuildingBlock {
   id: string;
   name: string;
   type: string;
   behaviors: Behavior[];
+  properties: Property[];
 }
 
 export interface ModuleBranch {

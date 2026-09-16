@@ -24,11 +24,18 @@ const BehaviorSchema = z.object({
   actor: z.string().nullable(),
 });
 
+const PropertySchema = z.object({
+  name: z.string(),
+  type: z.string().nullable(),
+});
+
 const BuildingBlockBranchSchema = z.object({
   id: z.string(),
   name: z.string(),
   type: z.string(),
   behaviors: z.array(BehaviorSchema),
+  // Snapshots taken before properties were scanned have none.
+  properties: z.array(PropertySchema).default([]),
 });
 
 const ModuleBranchSchema: z.ZodType<unknown> = z.lazy(() =>

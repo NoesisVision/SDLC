@@ -252,6 +252,9 @@ export class ScannerService implements OnModuleInit {
           await this.repository.insertBehavior(behavior, block.id);
           behaviorCount++;
         }
+        for (const property of type.properties) {
+          await this.repository.insertProperty(property, block.id);
+        }
       }
     }
     this.logger.log(`Inserted ${blockCount} building blocks and ${behaviorCount} behaviors`);
@@ -281,8 +284,9 @@ export function assembleDomainTree(
     for (const type of file.types) {
       const block = toBuildingBlock(file, type);
       const behaviors = toBehaviors(block.id, type).sort((a, b) => a.name.localeCompare(b.name));
+      const properties = [...type.properties].sort((a, b) => a.name.localeCompare(b.name));
       const list = bbByContainer.get(containerPath) ?? [];
-      list.push({ ...block, behaviors });
+      list.push({ ...block, behaviors, properties });
       bbByContainer.set(containerPath, list);
     }
   }

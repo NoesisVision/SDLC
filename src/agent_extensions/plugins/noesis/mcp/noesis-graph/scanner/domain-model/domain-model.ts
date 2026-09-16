@@ -19,8 +19,16 @@ export interface Behavior {
   actor: string | null;
 }
 
+/** A piece of data a building block holds, as the code declares it. */
+export interface Property {
+  name: string;
+  /** The type as spelled in the source, generics included; null when the language does not state one. */
+  type: string | null;
+}
+
 export interface BuildingBlockBranch extends BuildingBlock {
   behaviors: Behavior[];
+  properties: Property[];
 }
 
 export interface DomainModelTree<Leaf extends BuildingBlock = BuildingBlockBranch> {
