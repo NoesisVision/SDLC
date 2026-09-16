@@ -210,6 +210,37 @@ describe("Java source — stereotype-annotated types and their public methods", 
     });
   });
 
+  test("annotation arguments nest without limit; the annotated type and methods are still found", async () => {
+    let types: ScannedType[];
+
+    await given(
+      "an @AggregateRoot whose arguments hold an annotation inside an annotation, a JPA graph annotation between it and the class, and methods under annotations nested three deep",
+      () => {}
+    );
+    await when("the file is parsed", async () => {
+      types = parseStereotypedTypes(await javaSource("NestedAnnotations"));
+    });
+    await then("the class is one Aggregate with every annotated method as a behavior", () => {
+      expect(types.map((t) => [t.typeName, t.blockType])).toEqual([["Order", "Aggregate"]]);
+      expect(methodNames(types[0])).toEqual(["place", "expire", "retry"]);
+    });
+  });
+
+  test("a parameter named `record` does not disqualify its method; a nested record declaration is still no behavior", async () => {
+    let types: ScannedType[];
+
+    await given(
+      "an @ApplicationService with parameters named `record`, a nested record and a plain method",
+      () => {}
+    );
+    await when("the file is parsed", async () => {
+      types = parseStereotypedTypes(await javaSource("RecordParameter"));
+    });
+    await then("the methods taking a `record` are behaviors and the nested record is not", () => {
+      expect(methodNames(types[0])).toEqual(["save", "handle", "ok"]);
+    });
+  });
+
   test("the first stereotype among a declaration's annotations names the block type", () => {
     expect(stereotypeOf(["Component", "Entity", "Repository"])).toBe("Entity");
     expect(stereotypeOf(["Component", "Override"])).toBeNull();

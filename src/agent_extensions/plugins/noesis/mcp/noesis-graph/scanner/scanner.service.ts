@@ -111,15 +111,6 @@ export class ScannerService implements OnModuleInit {
     return tree;
   }
 
-  /** The languages the project has sources of, in scanner order. */
-  async detectLanguages(): Promise<Language[]> {
-    const detected: Language[] = [];
-    for (const scanner of this.scanners) {
-      if (await scanner.detect(this.projectDir)) detected.push(scanner.language);
-    }
-    return detected;
-  }
-
   async scanInMemory(): Promise<DomainModelTree> {
     const { keptFiles, boundedContexts, modules, allContainerPaths } =
       await this.collectScannedModel();
@@ -128,11 +119,12 @@ export class ScannerService implements OnModuleInit {
 
   async scan(): Promise<DomainModelTree> {
     this.logger.log("Starting model scan");
-    await this.repository.clearModel();
-
+    // The sources and the config are read before the graph is cleared, so a
+    // failure there leaves the previous model in place.
     const { keptFiles, boundedContexts, modules, allContainerPaths } =
       await this.collectScannedModel();
 
+    await this.repository.clearModel();
     for (const bc of boundedContexts) {
       await this.repository.insertBoundedContext(bc);
     }
@@ -163,7 +155,7 @@ export class ScannerService implements OnModuleInit {
 
   private async collectScannedModel(): Promise<ScannedModel> {
     const config = await loadNoesisConfig(this.projectDir);
-    const scannedFiles = await this.scanDetectedLanguages();
+    const scannedFiles = await this.scanEveryLanguage();
 
     const keptFiles: KeptFile[] = scannedFiles
       .filter((f) => f.namespace !== "" && !isExcluded(f.namespace, config.namespacesToExclude))
@@ -189,10 +181,10 @@ export class ScannerService implements OnModuleInit {
     return { keptFiles, boundedContexts, modules, allContainerPaths };
   }
 
-  private async scanDetectedLanguages(): Promise<ScannedFile[]> {
+  /** A language the project has no sources of contributes nothing; nothing declares which languages a project has. */
+  private async scanEveryLanguage(): Promise<ScannedFile[]> {
     const files: ScannedFile[] = [];
     for (const scanner of this.scanners) {
-      if (!(await scanner.detect(this.projectDir))) continue;
       const scanned = await scanner.scan(this.projectDir);
       this.logger.log(`Scanned ${scanned.length} ${scanner.language} files`);
       files.push(...scanned);

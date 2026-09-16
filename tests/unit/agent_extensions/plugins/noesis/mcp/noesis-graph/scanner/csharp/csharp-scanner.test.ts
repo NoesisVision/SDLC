@@ -96,4 +96,133 @@ describe("C# scanner — namespace and [Ddd*]-annotated types with their public 
       expect(methods).toEqual(["IsZero"]);
     });
   });
+
+  test("[Actor] and [ActorAttribute] name who triggers a behaviour", async () => {
+    let matches: ReturnType<typeof parseAnnotations>;
+
+    const source = await csharpSource("OrderApi");
+
+    await given(
+      "an application service with a method under [Actor], one under [ActorAttribute] after a [DomainBehavior], and one without",
+      () => {}
+    );
+    await when("the source is parsed", () => {
+      matches = parseAnnotations(source);
+    });
+    await then("each behaviour carries its actor, and none where no attribute names one", () => {
+      expect(matches[0].behaviors).toEqual([
+        { methodName: "Place", nameOverride: null, actor: "Customer" },
+        { methodName: "Cancel", nameOverride: "Cancel Order", actor: "Approving Manager" },
+        { methodName: "NoActor", nameOverride: null, actor: null },
+      ]);
+    });
+  });
+
+  test("[DomainBehavior] without a name keeps the method name; the Attribute-suffixed form renames like the short one", async () => {
+    let matches: ReturnType<typeof parseAnnotations>;
+
+    const source = await csharpSource("Cart");
+
+    await given(
+      'an aggregate with a bare [DomainBehavior] and a [DomainBehaviorAttribute("...")]',
+      () => {}
+    );
+    await when("the source is parsed", () => {
+      matches = parseAnnotations(source);
+    });
+    await then("only the named attribute overrides the behaviour name", () => {
+      expect(matches[0].behaviors).toEqual([
+        { methodName: "AddItem", nameOverride: null, actor: null },
+        { methodName: "Clear", nameOverride: "Empty the cart", actor: null },
+      ]);
+    });
+  });
+
+  test("properties, fields, constructors and nested types' methods are not behaviours; expression-bodied and static methods are", async () => {
+    let matches: ReturnType<typeof parseAnnotations>;
+
+    const source = await csharpSource("OrderMembers");
+
+    await given(
+      "an aggregate with a property, fields with initialisers, a constructor, a nested class with a public method, and three public methods of its own",
+      () => {}
+    );
+    await when("the source is parsed", () => {
+      matches = parseAnnotations(source);
+    });
+    await then("only the aggregate's own methods are behaviours, in declaration order", () => {
+      const outer = matches.find((m) => m.typeName === "Order");
+      expect(outer?.behaviors.map((b) => b.methodName)).toEqual(["Total", "For", "OuterMethod"]);
+    });
+  });
+
+  test("interface members are behaviours although they carry no public modifier", async () => {
+    let matches: ReturnType<typeof parseAnnotations>;
+
+    const source = await csharpSource("PriceChangesPolicy");
+
+    await given("a [DddDomainService] interface with two members and no modifiers", () => {});
+    await when("the source is parsed", () => {
+      matches = parseAnnotations(source);
+    });
+    await then("both members are behaviours", () => {
+      expect(matches[0].behaviors.map((b) => b.methodName)).toEqual([
+        "CanChangePrices",
+        "GetAsync",
+      ]);
+    });
+  });
+
+  test("a delegate and an enum are building blocks without behaviours", async () => {
+    let matches: ReturnType<typeof parseAnnotations>;
+
+    const source = await csharpSource("OrderPlaced");
+
+    await given("a [DddDomainEvent] delegate and a [DddValueObject] enum", () => {});
+    await when("the source is parsed", () => {
+      matches = parseAnnotations(source);
+    });
+    await then("both are reported with no behaviours", () => {
+      expect(matches.map((m) => [m.annotation, m.behaviors])).toEqual([
+        ["DddDomainEvent", []],
+        ["DddValueObject", []],
+      ]);
+    });
+  });
+
+  test("System.Object overrides and record-generated members are not behaviours", async () => {
+    let matches: ReturnType<typeof parseAnnotations>;
+
+    const source = await csharpSource("ClientId");
+
+    await given(
+      "a record value object overriding Equals, GetHashCode, ToString, GetType, Finalize, MemberwiseClone and declaring Deconstruct, PrintMembers and a factory method",
+      () => {}
+    );
+    await when("the source is parsed", () => {
+      matches = parseAnnotations(source);
+    });
+    await then("only the factory method is a behaviour", () => {
+      expect(matches[0].behaviors.map((b) => b.methodName)).toEqual(["From"]);
+    });
+  });
+
+  test("generics, base types and constraints in the type header do not hide the body", async () => {
+    let matches: ReturnType<typeof parseAnnotations>;
+
+    const source = await csharpSource("GenericOrder");
+
+    await given(
+      "a partial generic aggregate inheriting a generic base, implementing an interface and constraining its parameter",
+      () => {}
+    );
+    await when("the source is parsed", () => {
+      matches = parseAnnotations(source);
+    });
+    await then("the type and its one method are found", () => {
+      expect(matches.map((m) => [m.typeName, m.behaviors.map((b) => b.methodName)])).toEqual([
+        ["Order", ["Confirm"]],
+      ]);
+    });
+  });
 });

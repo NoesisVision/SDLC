@@ -1,12 +1,12 @@
-import { readFile, readdir } from "fs/promises";
-import { join, relative } from "path";
 import { DDD_ANNOTATIONS, annotationToBlockType, type DddAnnotation } from "../ddd-annotations.js";
 import {
-  shouldSkipDir,
+  findSourceFiles,
+  scanSourceFiles,
   type BehaviorMatch,
   type LanguageScanner,
   type ScannedFile,
   type ScannedType,
+  type SourceFileSet,
 } from "../language-scanner.js";
 
 /*
@@ -16,9 +16,10 @@ import {
  * who triggers it.
  */
 
-const CONCURRENCY_LIMIT = 10;
-
-const SKIPPED_DIRS = new Set(["bin", "obj"]);
+const CSHARP_SOURCES: SourceFileSet = {
+  extension: ".cs",
+  skippedDirs: new Set(["bin", "obj"]),
+};
 
 const ANNOTATION_WITH_TYPE_PATTERN = new RegExp(
   `\\[(${DDD_ANNOTATIONS.join("|")})(Attribute)?(?:\\s*\\(\\s*"([^"]*)"\\s*\\))?\\s*\\]` +
@@ -58,29 +59,15 @@ export interface AnnotationMatch {
 
 export const csharpScanner: LanguageScanner = {
   language: "csharp",
-  detect: async (projectDir) => (await findCsFiles(projectDir)).length > 0,
   scan: scanCsFiles,
 };
 
 export async function scanCsFiles(projectDir: string): Promise<ScannedFile[]> {
-  const csFiles = await findCsFiles(projectDir);
-  const results: ScannedFile[] = [];
-
-  const batches = toBatches(csFiles, CONCURRENCY_LIMIT);
-  for (const batch of batches) {
-    const batchResults = await Promise.all(
-      batch.map(async (absPath) => {
-        const content = await readFile(absPath, "utf-8");
-        const namespace = extractNamespace(content) ?? "";
-        const types = parseAnnotations(content).map(toScannedType);
-        const relativePath = relative(projectDir, absPath);
-        return { language: "csharp" as const, relativePath, namespace, types, content };
-      })
-    );
-    results.push(...batchResults);
-  }
-
-  return results;
+  const csFiles = await findSourceFiles(projectDir, CSHARP_SOURCES);
+  return scanSourceFiles(projectDir, csFiles, "csharp", (content) => ({
+    namespace: extractNamespace(content) ?? "",
+    types: parseAnnotations(content).map(toScannedType),
+  }));
 }
 
 export function extractNamespace(content: string): string | null {
@@ -165,10 +152,8 @@ function parsePublicMethods(body: string, typeName: string, typeKind: string): B
   const methods: BehaviorMatch[] = [];
   for (const stmt of statements) {
     const method = parseMethodStatement(stmt, typeName, typeKind);
-    if (!method) continue;
-    const key = `${method.methodName}|${method.nameOverride ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (!method || seen.has(method.methodName)) continue;
+    seen.add(method.methodName);
     methods.push(method);
   }
   return methods;
@@ -228,31 +213,4 @@ function parseMethodStatement(
   if (TECHNICAL_METHOD_NAMES.has(methodName)) return null;
 
   return { methodName, nameOverride, actor };
-}
-
-async function findCsFiles(dir: string): Promise<string[]> {
-  const results: string[] = [];
-  await walkDir(dir, results);
-  return results;
-}
-
-async function walkDir(dir: string, results: string[]): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (shouldSkipDir(entry.name, SKIPPED_DIRS)) continue;
-      await walkDir(fullPath, results);
-    } else if (entry.name.endsWith(".cs")) {
-      results.push(fullPath);
-    }
-  }
-}
-
-function toBatches<T>(items: T[], size: number): T[][] {
-  const batches: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    batches.push(items.slice(i, i + size));
-  }
-  return batches;
 }

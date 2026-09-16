@@ -14,7 +14,19 @@ import {
 } from "./domain-model/domain-model.js";
 import type { CodeNamespace, CodeType } from "./code-structure.js";
 
+// Tables of the C#-only graph, before code nodes became language-neutral; a data
+// directory scanned by that version still holds them, and nothing reads them.
+const LEGACY_TABLES = [
+  "BC_REPRESENTED_BY_CSHARP_NAMESPACE",
+  "MODULE_REPRESENTED_BY_CSHARP_NAMESPACE",
+  "BB_REPRESENTED_BY_CSHARP_TYPE",
+  "CSHARP_TYPE_IN_CSHARP_NAMESPACE",
+  "CSharpType",
+  "CSharpNamespace",
+];
+
 const SCHEMA_STATEMENTS = [
+  ...LEGACY_TABLES.map((table) => `DROP TABLE IF EXISTS ${table}`),
   "CREATE NODE TABLE IF NOT EXISTS BoundedContext(name STRING, PRIMARY KEY(name))",
   "CREATE NODE TABLE IF NOT EXISTS Module(name STRING, fullPath STRING, PRIMARY KEY(fullPath))",
   "CREATE NODE TABLE IF NOT EXISTS BuildingBlock(id STRING, name STRING, type STRING, PRIMARY KEY(id))",

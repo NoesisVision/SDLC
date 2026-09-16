@@ -14,13 +14,14 @@ import {
   ScannerService,
 } from "@noesis/mcp/noesis-graph/scanner/scanner.service.js";
 import type { DomainModelTree } from "@noesis/mcp/noesis-graph/scanner/domain-model/domain-model.js";
-import type { Language } from "@noesis/mcp/noesis-graph/scanner/language-scanner.js";
 
 /** The service over a project directory; the in-memory scan never touches the repository. */
-function scannerFor(projectDir: string): ScannerService {
-  const repository = {} as unknown as ScannerRepository;
+function scannerFor(
+  projectDir: string,
+  repository: Partial<ScannerRepository> = {}
+): ScannerService {
   const invocations = {} as unknown as InvocationsService;
-  return new ScannerService(repository, invocations, projectDir);
+  return new ScannerService(repository as ScannerRepository, invocations, projectDir);
 }
 
 const blocks = (branch: {
@@ -120,21 +121,15 @@ describe("ScannerService — the domain model read off a Java project", () => {
   });
 });
 
-describe("ScannerService — the languages of a project are detected, not configured", () => {
+describe("ScannerService — the languages of a project are read off its sources, not configured", () => {
   test("a project holding both C# and Java is scanned in both, into one model", async () => {
-    let languages: Language[];
     let tree: DomainModelTree;
 
     await given("a repository with a .NET project and a Maven module side by side", () => {});
-    await when("its languages are detected and it is scanned in memory", async () => {
-      const scanner = scannerFor(fixturePath("polyglot"));
-      languages = await scanner.detectLanguages();
-      tree = await scanner.scanInMemory();
+    await when("it is scanned in memory", async () => {
+      tree = await scannerFor(fixturePath("polyglot")).scanInMemory();
     });
-    await then("both languages are detected", () => {
-      expect(languages).toEqual(["csharp", "java"]);
-    });
-    await and("each language's namespaces form bounded contexts in the same tree", () => {
+    await then("each language's namespaces form bounded contexts in the same tree", () => {
       // Namespaces are case-sensitive: the C# `Sales` and the Java `sales` are two bounded contexts.
       expect(tree.boundedContexts.map((bc) => bc.name)).toEqual(["sales", "Sales"]);
       expect(blocks(findModuleByPath(tree, "Sales.Billing")!)).toEqual([
@@ -145,16 +140,29 @@ describe("ScannerService — the languages of a project are detected, not config
       ]);
     });
   });
+});
 
-  test("a Java-only project is not scanned for C#", async () => {
-    let languages: Language[];
+describe("ScannerService — a scan that cannot read the project leaves the previous model alone", () => {
+  test("an unreadable noesis-config.json fails the scan before the graph is cleared", async () => {
+    let cleared = false;
+    let failure: unknown;
 
-    await given("a repository with only Java sources", () => {});
-    await when("its languages are detected", async () => {
-      languages = await scannerFor(fixturePath("java", "nested-modules")).detectLanguages();
+    await given("a Java project whose noesis-config.json has a trailing comma", () => {});
+    await when("it is scanned into the graph", async () => {
+      const repository: Partial<ScannerRepository> = {
+        clearModel: async () => {
+          cleared = true;
+        },
+      };
+      failure = await scannerFor(fixturePath("java", "broken-config"), repository)
+        .scan()
+        .catch((error: unknown) => error);
     });
-    await then("Java is the only language", () => {
-      expect(languages).toEqual(["java"]);
+    await then("the scan fails on the config", () => {
+      expect(failure).toBeInstanceOf(SyntaxError);
+    });
+    await and("the model in the graph was never cleared", () => {
+      expect(cleared).toBe(false);
     });
   });
 });
@@ -173,6 +181,61 @@ describe("ScannerService — the scanned model persisted in the graph", () => {
   }).compile();
 
   afterAll(async () => (await modulePromise).close());
+
+  test("the tables of the C#-only graph are dropped when the schema is initialised, as on every start", async () => {
+    let tables: string[];
+
+    await given("a graph that still holds the code tables of the C#-only scanner", async () => {
+      const module = await modulePromise;
+      await module.init();
+      const db = module.get(DatabaseService);
+      await db.query(
+        "CREATE NODE TABLE IF NOT EXISTS CSharpNamespace(name STRING, fullName STRING, PRIMARY KEY(fullName))"
+      );
+      await db.query(
+        "CREATE NODE TABLE IF NOT EXISTS CSharpType(id STRING, name STRING, fullName STRING, filePath STRING, PRIMARY KEY(id))"
+      );
+      await db.query(
+        "CREATE REL TABLE IF NOT EXISTS BC_REPRESENTED_BY_CSHARP_NAMESPACE(FROM BoundedContext TO CSharpNamespace)"
+      );
+      await db.query(
+        "CREATE REL TABLE IF NOT EXISTS MODULE_REPRESENTED_BY_CSHARP_NAMESPACE(FROM Module TO CSharpNamespace)"
+      );
+      await db.query(
+        "CREATE REL TABLE IF NOT EXISTS BB_REPRESENTED_BY_CSHARP_TYPE(FROM BuildingBlock TO CSharpType)"
+      );
+      await db.query(
+        "CREATE REL TABLE IF NOT EXISTS CSHARP_TYPE_IN_CSHARP_NAMESPACE(FROM CSharpType TO CSharpNamespace)"
+      );
+    });
+    await when("the schema is initialised", async () => {
+      const module = await modulePromise;
+      await module.get(ScannerRepository).initSchema();
+      const rows = await module
+        .get(DatabaseService)
+        .query<{ name: string }>("CALL show_tables() RETURN name");
+      tables = rows.map((r) => r.name).sort();
+    });
+    await then("only the language-neutral code tables remain", () => {
+      expect(tables).toEqual([
+        "BB_CONTAINS_BEHAVIOR",
+        "BB_REPRESENTED_BY_CODE_TYPE",
+        "BC_CONTAINS_BB",
+        "BC_CONTAINS_MODULE",
+        "BC_REPRESENTED_BY_CODE_NAMESPACE",
+        "Behavior",
+        "BoundedContext",
+        "BuildingBlock",
+        "CODE_TYPE_IN_CODE_NAMESPACE",
+        "CodeNamespace",
+        "CodeType",
+        "MODULE_CONTAINS_BB",
+        "MODULE_CONTAINS_MODULE",
+        "MODULE_REPRESENTED_BY_CODE_NAMESPACE",
+        "Module",
+      ]);
+    });
+  });
 
   test("a full scan writes the tree to the graph and reads it back as the in-memory scan produced it, with the code it came from", async () => {
     let scanned: DomainModelTree;

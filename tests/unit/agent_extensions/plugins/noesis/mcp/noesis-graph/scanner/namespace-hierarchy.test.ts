@@ -100,6 +100,57 @@ describe("Namespace hierarchy — bounded contexts and nested modules read off d
     });
   });
 
+  test("a skipped part is cut out every time it occurs, not only the first", async () => {
+    let result: string;
+
+    await given("a namespace where a technical segment appears twice", () => {});
+    await when("that segment is skipped", () => {
+      result = removeSkippedParts("Foo.EF.Bar.EF.Baz", ["EF"]);
+    });
+    await then("both occurrences are gone", () => {
+      expect(result).toBe("Foo.Bar.Baz");
+    });
+  });
+
+  test("an exclude pattern matches whole segments, never part of one", async () => {
+    let excluded: boolean;
+
+    await given("a namespace whose only segment starts with the pattern", () => {});
+    await when("the namespace is checked", () => {
+      excluded = isExcluded("FooBar", ["Foo"]);
+    });
+    await then("it is not excluded", () => {
+      expect(excluded).toBe(false);
+    });
+  });
+
+  test("a wildcard between two literal anchors spans any number of segments, including none", async () => {
+    let adjacent: boolean;
+    let deep: boolean;
+    let tailBeyondAnchor: boolean;
+
+    await given("a pattern with a literal prefix, a wildcard and a literal last segment", () => {});
+    await when(
+      "namespaces with nothing, several segments and extra segments after the anchor are checked",
+      () => {
+        adjacent = isExcluded("MyCompany.ECommerce.EF", ["MyCompany.ECommerce.*.EF"]);
+        deep = isExcluded("MyCompany.ECommerce.Sales.Database.Sql.EF", [
+          "MyCompany.ECommerce.*.EF",
+        ]);
+        tailBeyondAnchor = isExcluded("MyCompany.ECommerce.Sales.EF.Migrations", [
+          "MyCompany.ECommerce.*.EF",
+        ]);
+      }
+    );
+    await then("the namespaces ending on the anchor match", () => {
+      expect(adjacent).toBe(true);
+      expect(deep).toBe(true);
+    });
+    await and("a namespace going on past the anchor does not", () => {
+      expect(tailBeyondAnchor).toBe(false);
+    });
+  });
+
   test("an exclude pattern without a wildcard matches the namespace exactly, not its descendants", async () => {
     let exact: boolean;
     let descendant: boolean;

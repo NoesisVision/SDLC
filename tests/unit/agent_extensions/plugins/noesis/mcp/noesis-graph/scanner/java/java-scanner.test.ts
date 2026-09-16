@@ -33,20 +33,15 @@ describe("Java scanner — which files of a project are read", () => {
     });
   });
 
-  test("a project is recognised as Java when it has any main Java source", async () => {
-    let javaProject: boolean;
-    let csharpProject: boolean;
+  test("a project without Java sources yields no files, which is how the service knows it has no Java", async () => {
+    let scanned: ScannedFile[];
 
-    await given("a Java project and a C#-only project", () => {});
-    await when("both are checked for Java", () => {
-      return Promise.all([
-        javaScanner.detect(PROJECT).then((d) => (javaProject = d)),
-        javaScanner.detect(fixturePath("polyglot", "Billing")).then((d) => (csharpProject = d)),
-      ]);
+    await given("a C#-only project", () => {});
+    await when("it is scanned for Java", async () => {
+      scanned = await javaScanner.scan(fixturePath("polyglot", "Billing"));
     });
-    await then("only the Java project is recognised", () => {
-      expect(javaProject).toBe(true);
-      expect(csharpProject).toBe(false);
+    await then("nothing is reported", () => {
+      expect(scanned).toEqual([]);
     });
   });
 
