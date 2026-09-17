@@ -12,31 +12,43 @@ import {
   type Module,
   type ModuleBranch,
 } from "./domain-model/domain-model.js";
-import type { CSharpNamespace, CSharpType } from "./csharp/csharp-code.js";
+import type { CodeNamespace, CodeType } from "./code-structure.js";
+
+// Tables of the C#-only graph, before code nodes became language-neutral; a data
+// directory scanned by that version still holds them, and nothing reads them.
+const LEGACY_TABLES = [
+  "BC_REPRESENTED_BY_CSHARP_NAMESPACE",
+  "MODULE_REPRESENTED_BY_CSHARP_NAMESPACE",
+  "BB_REPRESENTED_BY_CSHARP_TYPE",
+  "CSHARP_TYPE_IN_CSHARP_NAMESPACE",
+  "CSharpType",
+  "CSharpNamespace",
+];
 
 const SCHEMA_STATEMENTS = [
+  ...LEGACY_TABLES.map((table) => `DROP TABLE IF EXISTS ${table}`),
   "CREATE NODE TABLE IF NOT EXISTS BoundedContext(name STRING, PRIMARY KEY(name))",
   "CREATE NODE TABLE IF NOT EXISTS Module(name STRING, fullPath STRING, PRIMARY KEY(fullPath))",
   "CREATE NODE TABLE IF NOT EXISTS BuildingBlock(id STRING, name STRING, type STRING, PRIMARY KEY(id))",
   "CREATE NODE TABLE IF NOT EXISTS Behavior(id STRING, name STRING, actor STRING, PRIMARY KEY(id))",
-  "CREATE NODE TABLE IF NOT EXISTS CSharpNamespace(name STRING, fullName STRING, PRIMARY KEY(fullName))",
-  "CREATE NODE TABLE IF NOT EXISTS CSharpType(id STRING, name STRING, fullName STRING, filePath STRING, PRIMARY KEY(id))",
+  "CREATE NODE TABLE IF NOT EXISTS CodeNamespace(name STRING, fullName STRING, language STRING, PRIMARY KEY(fullName))",
+  "CREATE NODE TABLE IF NOT EXISTS CodeType(id STRING, name STRING, fullName STRING, filePath STRING, language STRING, PRIMARY KEY(id))",
   "CREATE REL TABLE IF NOT EXISTS BC_CONTAINS_MODULE(FROM BoundedContext TO Module)",
   "CREATE REL TABLE IF NOT EXISTS MODULE_CONTAINS_MODULE(FROM Module TO Module)",
   "CREATE REL TABLE IF NOT EXISTS BC_CONTAINS_BB(FROM BoundedContext TO BuildingBlock)",
   "CREATE REL TABLE IF NOT EXISTS MODULE_CONTAINS_BB(FROM Module TO BuildingBlock)",
   "CREATE REL TABLE IF NOT EXISTS BB_CONTAINS_BEHAVIOR(FROM BuildingBlock TO Behavior)",
-  "CREATE REL TABLE IF NOT EXISTS BC_REPRESENTED_BY_CSHARP_NAMESPACE(FROM BoundedContext TO CSharpNamespace)",
-  "CREATE REL TABLE IF NOT EXISTS MODULE_REPRESENTED_BY_CSHARP_NAMESPACE(FROM Module TO CSharpNamespace)",
-  "CREATE REL TABLE IF NOT EXISTS BB_REPRESENTED_BY_CSHARP_TYPE(FROM BuildingBlock TO CSharpType)",
-  "CREATE REL TABLE IF NOT EXISTS CSHARP_TYPE_IN_CSHARP_NAMESPACE(FROM CSharpType TO CSharpNamespace)",
+  "CREATE REL TABLE IF NOT EXISTS BC_REPRESENTED_BY_CODE_NAMESPACE(FROM BoundedContext TO CodeNamespace)",
+  "CREATE REL TABLE IF NOT EXISTS MODULE_REPRESENTED_BY_CODE_NAMESPACE(FROM Module TO CodeNamespace)",
+  "CREATE REL TABLE IF NOT EXISTS BB_REPRESENTED_BY_CODE_TYPE(FROM BuildingBlock TO CodeType)",
+  "CREATE REL TABLE IF NOT EXISTS CODE_TYPE_IN_CODE_NAMESPACE(FROM CodeType TO CodeNamespace)",
 ];
 
 const CLEAR_STATEMENTS = [
   "MATCH (n:Behavior) DETACH DELETE n",
   "MATCH (n:BuildingBlock) DETACH DELETE n",
-  "MATCH (n:CSharpType) DETACH DELETE n",
-  "MATCH (n:CSharpNamespace) DETACH DELETE n",
+  "MATCH (n:CodeType) DETACH DELETE n",
+  "MATCH (n:CodeNamespace) DETACH DELETE n",
   "MATCH (n:Module) DETACH DELETE n",
   "MATCH (n:BoundedContext) DETACH DELETE n",
 ];
@@ -116,7 +128,7 @@ export class ScannerRepository {
       { id: bb.id, name: bb.name, type: bb.type },
     );
     await this.linkBuildingBlockToContainer(bb.id, containerPath);
-    await this.linkBuildingBlockToCSharpType(bb.id, codeTypeId);
+    await this.linkBuildingBlockToCodeType(bb.id, codeTypeId);
   }
 
   async insertBehavior(behavior: Behavior, buildingBlockId: string): Promise<void> {
@@ -130,36 +142,37 @@ export class ScannerRepository {
     );
   }
 
-  async insertCSharpNamespace(ns: CSharpNamespace): Promise<void> {
+  async insertCodeNamespace(ns: CodeNamespace): Promise<void> {
     await this.db.query(
-      "CREATE (n:CSharpNamespace {name: $name, fullName: $fullName})",
-      { name: ns.name, fullName: ns.fullName },
+      "CREATE (n:CodeNamespace {name: $name, fullName: $fullName, language: $language})",
+      { name: ns.name, fullName: ns.fullName, language: ns.language },
     );
   }
 
-  async insertCSharpType(t: CSharpType, namespaceFullName: string): Promise<void> {
+  async insertCodeType(t: CodeType, namespaceFullName: string): Promise<void> {
     await this.db.query(
-      "CREATE (t:CSharpType {id: $id, name: $name, fullName: $fullName, filePath: $filePath})",
+      "CREATE (t:CodeType {id: $id, name: $name, fullName: $fullName, filePath: $filePath, language: $language})",
       {
         id: t.id,
         name: t.name,
         fullName: t.fullName,
         filePath: t.filePath,
+        language: t.language,
       },
     );
-    await this.linkCSharpTypeToCSharpNamespace(t.id, namespaceFullName);
+    await this.linkCodeTypeToCodeNamespace(t.id, namespaceFullName);
   }
 
-  async linkBoundedContextToCSharpNamespace(bcName: string, nsFullName: string): Promise<void> {
+  async linkBoundedContextToCodeNamespace(bcName: string, nsFullName: string): Promise<void> {
     await this.db.query(
-      "MATCH (bc:BoundedContext), (n:CSharpNamespace) WHERE bc.name = $bcName AND n.fullName = $nsFullName CREATE (bc)-[:BC_REPRESENTED_BY_CSHARP_NAMESPACE]->(n)",
+      "MATCH (bc:BoundedContext), (n:CodeNamespace) WHERE bc.name = $bcName AND n.fullName = $nsFullName CREATE (bc)-[:BC_REPRESENTED_BY_CODE_NAMESPACE]->(n)",
       { bcName, nsFullName },
     );
   }
 
-  async linkModuleToCSharpNamespace(modFullPath: string, nsFullName: string): Promise<void> {
+  async linkModuleToCodeNamespace(modFullPath: string, nsFullName: string): Promise<void> {
     await this.db.query(
-      "MATCH (m:Module), (n:CSharpNamespace) WHERE m.fullPath = $modFullPath AND n.fullName = $nsFullName CREATE (m)-[:MODULE_REPRESENTED_BY_CSHARP_NAMESPACE]->(n)",
+      "MATCH (m:Module), (n:CodeNamespace) WHERE m.fullPath = $modFullPath AND n.fullName = $nsFullName CREATE (m)-[:MODULE_REPRESENTED_BY_CODE_NAMESPACE]->(n)",
       { modFullPath, nsFullName },
     );
   }
@@ -168,7 +181,7 @@ export class ScannerRepository {
     Array<{ id: string; filePath: string; typeName: string; methodName: string }>
   > {
     const rawRows = await this.db.query<BehaviorLocationRow>(
-      "MATCH (b:BuildingBlock)-[:BB_REPRESENTED_BY_CSHARP_TYPE]->(t:CSharpType), " +
+      "MATCH (b:BuildingBlock)-[:BB_REPRESENTED_BY_CODE_TYPE]->(t:CodeType), " +
         "(b)-[:BB_CONTAINS_BEHAVIOR]->(x:Behavior) " +
         "RETURN x.id AS id, t.filePath AS filePath, t.name AS typeName " +
         "ORDER BY x.id",
@@ -257,16 +270,16 @@ export class ScannerRepository {
     }
   }
 
-  private async linkBuildingBlockToCSharpType(bbId: string, typeId: string): Promise<void> {
+  private async linkBuildingBlockToCodeType(bbId: string, typeId: string): Promise<void> {
     await this.db.query(
-      "MATCH (b:BuildingBlock), (t:CSharpType) WHERE b.id = $bbId AND t.id = $typeId CREATE (b)-[:BB_REPRESENTED_BY_CSHARP_TYPE]->(t)",
+      "MATCH (b:BuildingBlock), (t:CodeType) WHERE b.id = $bbId AND t.id = $typeId CREATE (b)-[:BB_REPRESENTED_BY_CODE_TYPE]->(t)",
       { bbId, typeId },
     );
   }
 
-  private async linkCSharpTypeToCSharpNamespace(typeId: string, nsFullName: string): Promise<void> {
+  private async linkCodeTypeToCodeNamespace(typeId: string, nsFullName: string): Promise<void> {
     await this.db.query(
-      "MATCH (t:CSharpType), (n:CSharpNamespace) WHERE t.id = $typeId AND n.fullName = $nsFullName CREATE (t)-[:CSHARP_TYPE_IN_CSHARP_NAMESPACE]->(n)",
+      "MATCH (t:CodeType), (n:CodeNamespace) WHERE t.id = $typeId AND n.fullName = $nsFullName CREATE (t)-[:CODE_TYPE_IN_CODE_NAMESPACE]->(n)",
       { typeId, nsFullName },
     );
   }
