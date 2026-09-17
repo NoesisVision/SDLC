@@ -190,7 +190,7 @@ function extractBehaviors(
   if (bodyStart === -1) return [];
   const bodyEnd = findMatchingBrace(text, bodyStart);
   if (bodyEnd === -1) return [];
-  return parsePublicMethods(text.substring(bodyStart + 1, bodyEnd), typeName, kind);
+  return parsePublicMethods(text.substring(bodyStart + 1, bodyEnd), typeName);
 }
 
 /** The `{` opening the body: the first brace outside parentheses, which a record header has. */
@@ -215,12 +215,12 @@ function findMatchingBrace(text: string, start: number): number {
   return -1;
 }
 
-function parsePublicMethods(body: string, typeName: string, kind: TypeKind): BehaviorMatch[] {
+function parsePublicMethods(body: string, typeName: string): BehaviorMatch[] {
   const statements = flattenBraceBlocks(body).split(";");
   const seen = new Set<string>();
   const methods: BehaviorMatch[] = [];
   for (const statement of statements) {
-    const method = parseMethodStatement(statement, typeName, kind);
+    const method = parseMethodStatement(statement, typeName);
     if (method === null || seen.has(method.methodName)) continue;
     seen.add(method.methodName);
     methods.push(method);
@@ -252,11 +252,7 @@ function flattenBraceBlocks(content: string): string {
  * or a declaration keyword in its header are not methods; the parameter list
  * is not read, so a parameter may be named `record`.
  */
-function parseMethodStatement(
-  statement: string,
-  typeName: string,
-  kind: TypeKind
-): BehaviorMatch | null {
+function parseMethodStatement(statement: string, typeName: string): BehaviorMatch | null {
   const withoutAnnotations = statement.replace(ANNOTATION_PATTERN, " ");
   const parenIdx = withoutAnnotations.indexOf("(");
   if (parenIdx === -1) return null;

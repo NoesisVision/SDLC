@@ -300,7 +300,10 @@ export function assembleDomainTree(
   return { boundedContexts: tree };
 }
 
-export function findModuleByPath(tree: DomainModelTree, path: string): ModuleBranch | undefined {
+export function findModuleByPath<Leaf extends BuildingBlock>(
+  tree: DomainModelTree<Leaf>,
+  path: string
+): ModuleBranch<Leaf> | undefined {
   for (const bc of tree.boundedContexts) {
     const found = findModuleInBranches(bc.modules, path);
     if (found) return found;
@@ -308,7 +311,10 @@ export function findModuleByPath(tree: DomainModelTree, path: string): ModuleBra
   return undefined;
 }
 
-function findModuleInBranches(modules: ModuleBranch[], path: string): ModuleBranch | undefined {
+function findModuleInBranches<Leaf extends BuildingBlock>(
+  modules: ModuleBranch<Leaf>[],
+  path: string
+): ModuleBranch<Leaf> | undefined {
   for (const mod of modules) {
     if (mod.fullPath === path) return mod;
     const found = findModuleInBranches(mod.modules, path);
